@@ -2,24 +2,37 @@
 
 import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { memo, useEffect, useRef, useState } from "react";
-import { CanvasTexture, type Group, type Mesh, type Sprite, type SpriteMaterial, SRGBColorSpace } from "three";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { CanvasTexture, type Group, type Mesh, Object3D, type Sprite, type SpriteMaterial, SRGBColorSpace, Vector3 } from "three";
 import type { Agent } from "@/lib/agents";
 import {
   type BoardLine,
+  EventProps,
   FLOOR,
+  type FloorDecor,
   MANAGER_TV,
   OfficeChair,
-  EventProps,
   OfficeFloor,
-  Planter,
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
 import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
+import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, phaseFor, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { currentEventKind, tickEvents, useGame } from "./office-events";
-import { type Home, isPresent, type P2, registerWalker, type Spot, type WalkPhase, Wanderer } from "./office-nav";
+import { currentEventKind, setAutoEvents, tickEvents, useGame } from "./office-events";
+import {
+  type Activity,
+  DESK_SCALE,
+  deskSlot,
+  type Home,
+  isPresent,
+  MAX_DESKS,
+  registerWalker,
+  setBreakRules,
+  SPOT_CATS,
+  type WalkPhase,
+  Wanderer,
+} from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, hash, useDisposable } from "./scene-utils";
 
@@ -79,7 +92,7 @@ function Label({
 
 export type Species = "bear" | "bunny" | "cat" | "hamster" | "puppy" | "chick";
 type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | "beret" | "cap" | null;
-type Action = "idle" | "write" | "chalk" | "wave" | "walk" | "sip" | "play";
+type Action = "idle" | "write" | "chalk" | "wave" | "walk" | "sip" | "play" | "read" | "phone" | "yoga" | "run" | "talk" | "nap";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -360,30 +373,45 @@ function Mochi({
     }
     root.current.rotation.y += (target - root.current.rotation.y) * Math.min(1, delta * 6);
 
-    const walking = action === "walk" && !cheering;
+    const walking = (action === "walk" || action === "run") && !cheering;
+    const pace = action === "run" ? 13 : 9;
     feet.current.forEach((f, i) => {
       if (!f) return;
-      const step = walking ? Math.sin(t * 9 + i * Math.PI) : 0;
+      const step = walking ? Math.sin(t * pace + i * Math.PI) : 0;
       f.position.z = 0.22 + step * 0.09;
       f.position.y = 0.05 + Math.max(0, step) * 0.05;
     });
 
     let y: number;
     if (cheering) y = Math.abs(Math.sin(since * Math.PI * 3)) * 0.28;
-    else if (walking) y = Math.abs(Math.sin(t * 9)) * 0.06;
+    else if (walking) y = Math.abs(Math.sin(t * pace)) * (action === "run" ? 0.09 : 0.06);
     else if (action === "idle") {
       const hop = t % 7;
       y = Math.sin(t * 2) * 0.015 + (hop < 0.45 ? Math.sin((hop / 0.45) * Math.PI) * 0.1 : 0);
-    } else y = Math.abs(Math.sin(t * 8)) * 0.012;
+    } else if (action === "nap" || action === "read" || action === "yoga") y = 0;
+    else y = Math.abs(Math.sin(t * 8)) * 0.012;
     root.current.position.y = y;
     root.current.rotation.z = walking
-      ? Math.sin(t * 9) * 0.07
+      ? Math.sin(t * pace) * 0.07
       : action === "idle" && !cheering
         ? Math.sin(t * 1.4) * 0.05
-        : 0;
+        : action === "yoga" && !cheering
+          ? Math.sin(t * 0.8) * 0.1
+          : 0;
 
-    head.current.rotation.z = action === "idle" && !cheering ? Math.sin(t * 0.8) * 0.12 : 0;
-    head.current.rotation.x = action === "write" && !cheering ? 0.22 : 0;
+    const nod = Math.max(0, Math.sin(t * 4)) * 0.1;
+    head.current.rotation.z = cheering ? 0 : action === "idle" ? Math.sin(t * 0.8) * 0.12 : action === "nap" ? 0.28 : action === "phone" ? 0.18 : 0;
+    head.current.rotation.x = cheering
+      ? 0
+      : action === "write"
+        ? 0.22
+        : action === "read"
+          ? 0.3
+          : action === "nap"
+            ? 0.15 + Math.sin(t * 1.2) * 0.03
+            : action === "talk"
+              ? nod
+              : 0;
 
     const L = left.current.rotation;
     const R = right.current.rotation;
@@ -410,11 +438,33 @@ function Mochi({
     } else if (action === "play") {
       L.set(-0.3, 0, -0.3);
       R.set(-1.2 + Math.sin(t * 10) * 0.8, 0, 0.35);
+    } else if (action === "read") {
+      // holding a book, turning a page now and then
+      const flip = t % 6 < 0.5 ? Math.sin(((t % 6) / 0.5) * Math.PI) * 0.4 : 0;
+      L.set(-1.2, 0, 0.35);
+      R.set(-1.2 - flip, 0, -0.35 + flip * 0.5);
+    } else if (action === "phone") {
+      L.set(-0.4 + Math.sin(t * 2) * 0.2, 0, -0.35);
+      R.set(-0.3, 0, 2.7);
+    } else if (action === "yoga") {
+      // flow slowly between arms out and arms up
+      const k = (Math.sin(t * 0.8) + 1) / 2;
+      L.set(0, 0, -(1.45 + k * 1.45));
+      R.set(0, 0, 1.45 + k * 1.45);
+    } else if (action === "run") {
+      L.set(Math.sin(t * pace) * 0.9, 0, -0.2);
+      R.set(-Math.sin(t * pace) * 0.9, 0, 0.2);
+    } else if (action === "talk") {
+      L.set(-0.55 + Math.sin(t * 3) * 0.35, 0, -0.35);
+      R.set(-0.75 + Math.sin(t * 3.6 + 1) * 0.45, 0, 0.35);
+    } else if (action === "nap") {
+      L.set(-0.35, 0, -0.1);
+      R.set(-0.35, 0, 0.1);
     } else {
       L.set(-0.15 + Math.sin(t * 1.5) * 0.06, 0, -0.3);
       R.set(-0.15 - Math.sin(t * 1.5) * 0.06, 0, 0.3);
     }
-    eyes.current.scale.y = t % 3.7 < 0.13 ? 0.12 : 1;
+    eyes.current.scale.y = action === "nap" && !cheering ? 0.12 : t % 3.7 < 0.13 ? 0.12 : 1;
   });
 
   return (
@@ -464,7 +514,36 @@ function Mochi({
             <Ink />
           </mesh>
           <PomPom color="#ffb3d1" />
+          {action === "sip" && (
+            <mesh position={[0, -0.22, 0.06]}>
+              <cylinderGeometry args={[0.055, 0.045, 0.11, 12]} />
+              <Toon color="#ffffff" />
+              <Ink t={0.008} />
+            </mesh>
+          )}
+          {action === "phone" && (
+            <mesh position={[0, -0.2, 0.07]}>
+              <boxGeometry args={[0.07, 0.15, 0.025]} />
+              <meshToonMaterial color="#1f2937" />
+            </mesh>
+          )}
         </group>
+        {action === "read" && (
+          <group position={[0, 0.5, 0.36]} rotation-x={-0.75}>
+            <mesh position={[-0.08, 0, 0]} rotation-z={0.12}>
+              <boxGeometry args={[0.16, 0.012, 0.22]} />
+              <meshToonMaterial color="#fffaf0" />
+            </mesh>
+            <mesh position={[0.08, 0, 0]} rotation-z={-0.12}>
+              <boxGeometry args={[0.16, 0.012, 0.22]} />
+              <meshToonMaterial color="#fffaf0" />
+            </mesh>
+            <mesh position={[0, -0.012, 0]}>
+              <boxGeometry args={[0.34, 0.012, 0.24]} />
+              <meshToonMaterial color="#c0392b" />
+            </mesh>
+          </group>
+        )}
         {/* head */}
         <group ref={head} position={[0, 0.78, 0]}>
           <mesh scale={[1.1, 0.92, 1]} castShadow>
@@ -895,15 +974,122 @@ function ThinkingOrbs({ active }: { active: boolean }) {
   );
 }
 
-// ---------- Agent desks in the open workspace ----------
+// ---------- Desks in the open hall ----------
 
 const LABEL_SCALE = 1.5;
-/** Chibi scale: workers and their desks are drawn larger than the room furniture so they read at a glance. */
-const DESK_SCALE = 1.35;
 /** Mochi's seat height on the office chair, in world metres. */
 const SEAT_Y = 0.5 * DESK_SCALE;
-/** Chair offset from the desk centre, in world metres. */
-const CHAIR_Z = 0.62 * DESK_SCALE;
+
+/** How every desk looks, from the office settings. */
+type DeskLook = { top: string; legs: string; screen: string; lamp: boolean; items: boolean; glow: boolean };
+
+function DeskFrame({ look }: { look: DeskLook }) {
+  return (
+    <>
+      {/* desk with a fabric privacy screen at the back */}
+      <RoundedBox args={[1.5, 0.05, 0.75]} radius={0.015} position={[0, 0.74, 0]} castShadow receiveShadow>
+        <meshStandardMaterial color={look.top} roughness={0.45} />
+      </RoundedBox>
+      {[-0.7, 0.7].map((x) => (
+        <mesh key={x} position={[x, 0.36, 0]} castShadow>
+          <boxGeometry args={[0.05, 0.72, 0.68]} />
+          <meshStandardMaterial color={look.legs} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.0, -0.39]} castShadow>
+        <boxGeometry args={[1.5, 0.5, 0.04]} />
+        <meshStandardMaterial color={look.screen} roughness={0.95} />
+      </mesh>
+    </>
+  );
+}
+
+/** Little architect lamp in the back corner of the desk; lit after dark. */
+function DeskLamp({ glow }: { glow: boolean }) {
+  return (
+    <group position={[0.62, 0.765, -0.24]}>
+      <mesh position={[0, 0.01, 0]}>
+        <cylinderGeometry args={[0.06, 0.07, 0.02, 16]} />
+        <meshStandardMaterial color="#2b2f33" />
+      </mesh>
+      <mesh position={[-0.03, 0.15, 0]} rotation-z={0.35}>
+        <cylinderGeometry args={[0.012, 0.012, 0.3, 6]} />
+        <meshStandardMaterial color="#2b2f33" />
+      </mesh>
+      <mesh position={[-0.1, 0.28, 0.02]} rotation-z={-0.9}>
+        <coneGeometry args={[0.06, 0.1, 16, 1, true]} />
+        <meshStandardMaterial color="#f2c14e" emissive="#ffcf8a" emissiveIntensity={glow ? 0.8 : 0} />
+      </mesh>
+      {glow && (
+        <mesh position={[-0.14, 0.25, 0.02]}>
+          <sphereGeometry args={[0.03, 10, 8]} />
+          <meshBasicMaterial color="#ffe2a8" toneMapped={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/** A couple of personal things on each desk, different per person. */
+function DeskItems({ seed }: { seed: number }) {
+  const kind = Math.floor(hash(seed + 3) * 4);
+  return (
+    <group position={[-0.32, 0.765, -0.2]}>
+      {kind === 0 && (
+        // photo frame
+        <group rotation-y={0.3}>
+          <mesh position={[0, 0.08, 0]} rotation-x={-0.2}>
+            <boxGeometry args={[0.14, 0.16, 0.015]} />
+            <meshStandardMaterial color="#5a3a2a" />
+          </mesh>
+          <mesh position={[0, 0.08, 0.009]} rotation-x={-0.2}>
+            <planeGeometry args={[0.11, 0.13]} />
+            <meshBasicMaterial color={hash(seed) > 0.5 ? "#9fd8f5" : "#ffd6a5"} />
+          </mesh>
+        </group>
+      )}
+      {kind === 1 && (
+        // succulent
+        <group>
+          <mesh position={[0, 0.04, 0]}>
+            <cylinderGeometry args={[0.05, 0.04, 0.08, 12]} />
+            <meshStandardMaterial color="#e07a5f" />
+          </mesh>
+          <mesh position={[0, 0.11, 0]}>
+            <icosahedronGeometry args={[0.055, 0]} />
+            <meshStandardMaterial color="#52b788" flatShading />
+          </mesh>
+        </group>
+      )}
+      {kind === 2 && (
+        // stack of books
+        <group>
+          <mesh position={[0, 0.02, 0]}>
+            <boxGeometry args={[0.18, 0.04, 0.13]} />
+            <meshStandardMaterial color="#2e86de" />
+          </mesh>
+          <mesh position={[0.01, 0.06, 0]} rotation-y={0.2}>
+            <boxGeometry args={[0.16, 0.035, 0.12]} />
+            <meshStandardMaterial color="#f39c12" />
+          </mesh>
+        </group>
+      )}
+      {kind === 3 && (
+        // tiny figurine
+        <group>
+          <mesh position={[0, 0.05, 0]}>
+            <sphereGeometry args={[0.05, 12, 10]} />
+            <meshToonMaterial color="#ffb3d1" />
+          </mesh>
+          <mesh position={[0, 0.12, 0]}>
+            <sphereGeometry args={[0.04, 12, 10]} />
+            <meshToonMaterial color="#ffd9e4" />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
 
 type DeskProps = {
   agent: Agent;
@@ -912,29 +1098,20 @@ type DeskProps = {
   seed: number;
   position: V3;
   lang: Lang;
+  desk: DeskLook;
 };
 
-function AgentDeskImpl({ agent, look, state, seed, position, lang }: DeskProps) {
+function AgentDeskImpl({ agent, look, state, seed, position, lang, desk }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
-      {/* desk with a fabric privacy screen at the back */}
-      <RoundedBox args={[1.5, 0.05, 0.75]} radius={0.015} position={[0, 0.74, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color="#f4f4f2" roughness={0.45} />
-      </RoundedBox>
-      {[-0.7, 0.7].map((x) => (
-        <mesh key={x} position={[x, 0.36, 0]} castShadow>
-          <boxGeometry args={[0.05, 0.72, 0.68]} />
-          <meshStandardMaterial color="#374151" />
-        </mesh>
-      ))}
-      <mesh position={[0, 1.0, -0.39]} castShadow>
-        <boxGeometry args={[1.5, 0.5, 0.04]} />
-        <meshStandardMaterial color="#8f9aa1" roughness={0.95} />
-      </mesh>
+      <DeskFrame look={desk} />
+      {/* mug in the owner's colour */}
       <mesh position={[-0.55, 0.815, 0.05]} castShadow>
         <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
         <meshStandardMaterial color={look.inner} />
       </mesh>
+      {desk.items && <DeskItems seed={seed} />}
+      {desk.lamp && <DeskLamp glow={desk.glow} />}
       <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
       <OfficeChair p={[0, 0, 0.62]} />
     </group>
@@ -950,9 +1127,36 @@ const AgentDesk = memo(
     a.seed === b.seed &&
     a.position.join() === b.position.join() &&
     a.lang === b.lang &&
+    a.desk === b.desk &&
     a.state.screen.mode === b.state.screen.mode &&
     a.state.screen.title === b.state.screen.title &&
     Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
+);
+
+/** A free desk waiting for a new hire: monitor off, chair tucked in. */
+const EmptyDesk = memo(
+  function EmptyDesk({ position, desk }: { position: V3; desk: DeskLook }) {
+    return (
+      <group position={position} scale={DESK_SCALE}>
+        <DeskFrame look={desk} />
+        <group position={[0, 0.765, -0.2]} scale={1.25}>
+          <mesh position={[0, 0.008, 0]}>
+            <cylinderGeometry args={[0.09, 0.1, 0.016, 24]} />
+            <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 0.1, -0.02]}>
+            <boxGeometry args={[0.035, 0.18, 0.03]} />
+            <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+          </mesh>
+          <RoundedBox args={[0.6, 0.39, 0.035]} radius={0.015} position={[0, 0.36, 0]} castShadow>
+            <meshStandardMaterial color="#0b0f0d" roughness={0.25} metalness={0.2} />
+          </RoundedBox>
+        </group>
+        <OfficeChair p={[0, 0, 0.45]} />
+      </group>
+    );
+  },
+  (a, b) => a.position.join() === b.position.join() && a.desk === b.desk,
 );
 
 // ---------- Agents that wander the office when idle ----------
@@ -976,7 +1180,18 @@ type AvatarProps = {
   onSelect?: (id: string) => void;
 };
 
-const ACTIVITY_ACTION: Record<Spot["activity"], Action> = { look: "idle", sip: "sip", play: "play", rest: "idle" };
+const ACTIVITY_ACTION: Record<Activity, Action> = {
+  look: "idle",
+  sip: "sip",
+  play: "play",
+  rest: "idle",
+  read: "read",
+  call: "phone",
+  yoga: "yoga",
+  run: "run",
+  chat: "talk",
+  nap: "nap",
+};
 
 // ---------- Floating emoji emotes ----------
 
@@ -1066,6 +1281,8 @@ function AgentAvatarImpl(props: AvatarProps) {
   });
   const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5)));
   const [phase, setPhase] = useState<WalkPhase>(walker.phase);
+  // whether the person across the table has arrived, for chats
+  const [partnerHere, setPartnerHere] = useState(false);
   useEffect(() => {
     registerWalker(walker);
     return () => walker.dispose();
@@ -1076,20 +1293,26 @@ function AgentAvatarImpl(props: AvatarProps) {
     if (!g) return;
     const p = live.current;
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
-    g.position.set(walker.x, walker.y, walker.z);
+    g.position.set(walker.x + walker.offX, walker.y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
     if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
+    const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
+    const here = pair ? isPresent(pair) : false;
+    if (here !== partnerHere) setPartnerHere(here);
   });
 
   const seated = phase.kind === "seated";
   const facing = seated && (working || attentive) ? "back" : "front";
+  const chatAlone = phase.kind === "spot" && phase.spot.activity === "chat" && !partnerHere;
   const action: Action = seated
     ? working
       ? "write"
       : "idle"
     : phase.kind === "walking"
       ? "walk"
-      : ACTIVITY_ACTION[phase.spot.activity];
+      : chatAlone
+        ? "sip"
+        : ACTIVITY_ACTION[phase.spot.activity];
   const say = seated
     ? working
       ? bubble
@@ -1098,7 +1321,9 @@ function AgentAvatarImpl(props: AvatarProps) {
       ? phase.rushing
         ? translate(props.lang, "bubble.onMyWay")
         : undefined
-      : phrase(props.lang, phase.spot.say);
+      : chatAlone
+        ? translate(props.lang, "bubble.saving")
+        : phrase(props.lang, phase.spot.say);
 
   useEffect(() => {
     setAgentActivity(agent.id, describe(props.lang, phase, working, attentive, bubble));
@@ -1148,7 +1373,7 @@ const AgentAvatar = memo(
     a.look === b.look &&
     a.home.seat.join() === b.home.seat.join() &&
     a.home.aisleZ === b.home.aisleZ &&
-    a.home.sideX === b.home.sideX &&
+    a.home.row === b.home.row &&
     a.busy === b.busy &&
     a.working === b.working &&
     a.attentive === b.attentive &&
@@ -1171,17 +1396,17 @@ function PingPongBall() {
     if (!b) return;
     const playing = isPresent("pong-a") || isPresent("pong-b");
     if (!playing) {
-      b.position.set(-5.7, 0.8, 4.3);
+      b.position.set(14.1, 0.8, 7.2);
       return;
     }
     const t = clock.elapsedTime * 0.9;
     const leg = t % 1; // one crossing of the table
     const forward = Math.floor(t) % 2 === 0;
     const k = forward ? leg : 1 - leg;
-    b.position.set(-6.0 + Math.sin(t * 2.3) * 0.35, 0.8 + Math.abs(Math.sin(leg * Math.PI * 2)) * 0.3, 2.55 + k * 2.3);
+    b.position.set(14.4 + Math.sin(t * 2.3) * 0.35, 0.8 + Math.abs(Math.sin(leg * Math.PI * 2)) * 0.3, 6.7 + k * 2.3);
   });
   return (
-    <mesh ref={ball} position={[-5.7, 0.8, 4.3]} castShadow>
+    <mesh ref={ball} position={[14.1, 0.8, 7.2]} castShadow>
       <sphereGeometry args={[0.04, 10, 10]} />
       <meshStandardMaterial color="#f97316" />
     </mesh>
@@ -1243,8 +1468,58 @@ function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNod
   );
 }
 
-/** Centre of the desk block in the open workspace. */
-const DESKS_X = 4.25;
+/** Where the camera looks: the middle of the floor. */
+const TARGET: V3 = [4, 0.6, 5];
+
+type LightSet = { ambient: [string, number]; hemi: [string, string, number]; sun: [string, number, V3]; lamps: number };
+
+/** Daylight, golden hour or night, with warm room lights after dark. */
+const LIGHTS: Record<Phase, LightSet> = {
+  day: { ambient: ["#ffffff", 0.85], hemi: ["#ffffff", "#c9c2b8", 1.0], sun: ["#ffffff", 1.6, [7, 15, 12]], lamps: 0 },
+  sunset: { ambient: ["#ffe2c6", 0.6], hemi: ["#ffd2a6", "#8f7468", 0.72], sun: ["#ffad6b", 1.35, [15, 7, 5]], lamps: 6 },
+  night: { ambient: ["#aab6ff", 0.42], hemi: ["#6575b5", "#2a2633", 0.5], sun: ["#b7c4ff", 0.4, [-6, 14, 8]], lamps: 14 },
+};
+
+const ROOM_LIGHTS: V3[] = [
+  [1.5, 2.6, 5.5],
+  [8.5, 2.6, 5.5],
+  [1.5, 2.6, 10.5],
+  [8.5, 2.6, 10.5],
+  [4.5, 2.4, 14.6],
+  [-5.6, 2.4, 3.2],
+  [0.2, 2.4, -2.6],
+  [5.5, 2.4, -3.2],
+];
+
+function Lights({ phase }: { phase: Phase }) {
+  const set = LIGHTS[phase];
+  // the sun aims at the middle of the floor; the target has to be in the scene for that
+  const [target] = useState(() => new Object3D());
+  const sun: V3 = [TARGET[0] + set.sun[2][0], set.sun[2][1], TARGET[2] + set.sun[2][2]];
+  return (
+    <>
+      <ambientLight color={set.ambient[0]} intensity={set.ambient[1]} />
+      <hemisphereLight args={[set.hemi[0], set.hemi[1], set.hemi[2]]} />
+      <primitive object={target} position={[TARGET[0], 0, TARGET[2]]} />
+      <directionalLight
+        position={sun}
+        target={target}
+        color={set.sun[0]}
+        intensity={set.sun[1]}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-19}
+        shadow-camera-right={19}
+        shadow-camera-top={19}
+        shadow-camera-bottom={-19}
+        shadow-camera-far={80}
+        shadow-bias={-0.0005}
+      />
+      {set.lamps > 0 &&
+        ROOM_LIGHTS.map((p) => <pointLight key={p.join()} position={p} color="#ffd59a" intensity={set.lamps} distance={9} decay={1.6} />)}
+    </>
+  );
+}
 
 /** Runs the office-event clock with the scene and shows each event's props. */
 function EventDirector() {
@@ -1253,7 +1528,7 @@ function EventDirector() {
   return <EventProps kind={game.event?.kind ?? currentEventKind()} />;
 }
 
-/** Fit the orthographic camera to the floor whenever the canvas is resized. */
+/** Fit the orthographic camera to the whole floor whenever the canvas is resized. */
 function CameraFit() {
   const get = useThree((s) => s.get);
   const width = useThree((s) => s.size.width);
@@ -1262,14 +1537,30 @@ function CameraFit() {
   const hasControls = useThree((s) => Boolean(s.controls));
   useEffect(() => {
     const { camera, controls } = get();
-    // Narrow screens crop the side walls a little so the desks stay readable.
-    const zoom = Math.min(width / (width < 500 ? 19 : 27), height / 18);
+    // project the floor's corners onto the screen axes of the current view
+    const forward = new Vector3(...TARGET).sub(camera.position).normalize();
+    const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
+    const up = new Vector3().crossVectors(right, forward);
+    let [minX, maxX, minY, maxY] = [Infinity, -Infinity, Infinity, -Infinity];
+    const p = new Vector3();
+    for (const x of [FLOOR.x0, FLOOR.x1])
+      for (const z of [FLOOR.z0, FLOOR.z1])
+        for (const y of [0, 2.4]) {
+          p.set(x, y, z);
+          minX = Math.min(minX, p.dot(right));
+          maxX = Math.max(maxX, p.dot(right));
+          minY = Math.min(minY, p.dot(up));
+          maxY = Math.max(maxY, p.dot(up));
+        }
+    // narrow screens crop the side corners a little so the desks stay readable
+    const crop = width < 500 ? 0.66 : 1;
+    const zoom = Math.min(width / ((maxX - minX) * crop * 1.02), height / ((maxY - minY) * 1.04));
     camera.zoom = zoom;
     camera.updateProjectionMatrix();
     const orbit = controls as unknown as { minZoom: number; maxZoom: number } | null;
     if (orbit) {
       orbit.minZoom = zoom * 0.7;
-      orbit.maxZoom = zoom * 4;
+      orbit.maxZoom = zoom * 5;
     }
   }, [get, width, height, hasControls]);
   return null;
@@ -1294,17 +1585,39 @@ export default function OfficeScene({
   levels?: Record<string, number>;
   lang?: Lang;
 }) {
-  // One row of desks for up to 4 agents, otherwise two rows facing the meeting rooms.
-  const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
-  const rows = Math.ceil(agents.length / perRow);
-  const spacing = Math.min(2.4, 15.5 / perRow);
-  const rowZ = rows === 1 ? [3.0] : [2.0, 4.2];
-  const rowHalf = (perRow * spacing) / 2;
-  // Agents walk out along the aisle behind their row to a side column, then into the office.
-  const sideX = Math.max(4.6, rowHalf + 0.95);
-  // desks sit in the middle of the open workspace, between the ping-pong table and the breakout corner
+  const custom = useOfficeCustom();
+  // "auto" lighting follows the viewer's clock
+  const [hour, setHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const id = window.setInterval(() => setHour(new Date().getHours()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const phase = phaseFor(custom.lighting, hour);
+  const decor = useMemo<FloorDecor>(
+    () => ({ floor: custom.floor, accent: ACCENT_COLORS[custom.accent], items: custom.items, sign: custom.sign, phase }),
+    [custom.floor, custom.accent, custom.items, custom.sign, phase],
+  );
+  const deskLook = useMemo<DeskLook>(
+    () => ({
+      ...DESK_COLORS[custom.desk],
+      screen: ACCENT_COLORS[custom.accent],
+      lamp: custom.items.lamps,
+      items: custom.items.deskItems,
+      glow: phase !== "day",
+    }),
+    [custom.desk, custom.accent, custom.items, phase],
+  );
+  useEffect(() => {
+    setBreakRules({
+      cats: SPOT_CATS.filter((c) => custom.activities[c]),
+      decor: DECOR_ITEMS.filter((i) => custom.items[i]),
+      breaks: custom.breaks,
+    });
+  }, [custom.activities, custom.items, custom.breaks]);
+  useEffect(() => setAutoEvents(custom.events), [custom.events]);
+
   const still = useStill();
-  const canWander = !still && sideX <= 8.6;
+  const seated = agents.slice(0, MAX_DESKS);
 
   return (
     <Canvas
@@ -1312,24 +1625,11 @@ export default function OfficeScene({
       orthographic
       dpr={[1, 1.5]}
       gl={{ powerPreference: "high-performance", alpha: true }}
-      camera={{ position: [17, 17, 15], zoom: 30, near: -100, far: 200 }}
+      camera={{ position: [TARGET[0] + 13, 17, TARGET[2] + 15.9], zoom: 24, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
-      <ambientLight intensity={0.85} />
-      <hemisphereLight args={["#ffffff", "#c9c2b8", 1.0]} />
-      {/* sun from the camera side so the workers' faces are lit */}
-      <directionalLight
-        position={[7, 15, 12]}
-        intensity={1.6}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-12}
-        shadow-camera-right={12}
-        shadow-camera-top={12}
-        shadow-camera-bottom={-12}
-        shadow-bias={-0.0005}
-      />
-      <OfficeFloor />
+      <Lights phase={phase} />
+      <OfficeFloor decor={decor} />
       <EventDirector />
       <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
@@ -1337,38 +1637,32 @@ export default function OfficeScene({
       </group>
       <Presenter state={manager} board={board} lang={lang} />
       <PingPongBall />
-      {rowZ.slice(0, rows).map((z) => (
-        <group key={z}>
-          <Planter p={[DESKS_X - rowHalf - 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
-          <Planter p={[DESKS_X + rowHalf + 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
-        </group>
-      ))}
-      {agents.map((a, i) => {
-        const row = Math.floor(i / perRow);
-        const inRow = Math.min(perRow, agents.length - row * perRow);
-        const col = i % perRow;
-        const x = DESKS_X + (col - (inRow - 1) / 2) * spacing;
-        const z = rowZ[row] ?? FLOOR.z1 - 1;
+      {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {
+        const d = deskSlot(seated.length + k);
+        return <EmptyDesk key={`free-${d.index}`} position={[d.x, 0, d.z]} desk={deskLook} />;
+      })}
+      {seated.map((a, i) => {
+        const d = deskSlot(i);
         const state = desks[a.id] ?? IDLE_DESK;
         const attentive = manager === "planning";
-        const seat: P2 = [x, z + CHAIR_Z];
+        const look = LOOKS[i % LOOKS.length];
         return (
           <group key={a.id}>
-            <AgentDesk agent={a} look={LOOKS[i % LOOKS.length]} state={state} seed={i * 1.7} position={[x, 0, z]} lang={lang} />
+            <AgentDesk agent={a} look={look} state={state} seed={i * 1.7} position={[d.x, 0, d.z]} lang={lang} desk={deskLook} />
             <AgentAvatar
               agent={a}
-              look={LOOKS[i % LOOKS.length]}
-              home={{ seat, aisleZ: seat[1] + 0.62, sideX: x <= DESKS_X ? DESKS_X - sideX : DESKS_X + sideX }}
+              look={look}
+              home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row }}
               busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
               working={state.working.length > 0}
               attentive={attentive}
               bubble={state.working[0]}
               lastDoneAt={state.lastDoneAt}
               seed={i * 1.7}
-              lift={col % 2 ? 0.45 : 0}
+              lift={d.col % 2 ? 0.45 : 0}
               level={levels[a.id] ?? 1}
               lang={lang}
-              canWander={canWander}
+              canWander={!still}
               selected={selectedId === a.id}
               onSelect={onSelectAgent}
             />
@@ -1377,7 +1671,7 @@ export default function OfficeScene({
       })}
       <OrbitControls
         makeDefault
-        target={[4, 0.6, -0.9]}
+        target={TARGET}
         enablePan
         screenSpacePanning
         minPolarAngle={0.35}

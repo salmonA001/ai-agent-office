@@ -9,6 +9,7 @@ import {
   CornersOutIcon,
   CpuIcon,
   ListIcon,
+  PaintBrushIcon,
   PaperPlaneRightIcon,
   PlusIcon,
   TrashIcon,
@@ -25,6 +26,8 @@ import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
 import { levelOf, rewardOnce, setNames, useGame } from "./office-events";
+import { MAX_DESKS } from "./office-nav";
+import { CustomizePanel } from "./OfficeCustomize";
 import { AgentPanel, AgentStatusText, HowItWorks, initials, Stepper, stepIndex, Ticker, Timeline } from "./OfficeExplain";
 import { DrillOverlay, EventBanner, EventsPanel, LevelToast, TeamStats, XpBadge } from "./OfficeGame";
 import type { BoardLine, DeskState, ManagerState, ScreenState } from "./OfficeScene";
@@ -165,8 +168,8 @@ function useStageFullscreen() {
       }
       if (e.key !== "f" && e.key !== "F") return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
       e.preventDefault();
       toggle();
     };
@@ -214,6 +217,7 @@ export function Office() {
   const [needCode, setNeedCode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [showHire, setShowHire] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SidebarTab>("progress");
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -334,7 +338,7 @@ export function Office() {
   const resetOffice = useCallback(() => {
     for (const c of controllers.current.values()) c.abort();
     try {
-      for (const k of ["office.tasks", "office.agents", "office.game", "office.rewarded"]) localStorage.removeItem(k);
+      for (const k of ["office.tasks", "office.agents", "office.game", "office.rewarded", "office.custom"]) localStorage.removeItem(k);
     } catch {
       // storage unavailable
     }
@@ -503,29 +507,56 @@ export function Office() {
             className={`${pseudoFull ? "" : "glass enter"} rounded-2xl p-4`}
             style={{ ["--i" as string]: 0 }}
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 id="floor-heading" className="font-semibold">
-                {t("floor.title")}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowHire((v) => !v)}
-                aria-expanded={showHire}
-                className="press inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-on-accent"
-              >
-                {showHire ? <XIcon size={16} weight="bold" aria-hidden /> : <PlusIcon size={16} weight="bold" aria-hidden />}
-                {showHire ? t("hire.close") : t("hire.open")}
-              </button>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-baseline gap-2">
+                <h2 id="floor-heading" className="font-semibold">
+                  {t("floor.title")}
+                </h2>
+                <span className="text-xs text-muted">{t("hire.desks", { n: Math.min(agents.length, MAX_DESKS), max: MAX_DESKS })}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCustom((v) => !v);
+                    setShowHire(false);
+                  }}
+                  aria-expanded={showCustom}
+                  className="press inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 text-sm font-semibold text-accent"
+                >
+                  {showCustom ? <XIcon size={16} weight="bold" aria-hidden /> : <PaintBrushIcon size={16} weight="bold" aria-hidden />}
+                  {showCustom ? t("custom.close") : t("custom.open")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHire((v) => !v);
+                    setShowCustom(false);
+                  }}
+                  aria-expanded={showHire}
+                  className="press inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-on-accent"
+                >
+                  {showHire ? <XIcon size={16} weight="bold" aria-hidden /> : <PlusIcon size={16} weight="bold" aria-hidden />}
+                  {showHire ? t("hire.close") : t("hire.open")}
+                </button>
+              </div>
             </div>
 
-            {showHire && (
-              <HireForm
-                onHire={(a) => {
-                  setAgents((all) => [...all, a]);
-                  setShowHire(false);
-                }}
-              />
-            )}
+            {showCustom && <CustomizePanel />}
+
+            {showHire &&
+              (agents.length >= MAX_DESKS ? (
+                <p role="status" className="enter-drop mb-4 rounded-xl bg-well p-4 text-sm text-muted">
+                  {t("hire.full", { n: MAX_DESKS })}
+                </p>
+              ) : (
+                <HireForm
+                  onHire={(a) => {
+                    setAgents((all) => [...all, a]);
+                    setShowHire(false);
+                  }}
+                />
+              ))}
 
             <div
               ref={stage}
@@ -537,7 +568,7 @@ export function Office() {
             >
               <div
                 className={`relative overflow-hidden rounded-xl bg-surface ring-1 ring-accent/20 ${
-                  isFull ? "min-h-0 flex-1" : "h-[340px] sm:h-[600px]"
+                  isFull ? "min-h-0 flex-1" : "h-[420px] sm:h-[640px]"
                 }`}
               >
                 <OfficeScene

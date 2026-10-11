@@ -1,9 +1,21 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { memo, useRef } from "react";
-import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  CanvasTexture,
+  DoubleSide,
+  type Group,
+  type InstancedMesh,
+  type Mesh,
+  type MeshBasicMaterial,
+  Object3D,
+  RepeatWrapping,
+  SRGBColorSpace,
+  type Texture,
+} from "three";
 import { type Lang, translate } from "@/lib/i18n";
+import type { DecorItem, FloorStyle, Phase } from "@/lib/office-custom";
 import { currentEventKind } from "./office-events";
 import { useStill } from "@/lib/motion";
 import { clip, seeded, useDisposable } from "./scene-utils";
@@ -14,7 +26,7 @@ type V3 = [number, number, number];
 // ---------- Floor plan (metres, y up). The camera looks from +x/+z, so the north (-z) and
 // west (-x) walls are full height and the south/east walls are cut away like a dollhouse. ----------
 
-export const FLOOR = { x0: -8, x1: 16, z0: -6, z1: 6 };
+export const FLOOR = { x0: -8, x1: 16, z0: -6, z1: 16 };
 export const CORRIDOR = { z0: -0.3, z1: 0.9 };
 const MEETING = { x0: -8, x1: -2.6 };
 const KITCHEN = { x0: -2.6, x1: 3 };
@@ -89,18 +101,112 @@ function brickTexture(repeat: [number, number]) {
   return finish(c, repeat);
 }
 
-export function skyTexture() {
+/** What the windows show: blue sky, a sunset, or a starry night. */
+export function skyTexture(phase: Phase = "day") {
   const c = document.createElement("canvas");
   c.width = 128;
   c.height = 128;
   const g = c.getContext("2d")!;
   const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, "#9fd8f5");
-  grad.addColorStop(1, "#e6f6ff");
+  const [top, bottom] = phase === "night" ? ["#0b1636", "#24326a"] : phase === "sunset" ? ["#ff8f6b", "#ffd59a"] : ["#9fd8f5", "#e6f6ff"];
+  grad.addColorStop(0, top);
+  grad.addColorStop(1, bottom);
   g.fillStyle = grad;
   g.fillRect(0, 0, 128, 128);
-  g.fillStyle = "rgba(255,255,255,0.5)";
-  g.fillRect(0, 70, 128, 4);
+  if (phase === "night") {
+    const rnd = seeded(21);
+    g.fillStyle = "#ffffff";
+    for (let i = 0; i < 26; i++) g.fillRect(rnd() * 128, rnd() * 90, 1.5, 1.5);
+    g.fillStyle = "#fff6d6";
+    g.beginPath();
+    g.arc(96, 30, 10, 0, Math.PI * 2);
+    g.fill();
+  } else {
+    g.fillStyle = phase === "sunset" ? "rgba(255,240,200,0.55)" : "rgba(255,255,255,0.5)";
+    g.fillRect(0, 70, 128, 4);
+    if (phase === "sunset") {
+      g.fillStyle = "#fff1c1";
+      g.beginPath();
+      g.arc(40, 92, 14, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  return finish(c, [1, 1]);
+}
+
+function carpetTexture(base: string, repeat: [number, number]) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(31);
+  g.fillStyle = base;
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = rnd() > 0.5 ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.08)";
+    g.fillRect(rnd() * 256, rnd() * 256, 2, 2);
+  }
+  g.fillStyle = "rgba(0,0,0,0.12)";
+  for (let i = 0; i < 256; i += 64) {
+    g.fillRect(i, 0, 1, 256);
+    g.fillRect(0, i, 256, 1);
+  }
+  return finish(c, repeat);
+}
+
+function concreteTexture(repeat: [number, number]) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(17);
+  g.fillStyle = "#bdbcb8";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 40; i++) {
+    const x = rnd() * 256;
+    const y = rnd() * 256;
+    const r = 10 + rnd() * 40;
+    const blot = g.createRadialGradient(x, y, 0, x, y, r);
+    blot.addColorStop(0, rnd() > 0.5 ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.07)");
+    blot.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = blot;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  g.fillStyle = "rgba(0,0,0,0.14)";
+  g.fillRect(0, 0, 256, 1);
+  g.fillRect(0, 0, 1, 256);
+  return finish(c, repeat);
+}
+
+/** Rows of colourful book spines for the library shelves. */
+function booksTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 320;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(seed);
+  g.fillStyle = "#6b4a32";
+  g.fillRect(0, 0, 256, 320);
+  const colors = ["#c0392b", "#2e86de", "#27ae60", "#f39c12", "#8e44ad", "#16a085", "#e67e22", "#f5f0e6", "#34495e", "#e84393"];
+  for (let shelf = 0; shelf < 5; shelf++) {
+    const base = 60 + shelf * 64;
+    let x = 6;
+    while (x < 246) {
+      const w = 7 + rnd() * 9;
+      const h = 34 + rnd() * 18;
+      if (rnd() < 0.08) {
+        x += w + 6;
+        continue;
+      }
+      g.fillStyle = colors[Math.floor(rnd() * colors.length)];
+      g.fillRect(x, base - h, w, h);
+      g.fillStyle = "rgba(255,255,255,0.35)";
+      g.fillRect(x + 1, base - h + 6, w - 2, 2);
+      x += w + 1;
+    }
+    g.fillStyle = "#4a3222";
+    g.fillRect(0, base, 256, 6);
+  }
   return finish(c, [1, 1]);
 }
 
@@ -368,13 +474,13 @@ function Sofa({ p, r = 0, color = "#f3f4f6" }: { p: V3; r?: number; color?: stri
   );
 }
 
-function Armchair({ p, r = 0 }: { p: V3; r?: number }) {
+function Armchair({ p, r = 0, color = "#1f2328" }: { p: V3; r?: number; color?: string }) {
   return (
     <group position={p} rotation-y={r}>
-      <B s={[0.8, 0.4, 0.8]} p={[0, 0.2, 0]} c="#1f2328" rough={0.6} />
-      <B s={[0.8, 0.55, 0.2]} p={[0, 0.6, -0.3]} c="#1f2328" rough={0.6} />
-      <B s={[0.16, 0.5, 0.8]} p={[-0.36, 0.4, 0]} c="#1f2328" rough={0.6} />
-      <B s={[0.16, 0.5, 0.8]} p={[0.36, 0.4, 0]} c="#1f2328" rough={0.6} />
+      <B s={[0.8, 0.4, 0.8]} p={[0, 0.2, 0]} c={color} rough={0.6} />
+      <B s={[0.8, 0.55, 0.2]} p={[0, 0.6, -0.3]} c={color} rough={0.6} />
+      <B s={[0.16, 0.5, 0.8]} p={[-0.36, 0.4, 0]} c={color} rough={0.6} />
+      <B s={[0.16, 0.5, 0.8]} p={[0.36, 0.4, 0]} c={color} rough={0.6} />
     </group>
   );
 }
@@ -605,38 +711,220 @@ function Lounge({ sky }: { sky: Texture }) {
   );
 }
 
-function Workspace({ sky }: { sky: Texture }) {
-  const tiles = useDisposable(() => tileTexture("#e9ebee", "#d7dadf", [8, 3]), "work-floor");
+// ---------- The open hall: desks (drawn by OfficeScene) surrounded by zones ----------
+
+export type FloorDecor = {
+  floor: FloorStyle;
+  accent: string;
+  items: Record<DecorItem, boolean>;
+  sign: string;
+  phase: Phase;
+};
+
+function hallFloorTexture(style: FloorStyle) {
+  if (style === "wood") return plankTexture(30, 42, 60, [12, 8], 12);
+  if (style === "carpet") return carpetTexture("#7d8fa6", [12, 7.5]);
+  if (style === "concrete") return concreteTexture([6, 4]);
+  return tileTexture("#e9ebee", "#d7dadf", [8, 5]);
+}
+
+/** A light bulb that glows warm after dark. */
+function Bulb({ p, r = 0.06, on }: { p: V3; r?: number; on: boolean }) {
+  return (
+    <mesh position={p}>
+      <sphereGeometry args={[r, 12, 12]} />
+      <meshBasicMaterial color={on ? "#ffd58a" : "#f5f1e6"} toneMapped={false} />
+    </mesh>
+  );
+}
+
+function FloorLamp({ p, on }: { p: V3; on: boolean }) {
+  return (
+    <group position={p}>
+      <B s={[0.32, 0.04, 0.32]} p={[0, 0.02, 0]} c="#2b2f33" />
+      <mesh position={[0, 0.8, 0]}>
+        <cylinderGeometry args={[0.02, 0.02, 1.56, 8]} />
+        <meshStandardMaterial color="#2b2f33" metalness={0.5} />
+      </mesh>
+      <mesh position={[0, 1.62, 0]}>
+        <cylinderGeometry args={[0.14, 0.22, 0.26, 20, 1, true]} />
+        <meshStandardMaterial color="#f6ead2" side={DoubleSide} emissive="#ffcf8a" emissiveIntensity={on ? 0.9 : 0} />
+      </mesh>
+      <Bulb p={[0, 1.56, 0]} r={0.05} on={on} />
+    </group>
+  );
+}
+
+function Rug({ x0, x1, z0, z1, color }: { x0: number; x1: number; z0: number; z1: number; color: string }) {
   return (
     <group>
-      <Floor x0={FLOOR.x0} x1={FLOOR.x1} z0={WORKSPACE.z0} z1={WORKSPACE.z1} map={tiles} />
-      {/* printer + water cooler */}
-      <group position={[FLOOR.x0 + 0.5, 0, 1.6]}>
+      <Floor x0={x0} x1={x1} z0={z0} z1={z1} color={color} y={0.006} />
+      <Floor x0={x0 + 0.12} x1={x1 - 0.12} z0={z0 + 0.12} z1={z1 - 0.12} color="#ffffff" y={0.007} />
+      <Floor x0={x0 + 0.16} x1={x1 - 0.16} z0={z0 + 0.16} z1={z1 - 0.16} color={color} y={0.008} />
+    </group>
+  );
+}
+
+/** Tall bookshelf; its open side faces +z before rotation. */
+function Bookshelf({ p, r = 0, seed }: { p: V3; r?: number; seed: number }) {
+  const books = useDisposable(() => booksTexture(seed), `books${seed}`);
+  return (
+    <group position={p} rotation-y={r}>
+      <B s={[1.4, 2.0, 0.36]} p={[0, 1.0, -0.02]} c="#8a5a32" />
+      <mesh position={[0, 1.0, 0.165]}>
+        <planeGeometry args={[1.3, 1.9]} />
+        <meshStandardMaterial map={books} roughness={0.9} />
+      </mesh>
+      <B s={[1.44, 0.06, 0.4]} p={[0, 2.02, 0]} c="#6b4a32" />
+    </group>
+  );
+}
+
+function Library({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      {decor.items.rugs && <Rug x0={-7.25} x1={-4.15} z0={2.15} z1={4.25} color="#b5835a" />}
+      <Bookshelf p={[-7.74, 0, 2.25]} r={Math.PI / 2} seed={41} />
+      <Bookshelf p={[-7.74, 0, 3.85]} r={Math.PI / 2} seed={42} />
+      <Armchair p={[-6.7, 0, 3.2]} r={Math.PI / 2} color="#8a4f3d" />
+      <Armchair p={[-4.7, 0, 3.2]} r={-Math.PI / 2} color="#3f5f6b" />
+      {/* side table with a stack of books and a mug */}
+      <group position={[-5.7, 0, 3.2]}>
+        <mesh position={[0, 0.44, 0]} castShadow>
+          <cylinderGeometry args={[0.3, 0.3, 0.04, 20]} />
+          <meshStandardMaterial color="#c08850" />
+        </mesh>
+        <mesh position={[0, 0.22, 0]}>
+          <cylinderGeometry args={[0.04, 0.07, 0.44, 8]} />
+          <meshStandardMaterial color="#5a3a2a" />
+        </mesh>
+        <B s={[0.2, 0.05, 0.14]} p={[-0.06, 0.485, 0]} c="#2e86de" />
+        <B s={[0.18, 0.04, 0.13]} p={[-0.06, 0.53, 0.01]} c="#c0392b" r={0.2} />
+        <mesh position={[0.12, 0.5, 0.05]}>
+          <cylinderGeometry args={[0.035, 0.03, 0.08, 12]} />
+          <meshStandardMaterial color="#f5f0e6" />
+        </mesh>
+      </group>
+      {decor.items.lamps && <FloorLamp p={[-7.3, 0, 1.15]} on={glow} />}
+      <WindowPane p={[-7.91, 1.5, 5.1]} r={Math.PI / 2} w={0.8} h={1.1} sky={sky} />
+    </group>
+  );
+}
+
+function Treadmill({ p }: { p: V3 }) {
+  return (
+    <group position={p}>
+      <B s={[1.6, 0.12, 0.8]} p={[0, 0.06, 0]} c="#2b2f33" />
+      <B s={[1.4, 0.02, 0.56]} p={[-0.05, 0.13, 0]} c="#111317" />
+      {[-0.36, 0.36].map((z) => (
+        <B key={z} s={[0.06, 1.0, 0.06]} p={[0.72, 0.6, z]} c="#4b5563" />
+      ))}
+      <B s={[0.22, 0.08, 0.78]} p={[0.7, 1.1, 0]} c="#374151" />
+      <mesh position={[0.62, 1.15, 0]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[0.3, 0.06]} />
+        <meshBasicMaterial color="#34d399" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function YogaMat({ p, color }: { p: V3; color: string }) {
+  return <B s={[1.5, 0.014, 0.62]} p={[p[0], 0.008, p[2]]} c={color} rough={0.95} />;
+}
+
+/** The office name in green neon on the wellness wall. */
+function OfficeSign({ text }: { text: string }) {
+  const tex = useDisposable(() => neonTexture(text.trim() || " ", "#34d399"), `sign:${text}`);
+  return (
+    <group position={[-7.9, 2.08, 9.0]} rotation-y={Math.PI / 2}>
+      <B s={[2.34, 0.62, 0.04]} p={[0, 0, 0]} c="#111827" />
+      <mesh position={[0, 0, 0.025]}>
+        <planeGeometry args={[2.24, 0.56]} />
+        <meshBasicMaterial map={tex} transparent toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function Wellness({ decor }: { decor: FloorDecor }) {
+  return (
+    <group>
+      <Floor x0={-7.92} x1={-3.7} z0={5.95} z1={10.6} color="#c9d6cf" y={0.004} />
+      {/* mirror wall */}
+      <group position={[-7.91, 1.02, 9.0]} rotation-y={Math.PI / 2}>
+        <B s={[2.2, 1.42, 0.04]} p={[0, 0, 0]} c="#d6d3cf" />
+        <mesh position={[0, 0, 0.025]}>
+          <planeGeometry args={[2.1, 1.32]} />
+          <meshStandardMaterial color="#dcebf2" metalness={0.6} roughness={0.08} />
+        </mesh>
+      </group>
+      <Treadmill p={[-7.1, 0, 6.8]} />
+      <YogaMat p={[-6.5, 0, 8.5]} color="#8b5cf6" />
+      <YogaMat p={[-6.5, 0, 9.5]} color="#14b8a6" />
+      <mesh position={[-4.3, 0.3, 9.9]} castShadow>
+        <sphereGeometry args={[0.3, 24, 16]} />
+        <meshStandardMaterial color="#60a5fa" roughness={0.4} />
+      </mesh>
+      <PalmPlant p={[-7.45, 0, 10.35]} />
+      {decor.items.sign && <OfficeSign text={decor.sign} />}
+      {decor.items.art && <Art p={[-7.91, 1.75, 6.8]} r={Math.PI / 2} seed={13} w={0.9} h={0.5} />}
+    </group>
+  );
+}
+
+/** Glass phone booth against the west wall, open towards the hall. */
+function PhoneBooth({ z, accent, glow }: { z: number; accent: string; glow: boolean }) {
+  const x0 = -7.92;
+  const x1 = -6.62;
+  return (
+    <group>
+      <Floor x0={x0} x1={x1} z0={z - 0.65} z1={z + 0.65} color="#3b3f46" y={0.006} />
+      <GlassWall x0={x0} x1={x1} z={z - 0.65} h={2.1} />
+      <GlassWall x0={x0} x1={x1} z={z + 0.65} h={2.1} />
+      <B s={[0.06, 0.06, 1.3]} p={[x1, 2.1, z]} c="#5f6b70" />
+      <mesh position={[-7.91, 1.25, z]} rotation-y={Math.PI / 2}>
+        <planeGeometry args={[1.1, 1.2]} />
+        <meshStandardMaterial color={accent} roughness={1} />
+      </mesh>
+      <B s={[0.3, 0.04, 0.6]} p={[-7.75, 1.0, z]} c="#c08850" />
+      <Bulb p={[-7.3, 1.98, z]} r={0.07} on={glow} />
+    </group>
+  );
+}
+
+function PrintStation() {
+  return (
+    <group>
+      <group position={[-5.0, 0, 15.45]}>
         <B s={[0.6, 0.6, 0.5]} p={[0, 0.3, 0]} c="#d1d5db" />
         <B s={[0.55, 0.15, 0.45]} p={[0, 0.68, 0]} c="#e5e7eb" />
+        <B s={[0.3, 0.01, 0.2]} p={[0, 0.765, -0.05]} c="#ffffff" />
       </group>
-      <group position={[FLOOR.x1 - 0.5, 0, 1.6]}>
+      <B s={[0.8, 1.1, 0.5]} p={[-6.2, 0.55, 15.5]} c="#9ca3af" />
+      <B s={[0.7, 0.02, 0.4]} p={[-6.2, 1.11, 15.5]} c="#6b7280" />
+    </group>
+  );
+}
+
+function Breakout({ decor }: { decor: FloorDecor }) {
+  return (
+    <group>
+      {decor.items.rugs && (
+        <mesh rotation-x={-Math.PI / 2} position={[14.3, 0.006, 3.6]} receiveShadow>
+          <circleGeometry args={[1.3, 40]} />
+          <meshStandardMaterial color={decor.accent} roughness={1} />
+        </mesh>
+      )}
+      {/* water cooler */}
+      <group position={[15.5, 0, 1.6]}>
         <B s={[0.35, 1.0, 0.35]} p={[0, 0.5, 0]} c="#f5f5f4" />
         <mesh position={[0, 1.2, 0]}>
           <cylinderGeometry args={[0.15, 0.15, 0.4, 16]} />
           <meshStandardMaterial color="#93c5fd" transparent opacity={0.7} />
         </mesh>
       </group>
-      {/* ping-pong table on the left */}
-      <group position={[-6.0, 0, 3.7]}>
-        <B s={[1.5, 0.05, 2.6]} p={[0, 0.74, 0]} c="#1f7a4d" rough={0.5} />
-        <B s={[1.5, 0.01, 0.03]} p={[0, 0.77, 0]} c="#ffffff" />
-        <B s={[1.6, 0.15, 0.02]} p={[0, 0.84, 0]} c="#e5e7eb" />
-        {[
-          [-0.65, -1.15],
-          [0.65, -1.15],
-          [-0.65, 1.15],
-          [0.65, 1.15],
-        ].map(([x, z]) => (
-          <B key={`${x}${z}`} s={[0.05, 0.72, 0.05]} p={[x, 0.36, z]} c="#374151" />
-        ))}
-      </group>
-      {/* breakout corner on the right: round table and beanbags */}
+      {/* round table, two chairs and beanbags */}
       <group position={[14.3, 0, 3.6]}>
         <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[0.6, 0.6, 0.05, 32]} />
@@ -658,27 +946,302 @@ function Workspace({ sky }: { sky: Texture }) {
           </mesh>
         ))}
       </group>
-      <PalmPlant p={[FLOOR.x0 + 0.55, 0, FLOOR.z1 - 0.55]} s={1.1} />
-      <PalmPlant p={[FLOOR.x1 - 0.55, 0, FLOOR.z1 - 0.6]} />
-      <WindowPane p={[FLOOR.x0 + 0.09, 1.5, 2.5]} r={Math.PI / 2} w={1.4} h={1.1} sky={sky} />
-      <WindowPane p={[FLOOR.x0 + 0.09, 1.5, 4.6]} r={Math.PI / 2} w={1.4} h={1.1} sky={sky} />
-      <Art p={[FLOOR.x0 + 0.09, 1.45, 3.55]} r={Math.PI / 2} seed={11} w={0.6} h={0.5} />
+      <PalmPlant p={[15.55, 0, 5.6]} />
     </group>
   );
 }
 
-function neonTexture() {
+/** Ping-pong table running along z in the east of the hall. */
+function PingPongTable() {
+  return (
+    <group position={[14.4, 0, 7.85]}>
+      <B s={[1.5, 0.05, 2.6]} p={[0, 0.74, 0]} c="#1f7a4d" rough={0.5} />
+      <B s={[0.02, 0.01, 2.6]} p={[0, 0.77, 0]} c="#ffffff" />
+      <B s={[1.6, 0.15, 0.02]} p={[0, 0.84, 0]} c="#e5e7eb" />
+      {[
+        [-0.65, -1.15],
+        [0.65, -1.15],
+        [-0.65, 1.15],
+        [0.65, 1.15],
+      ].map(([x, z]) => (
+        <B key={`${x}${z}`} s={[0.05, 0.72, 0.05]} p={[x, 0.36, z]} c="#374151" />
+      ))}
+    </group>
+  );
+}
+
+/** Fish tank with fish swimming back and forth. */
+function Aquarium() {
+  const fish = useRef<(Group | null)[]>([]);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (still) return;
+    const t = clock.elapsedTime;
+    fish.current.forEach((f, i) => {
+      if (!f) return;
+      const speed = 0.25 + (i % 3) * 0.08;
+      const k = Math.sin(t * speed + i * 1.7);
+      f.position.z = k * 0.85;
+      f.position.y = 0.95 + (i % 3) * 0.13 + Math.sin(t * 1.3 + i) * 0.03;
+      // face the way it swims
+      f.rotation.y = Math.cos(t * speed + i * 1.7) > 0 ? 0 : Math.PI;
+    });
+  });
+  const colors = ["#ff8c42", "#ffd166", "#ef476f", "#4cc9f0", "#f72585", "#06d6a0"];
+  return (
+    <group position={[15.675, 0, 12.0]}>
+      <B s={[0.45, 0.7, 2.2]} p={[0, 0.35, 0]} c="#2b2f33" />
+      <B s={[0.4, 0.06, 2.12]} p={[0, 0.73, 0]} c="#d6c7a1" />
+      {[-0.7, -0.2, 0.45, 0.85].map((z, i) => (
+        <mesh key={z} position={[0.02 * i, 0.86, z]}>
+          <coneGeometry args={[0.05, 0.24 + (i % 2) * 0.08, 8]} />
+          <meshStandardMaterial color={i % 2 ? "#2f8f4e" : "#3fae5f"} />
+        </mesh>
+      ))}
+      {colors.map((c, i) => (
+        <group
+          key={c}
+          ref={(g) => {
+            fish.current[i] = g;
+          }}
+          position={[0.06 * ((i % 3) - 1), 1.0, 0]}
+        >
+          <mesh scale={[0.6, 0.8, 1.4]}>
+            <sphereGeometry args={[0.045, 10, 8]} />
+            <meshStandardMaterial color={c} />
+          </mesh>
+          <mesh position={[0, 0, -0.07]} rotation-x={Math.PI / 2}>
+            <coneGeometry args={[0.03, 0.05, 4]} />
+            <meshStandardMaterial color={c} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 1.04, 0]}>
+        <boxGeometry args={[0.42, 0.62, 2.16]} />
+        <meshStandardMaterial color="#7cc7e8" transparent opacity={0.28} depthWrite={false} roughness={0.1} />
+      </mesh>
+      <B s={[0.46, 0.04, 2.22]} p={[0, 1.37, 0]} c="#111827" />
+    </group>
+  );
+}
+
+/** Reclining nap chair; the sitter faces +z. */
+function Recliner({ p, color }: { p: V3; color: string }) {
+  return (
+    <group position={p}>
+      <B s={[0.8, 0.34, 0.7]} p={[0, 0.17, -0.05]} c={color} rough={0.85} />
+      <group position={[0, 0.34, -0.36]} rotation-x={-0.4}>
+        <B s={[0.8, 0.78, 0.16]} p={[0, 0.38, 0]} c={color} rough={0.85} />
+      </group>
+      <B s={[0.7, 0.14, 0.42]} p={[0, 0.26, 0.5]} c={color} rough={0.85} />
+      {[-0.4, 0.4].map((x) => (
+        <B key={x} s={[0.1, 0.18, 0.66]} p={[x, 0.43, -0.05]} c="#2b2f33" />
+      ))}
+    </group>
+  );
+}
+
+function NapCorner({ decor }: { decor: FloorDecor }) {
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      {decor.items.aquarium && <Aquarium />}
+      <Recliner p={[13.5, 0, 14.6]} color="#5b7c99" />
+      <Recliner p={[14.9, 0, 14.6]} color="#9a6b8f" />
+      <group position={[14.2, 0, 14.65]}>
+        <mesh position={[0, 0.25, 0]}>
+          <cylinderGeometry args={[0.16, 0.16, 0.5, 16]} />
+          <meshStandardMaterial color="#e5e7eb" />
+        </mesh>
+        {decor.items.lamps && (
+          <group position={[0, 0.5, 0]}>
+            <mesh position={[0, 0.12, 0]}>
+              <cylinderGeometry args={[0.015, 0.03, 0.24, 8]} />
+              <meshStandardMaterial color="#6b7280" />
+            </mesh>
+            <mesh position={[0, 0.28, 0]}>
+              <cylinderGeometry args={[0.07, 0.11, 0.12, 16, 1, true]} />
+              <meshStandardMaterial color="#f6ead2" side={DoubleSide} emissive="#ffcf8a" emissiveIntensity={glow ? 0.9 : 0} />
+            </mesh>
+          </group>
+        )}
+      </group>
+    </group>
+  );
+}
+
+function BarStool({ p }: { p: V3 }) {
+  return (
+    <group position={p}>
+      <mesh position={[0, 0.34, 0]}>
+        <cylinderGeometry args={[0.025, 0.025, 0.66, 8]} />
+        <meshStandardMaterial color="#6b7280" metalness={0.6} />
+      </mesh>
+      <mesh position={[0, 0.68, 0]} castShadow>
+        <cylinderGeometry args={[0.17, 0.17, 0.06, 16]} />
+        <meshStandardMaterial color="#2fa39b" />
+      </mesh>
+    </group>
+  );
+}
+
+function BistroTable({ x }: { x: number }) {
+  return (
+    <group>
+      <group position={[x, 0, 14.5]}>
+        <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[0.4, 0.4, 0.04, 28]} />
+          <meshStandardMaterial color="#f5f5f4" />
+        </mesh>
+        <mesh position={[0, 0.37, 0]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.74, 8]} />
+          <meshStandardMaterial color="#2b2f33" />
+        </mesh>
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[0.22, 0.22, 0.04, 16]} />
+          <meshStandardMaterial color="#2b2f33" />
+        </mesh>
+        <mesh position={[0.08, 0.81, -0.05]}>
+          <cylinderGeometry args={[0.04, 0.035, 0.09, 12]} />
+          <meshStandardMaterial color="#ffffff" />
+        </mesh>
+      </group>
+      <WoodChair p={[x - 0.68, 0, 14.5]} r={-Math.PI / 2} />
+      <WoodChair p={[x + 0.68, 0, 14.5]} r={Math.PI / 2} />
+    </group>
+  );
+}
+
+const LIGHT_POLES: [number, number][] = [
+  [-3.1, 13.55],
+  [4.0, 13.55],
+  [12.55, 13.55],
+  [-3.1, 15.85],
+  [4.0, 15.85],
+  [12.55, 15.85],
+];
+
+/** Festoon lights strung between poles around the café. */
+function StringLights({ glow }: { glow: boolean }) {
+  const bulbs = useRef<InstancedMesh>(null);
+  const points = useMemo(() => {
+    const out: V3[] = [];
+    for (const z of [13.55, 15.85]) {
+      for (const [a, b] of [
+        [-3.1, 4.0],
+        [4.0, 12.55],
+      ]) {
+        for (let i = 1; i < 14; i++) {
+          const k = i / 14;
+          out.push([a + (b - a) * k, 2.3 - Math.sin(k * Math.PI) * 0.35, z]);
+        }
+      }
+    }
+    return out;
+  }, []);
+  useLayoutEffect(() => {
+    const m = bulbs.current;
+    if (!m) return;
+    const o = new Object3D();
+    points.forEach((p, i) => {
+      o.position.set(...p);
+      o.updateMatrix();
+      m.setMatrixAt(i, o.matrix);
+    });
+    m.instanceMatrix.needsUpdate = true;
+  }, [points]);
+  return (
+    <group>
+      {LIGHT_POLES.map(([x, z]) => (
+        <mesh key={`${x}${z}`} position={[x, 1.2, z]}>
+          <cylinderGeometry args={[0.03, 0.04, 2.4, 8]} />
+          <meshStandardMaterial color="#2b2f33" />
+        </mesh>
+      ))}
+      <instancedMesh ref={bulbs} args={[undefined, undefined, points.length]}>
+        <sphereGeometry args={[0.05, 10, 8]} />
+        <meshBasicMaterial color={glow ? "#ffd58a" : "#fff6e0"} toneMapped={false} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+function Cafe({ decor }: { decor: FloorDecor }) {
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      {decor.items.rugs && <Rug x0={1.6} x1={9.2} z0={13.75} z1={15.3} color={decor.accent} />}
+      {/* coffee bar */}
+      <B s={[3.0, 1.0, 0.6]} p={[-1.1, 0.5, 15.4]} c="#3b2f2a" />
+      <B s={[3.1, 0.05, 0.7]} p={[-1.1, 1.025, 15.4]} c="#f5f5f4" rough={0.3} />
+      <B s={[0.32, 0.38, 0.3]} p={[-1.9, 1.24, 15.45]} c="#9ca3af" metal={0.6} rough={0.3} />
+      <Steam p={[-1.9, 1.48, 15.35]} />
+      <mesh position={[-0.3, 1.2, 15.45]}>
+        <boxGeometry args={[0.7, 0.3, 0.4]} />
+        <meshStandardMaterial color="#e0f2fe" transparent opacity={0.45} />
+      </mesh>
+      {[-0.5, -0.3, -0.1].map((x, i) => (
+        <mesh key={x} position={[x, 1.1, 15.45]}>
+          <sphereGeometry args={[0.06, 10, 8]} />
+          <meshStandardMaterial color={["#d4a373", "#e9c46a", "#bc6c25"][i]} />
+        </mesh>
+      ))}
+      <BarStool p={[-0.9, 0, 14.75]} />
+      <BarStool p={[-0.1, 0, 14.75]} />
+      {[2.6, 5.4, 8.2].map((x) => (
+        <BistroTable key={x} x={x} />
+      ))}
+      {decor.items.plants && <Planter p={[10.6, 0, 15.72]} len={2.6} />}
+      {decor.items.stringLights && <StringLights glow={glow} />}
+    </group>
+  );
+}
+
+function Hall({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
+  const floor = useDisposable(() => hallFloorTexture(decor.floor), `hall-${decor.floor}`);
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      <Floor x0={FLOOR.x0} x1={FLOOR.x1} z0={WORKSPACE.z0} z1={WORKSPACE.z1} map={floor} />
+      <Library decor={decor} sky={sky} />
+      <Wellness decor={decor} />
+      <PhoneBooth z={11.85} accent={decor.accent} glow={glow} />
+      <PhoneBooth z={13.55} accent={decor.accent} glow={glow} />
+      <PrintStation />
+      <Breakout decor={decor} />
+      <PingPongTable />
+      <NapCorner decor={decor} />
+      <Cafe decor={decor} />
+      {decor.items.plants && (
+        <group>
+          <PalmPlant p={[-3.95, 0, 15.45]} s={1.1} />
+          <PalmPlant p={[15.55, 0, 15.45]} />
+          <PalmPlant p={[-3.95, 0, 5.75]} s={0.9} />
+        </group>
+      )}
+      {decor.items.art && <Art p={[-7.91, 1.55, 15.0]} r={Math.PI / 2} seed={19} w={0.8} h={0.6} />}
+    </group>
+  );
+}
+
+function neonTexture(text = "GAME ON", glow = "#f0abfc") {
   const c = document.createElement("canvas");
   c.width = 512;
   c.height = 128;
   const g = c.getContext("2d")!;
-  g.font = '800 84px system-ui, "Segoe UI", sans-serif';
+  // shrink long names so they still fit the sign
+  let size = 84;
+  g.font = `800 ${size}px system-ui, "Segoe UI", "Noto Sans Thai", sans-serif`;
+  while (size > 30 && g.measureText(text).width > 470) {
+    size -= 4;
+    g.font = `800 ${size}px system-ui, "Segoe UI", "Noto Sans Thai", sans-serif`;
+  }
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.shadowColor = "#f0abfc";
+  g.shadowColor = glow;
   g.shadowBlur = 24;
   g.fillStyle = "#fdf4ff";
-  g.fillText("GAME ON", 256, 68);
+  g.fillText(text, 256, 68);
   return finish(c, [1, 1]);
 }
 
@@ -796,9 +1359,9 @@ function ServerRoom() {
   );
 }
 
-/** Everything that never changes: slab, floors, walls, rooms and furniture. */
-export const OfficeFloor = memo(function OfficeFloor() {
-  const sky = useDisposable(skyTexture, "sky");
+/** Slab, floors, walls, rooms and furniture. Re-renders only when the decoration settings change. */
+export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDecor }) {
+  const sky = useDisposable(() => skyTexture(decor.phase), `sky-${decor.phase}`);
   const { x0, x1, z0, z1 } = FLOOR;
   return (
     <group>
@@ -811,7 +1374,7 @@ export const OfficeFloor = memo(function OfficeFloor() {
       <Lounge sky={sky} />
       <GameRoom />
       <ServerRoom />
-      <Workspace sky={sky} />
+      <Hall decor={decor} sky={sky} />
 
       {/* exterior walls: full height at the back, cut low at the front */}
       <Wall a={[x0, z0]} b={[x1, z0]} h={EXT_H} />
@@ -834,9 +1397,10 @@ export const OfficeFloor = memo(function OfficeFloor() {
       <GlassWall x0={SERVER.x0} x1={13.4} z={CORRIDOR.z0} />
       <Door x0={13.4} x1={14.3} z={CORRIDOR.z0} />
       <GlassWall x0={14.3} x1={SERVER.x1} z={CORRIDOR.z0} />
-      {/* low partition between the corridor and the open workspace */}
+      {/* low partition between the corridor and the hall, with four ways through */}
       <Wall a={[x0, CORRIDOR.z1]} b={[-5.6, CORRIDOR.z1]} h={1.0} />
-      <Wall a={[-4.6, CORRIDOR.z1]} b={[4.6, CORRIDOR.z1]} h={1.0} />
+      <Wall a={[-4.6, CORRIDOR.z1]} b={[-3.3, CORRIDOR.z1]} h={1.0} />
+      <Wall a={[-2.3, CORRIDOR.z1]} b={[4.6, CORRIDOR.z1]} h={1.0} />
       <Wall a={[5.6, CORRIDOR.z1]} b={[13.4, CORRIDOR.z1]} h={1.0} />
       <Wall a={[14.4, CORRIDOR.z1]} b={[x1, CORRIDOR.z1]} h={1.0} />
     </group>
@@ -922,7 +1486,8 @@ function Beacons() {
   });
   const spots: V3[] = [
     [-7.9, 2.2, -1.5],
-    [-7.9, 2.2, 3.5],
+    [-7.9, 2.2, 5.6],
+    [-7.9, 2.2, 14.3],
     [0, 2.5, FLOOR.z0 + 0.1],
     [7, 2.5, FLOOR.z0 + 0.1],
     [14, 2.5, FLOOR.z0 + 0.1],
@@ -952,12 +1517,12 @@ function PrinterWarning() {
     if (lamp.current) lamp.current.visible = Math.sin(clock.elapsedTime * 10) > 0;
   });
   return (
-    <group position={[FLOOR.x0 + 0.5, 0, 1.6]}>
-      <mesh ref={lamp} position={[0.15, 0.82, 0.2]}>
+    <group position={[-5.0, 0, 15.45]}>
+      <mesh ref={lamp} position={[0.15, 0.82, -0.2]}>
         <sphereGeometry args={[0.05, 10, 10]} />
         <meshBasicMaterial color="#ef4444" toneMapped={false} />
       </mesh>
-      <B s={[0.3, 0.01, 0.38]} p={[0, 0.77, 0.12]} c="#ffffff" r={0.3} />
+      <B s={[0.3, 0.01, 0.38]} p={[0, 0.77, -0.12]} c="#ffffff" r={0.3} />
     </group>
   );
 }

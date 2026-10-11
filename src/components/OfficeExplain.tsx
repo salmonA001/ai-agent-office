@@ -66,6 +66,7 @@ const LEGEND: [string, Key][] = [
   ["🚶", "guide.wander"],
   ["💬", "guide.bubbles"],
   ["👆", "guide.click"],
+  ["🎨", "guide.customize"],
 ];
 
 /** "How to read this office" button with a short legend. */

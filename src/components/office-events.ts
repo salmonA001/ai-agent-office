@@ -8,7 +8,7 @@ import { EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
  * and the UI subscribes to the store below.
  */
 
-export type EventKind = "pizza" | "drill" | "birthday" | "printer" | "server" | "plants" | "arcade" | "coffee";
+export type EventKind = "pizza" | "drill" | "birthday" | "printer" | "server" | "plants" | "arcade" | "coffee" | "yoga";
 
 export type ActiveEvent = {
   id: number;
@@ -276,6 +276,20 @@ const EVENTS: EventDef[] = [
     }),
   },
   {
+    kind: "yoga",
+    icon: "🧘",
+    seconds: 30,
+    xp: 10,
+    plan: (idle) => ({
+      orders: gather(idle, [
+        ...["yoga-1", "yoga-2", "stretch"].map((id) => fix(spotById(id), "Yoga class!", ["🧘", "😌"], "at the yoga class")),
+        ...EVENT_SPOTS.yoga,
+      ]),
+      dwell: 4,
+      text: { key: "ge.yoga.text" },
+    }),
+  },
+  {
     kind: "coffee",
     icon: "☕",
     seconds: 18,
@@ -290,6 +304,12 @@ const EVENTS: EventDef[] = [
 ];
 
 let nextAt = 20; // scene seconds until the first event
+let autoEvents = true;
+
+/** Switch the random events on or off (the buttons in the events panel still work). */
+export function setAutoEvents(on: boolean) {
+  autoEvents = on;
+}
 let endsAt = 0;
 let pending: EventKind | "random" | null = null;
 let eventId = 0;
@@ -361,7 +381,7 @@ export function tickEvents(t: number) {
   }
   if (t >= nextAt && walkers.size) {
     nextAt = t + 30;
-    begin(pick(EVENTS), t);
+    if (autoEvents) begin(pick(EVENTS), t);
   }
 }
 
