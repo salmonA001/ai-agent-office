@@ -31,6 +31,14 @@ export async function POST(request: Request) {
     return Response.json({ subtasks });
   } catch (error) {
     console.error("plan failed", error);
-    return Response.json({ error: "The manager could not plan this task." }, { status: 502 });
+    const gatewayBlocked = (error as { statusCode?: number }).statusCode === 403;
+    return Response.json(
+      {
+        error: gatewayBlocked
+          ? "The AI Gateway rejected the request. The Vercel account owner needs to enable AI Gateway (Vercel dashboard → AI Gateway)."
+          : "The manager could not plan this task.",
+      },
+      { status: 502 },
+    );
   }
 }
