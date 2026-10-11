@@ -15,11 +15,12 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import type { Agent } from "@/lib/agents";
 import { type Key, LANGS, useI18n } from "@/lib/i18n";
 import { setProfileName, useProfileName } from "@/lib/profile";
 import type { Engine, Task, TaskStatus } from "@/lib/run-task";
+import { type Motion, MOTIONS, setMotion, useDeviceReducedMotion, useMotion } from "@/lib/motion";
 import { THEMES, useTheme } from "@/lib/theme";
 import { countWords } from "@/lib/words";
 import { useGame } from "./office-events";
@@ -98,6 +99,7 @@ function SidebarBody({
   onCollapse,
   ...props
 }: SidebarProps & { collapsed: boolean; onCollapse?: () => void }) {
+  const uid = useId();
   const { t } = useI18n();
   const name = useProfileName();
   const index = TABS.findIndex((x) => x.id === props.tab);
@@ -185,9 +187,9 @@ function SidebarBody({
                   key={id}
                   role="tab"
                   type="button"
-                  id={`tab-${id}`}
+                  id={`${uid}-tab-${id}`}
                   aria-selected={props.tab === id}
-                  aria-controls={`panel-${id}`}
+                  aria-controls={`${uid}-panel-${id}`}
                   onClick={() => props.onTab(id)}
                   className={`relative z-10 flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[11px] font-semibold transition-colors duration-300 ${
                     props.tab === id ? "text-on-accent" : "text-muted hover:text-ink"
@@ -203,8 +205,8 @@ function SidebarBody({
           <div
             key={props.tab}
             role="tabpanel"
-            id={`panel-${props.tab}`}
-            aria-labelledby={`tab-${props.tab}`}
+            id={`${uid}-panel-${props.tab}`}
+            aria-labelledby={`${uid}-tab-${props.tab}`}
             className="enter-fade min-h-0 flex-1 overflow-y-auto px-4 py-4"
           >
             {props.tab === "progress" && <ProgressTab {...props} />}
@@ -432,6 +434,7 @@ function RecentTab({ tasks, selectedId, onSelectTask }: SidebarProps) {
 // ---------- Account ----------
 
 function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onReset }: SidebarProps) {
+  const uid = useId();
   const { t } = useI18n();
   const name = useProfileName();
   const game = useGame();
@@ -447,8 +450,8 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="enter rounded-2xl border border-line bg-well p-4" aria-labelledby="profile-h">
-        <h3 id="profile-h" className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+      <section className="enter rounded-2xl border border-line bg-well p-4" aria-labelledby={`${uid}-profile`}>
+        <h3 id={`${uid}-profile`} className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
           {t("account.profile")}
         </h3>
         <div className="flex items-center gap-3">
@@ -468,8 +471,8 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
         <p className="mt-2 text-[11px] text-muted">{t("account.local")}</p>
       </section>
 
-      <section aria-labelledby="stats-h">
-        <h3 id="stats-h" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+      <section aria-labelledby={`${uid}-stats`}>
+        <h3 id={`${uid}-stats`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
           {t("account.stats")}
         </h3>
         <div className="grid grid-cols-2 gap-2">
@@ -482,9 +485,10 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
 
       <LanguagePicker />
       <ThemePicker />
+      <MotionPicker />
 
-      <section className="enter" aria-labelledby="engine-h" style={{ ["--i" as string]: 6 }}>
-        <h3 id="engine-h" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+      <section className="enter" aria-labelledby={`${uid}-engine`} style={{ ["--i" as string]: 6 }}>
+        <h3 id={`${uid}-engine`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
           {t("account.engine")}
         </h3>
         <p className="inline-flex items-center gap-2 rounded-full border border-line bg-well px-3 py-1 text-xs font-semibold text-accent">
@@ -544,13 +548,14 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
 }
 
 function LanguagePicker() {
+  const uid = useId();
   const { lang, setLang, t } = useI18n();
   return (
-    <section className="enter" aria-labelledby="lang-h" style={{ ["--i" as string]: 5 }}>
-      <h3 id="lang-h" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+    <section className="enter" aria-labelledby={`${uid}-lang`} style={{ ["--i" as string]: 5 }}>
+      <h3 id={`${uid}-lang`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         {t("account.language")}
       </h3>
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby="lang-h">
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby={`${uid}-lang`}>
         {LANGS.map((l) => (
           <button
             key={l.id}
@@ -569,14 +574,15 @@ function LanguagePicker() {
 }
 
 function ThemePicker() {
+  const uid = useId();
   const { theme, setTheme } = useTheme();
   const { t } = useI18n();
   return (
-    <section className="enter" aria-labelledby="theme-h" style={{ ["--i" as string]: 5 }}>
-      <h3 id="theme-h" className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+    <section className="enter" aria-labelledby={`${uid}-theme`} style={{ ["--i" as string]: 5 }}>
+      <h3 id={`${uid}-theme`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         {t("account.theme")}
       </h3>
-      <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-labelledby="theme-h">
+      <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-labelledby={`${uid}-theme`}>
         {THEMES.map((th) => (
           <button
             key={th.id}
@@ -599,6 +605,36 @@ function ThemePicker() {
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function MotionPicker() {
+  const uid = useId();
+  const { t } = useI18n();
+  const motion = useMotion();
+  const deviceReduced = useDeviceReducedMotion();
+  return (
+    <section className="enter" aria-labelledby={`${uid}-motion`} style={{ ["--i" as string]: 5 }}>
+      <h3 id={`${uid}-motion`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+        {t("account.motion")}
+      </h3>
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby={`${uid}-motion`}>
+        {MOTIONS.map((m: Motion) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={motion === m}
+            onClick={() => setMotion(m)}
+            className={`press min-h-10 rounded-lg px-1 text-xs font-semibold ${motion === m ? "bg-accent text-on-accent" : "text-muted hover:text-ink"}`}
+          >
+            {t(`motion.${m}` as Key)}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-muted">{t(`motion.hint.${motion}` as Key)}</p>
+      {deviceReduced && motion === "system" && <p className="mt-1 text-[11px] text-error">{t("motion.deviceOff")}</p>}
     </section>
   );
 }

@@ -31,6 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       data-theme="matrix"
+      data-motion="full"
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${plexThai.variable} h-full antialiased`}
     >

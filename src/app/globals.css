@@ -383,10 +383,17 @@ summary {
   cursor: pointer;
 }
 
+/* Motion setting (Account tab): "reduced" always stops animation; "system" follows the device. */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html[data-motion="system"] *,
+  html[data-motion="system"] *::before,
+  html[data-motion="system"] *::after {
     animation: none !important;
     transition: none !important;
   }

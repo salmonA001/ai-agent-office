@@ -20,7 +20,8 @@ import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { setAgentActivity } from "./agent-activity";
 import { currentEventKind, tickEvents, useGame } from "./office-events";
 import { type Home, isPresent, type P2, registerWalker, type Spot, type WalkPhase, Wanderer } from "./office-nav";
-import { clip, hash, reducedMotion, useDisposable } from "./scene-utils";
+import { useStill } from "@/lib/motion";
+import { clip, hash, useDisposable } from "./scene-utils";
 
 export type { BoardLine } from "./OfficeFloor";
 export type DeskState = { working: string[]; lastDoneAt?: number; screen: ScreenState };
@@ -342,7 +343,7 @@ function Mochi({
   const eyes = useRef<Group>(null);
   const party = useRef<Group>(null);
   const feet = useRef<(Mesh | null)[]>([]);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
 
   useFrame(({ clock }, delta) => {
     if (!root.current || !head.current || !left.current || !right.current || !eyes.current || !party.current) return;
@@ -649,7 +650,7 @@ function Workstation({ screen, name, seed, lang }: { screen: ScreenState; name: 
   const spinner = useRef<Group>(null);
   const flash = useRef<Mesh>(null);
   const led = useRef<Mesh>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   const working = screen.mode === "working";
   const waiting = screen.mode === "planning" || screen.mode === "queued";
 
@@ -834,7 +835,7 @@ function managerTexture(state: ManagerState, done: number, total: number, lang: 
 function ManagerMonitor({ state, done, total, lang }: { state: ManagerState; done: number; total: number; lang: Lang }) {
   const tex = useDisposable(() => managerTexture(state, done, total, lang), `${state}|${done}|${total}|${lang}`);
   const bar = useRef<Mesh>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   const busy = state === "planning" || state === "merging";
   useFrame(({ clock }) => {
     if (!bar.current) return;
@@ -873,7 +874,7 @@ function ManagerMonitor({ state, done, total, lang }: { state: ManagerState; don
 /** Little glowing orbs circling the manager's head while it thinks. */
 function ThinkingOrbs({ active }: { active: boolean }) {
   const ref = useRef<Group>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     if (!ref.current) return;
     ref.current.visible = active;
@@ -1008,7 +1009,7 @@ function Emote({ pool, seed, y = 1.25 }: { pool: string[]; seed: number; y?: num
     live.current = pool;
   });
   const timing = useRef({ next: 2 + (seed % 5), shownAt: -99 });
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     const spr = sprite.current;
     const mat = material.current;
@@ -1223,7 +1224,7 @@ function Presenter({ state, board, lang }: { state: ManagerState; board: BoardLi
 /** Walks Max back and forth in front of the projector while `pacing`, otherwise stands at his spot. */
 function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNode }) {
   const ref = useRef<Group>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }, delta) => {
     const g = ref.current;
     if (!g) return;
@@ -1302,7 +1303,7 @@ export default function OfficeScene({
   // Agents walk out along the aisle behind their row to a side column, then into the office.
   const sideX = Math.max(4.6, rowHalf + 0.95);
   // desks sit in the middle of the open workspace, between the ping-pong table and the breakout corner
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   const canWander = !still && sideX <= 8.6;
 
   return (

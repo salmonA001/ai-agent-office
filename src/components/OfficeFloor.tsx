@@ -1,11 +1,12 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { memo, useRef, useState } from "react";
+import { memo, useRef } from "react";
 import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
 import { type Lang, translate } from "@/lib/i18n";
 import { currentEventKind } from "./office-events";
-import { clip, reducedMotion, seeded, useDisposable } from "./scene-utils";
+import { useStill } from "@/lib/motion";
+import { clip, seeded, useDisposable } from "./scene-utils";
 
 export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
 type V3 = [number, number, number];
@@ -380,7 +381,7 @@ function Armchair({ p, r = 0 }: { p: V3; r?: number }) {
 
 export function PalmPlant({ p, s = 1 }: { p: V3; s?: number }) {
   const leaves = useRef<Group>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     if (!leaves.current || still) return;
     const t = clock.elapsedTime + p[0];
@@ -414,7 +415,7 @@ export function PalmPlant({ p, s = 1 }: { p: V3; s?: number }) {
 /** Wisps of steam rising from the coffee machine. */
 function Steam({ p }: { p: V3 }) {
   const puffs = useRef<(Group | null)[]>([]);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     if (still) return;
     puffs.current.forEach((g, i) => {
@@ -684,7 +685,7 @@ function neonTexture() {
 /** Arcade cabinet whose screen flickers through colours. */
 function Arcade({ p, hue }: { p: V3; hue: number }) {
   const screen = useRef<MeshBasicMaterial>(null);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     if (!screen.current || still) return;
     const t = clock.elapsedTime * (currentEventKind() === "arcade" ? 4 : 1.2) + hue;
@@ -749,7 +750,7 @@ function GameRoom() {
 /** Server racks with blinking LEDs; they flash red during a server alarm. */
 function ServerRack({ p, seed }: { p: V3; seed: number }) {
   const leds = useRef<(MeshBasicMaterial | null)[]>([]);
-  const [still] = useState(reducedMotion);
+  const still = useStill();
   useFrame(({ clock }) => {
     const alarm = currentEventKind() === "server";
     const t = clock.elapsedTime;

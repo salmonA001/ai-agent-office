@@ -15,7 +15,7 @@ export type ThemeId = (typeof THEMES)[number]["id"];
 const THEME_KEY = "office.theme";
 
 /** Runs before React hydrates so the saved theme and language apply without a flash. */
-export const PREPAINT_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");if(t)d.dataset.theme=t;var l=localStorage.getItem("office.lang");if(l)d.lang=l;}catch(e){}`;
+export const PREPAINT_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");if(t)d.dataset.theme=t;var l=localStorage.getItem("office.lang");if(l)d.lang=l;d.dataset.motion=localStorage.getItem("office.motion")||"full";}catch(e){}`;
 
 type Ctx = { theme: ThemeId; setTheme: (t: ThemeId) => void };
 const ThemeContext = createContext<Ctx>({ theme: "matrix", setTheme: () => {} });

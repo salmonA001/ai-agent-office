@@ -12,7 +12,8 @@ Hand any job to a team of AI agents. The **manager** splits your task into paral
 - **Sidebar** with three tabs: **Progress** (live progress bars, stage, timer and each agent's part for every running task), **Recent** (searchable task history) and **Account** (local profile name, stats, language, theme, AI engine and access code, reset). Collapses to an icon rail on desktop, slides in as a drawer on phones.
 - **English / ไทย**: the whole interface, the task timeline, office events, 3D speech bubbles and PC screens switch language, and agents answer in Thai when Thai is selected.
 - **5 themes** (Matrix, Midnight, Sunset, Ocean, Daylight), each checked for WCAG AA contrast; smooth colour cross-fade when switching.
-- **Motion everywhere**: staggered entrances, hover lift, press feedback, sliding tab highlight, pop-in status changes, shimmering progress bars; all disabled when the OS asks for reduced motion.
+- **Motion everywhere**: staggered entrances, hover lift, press feedback, sliding tab highlight, pop-in status changes, shimmering progress bars. **Account → Motion** picks *Full* (default), *Follow device* or *Reduced*. Full is the default because Windows turns on "reduce motion" whenever its *Animation effects* setting is off, which used to freeze the agents on many PCs.
+- **Full screen**: the button on the 3D office (or the **F** key) fills the screen with the office; Esc exits. Browsers without element full screen, like iPhone Safari, get a full-window view instead.
 - Run several tasks at once; the office floor shows who is working on what.
 - Hire your own agents (name, role, instructions) for custom work.
 - Cancel, re-run, copy results. Task history and agents are kept in your browser.

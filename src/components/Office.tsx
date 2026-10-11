@@ -5,6 +5,8 @@ import {
   CheckIcon,
   CloudIcon,
   CopyIcon,
+  CornersInIcon,
+  CornersOutIcon,
   CpuIcon,
   ListIcon,
   PaperPlaneRightIcon,
@@ -95,6 +97,104 @@ function StatusPill({ status }: { status: TaskStatus | "queued" }) {
   );
 }
 
+/**
+ * Full screen for the 3D office. Uses the browser's full-screen mode where it exists and falls back
+ * to a fixed overlay (iPhone Safari can't put an element in full screen).
+ */
+function useStageFullscreen() {
+  const stage = useRef<HTMLDivElement>(null);
+  const [native, setNative] = useState(false);
+  const [pseudo, setPseudo] = useState(false);
+  const full = native || pseudo;
+
+  useEffect(() => {
+    const sync = () => {
+      const on = stage.current !== null && document.fullscreenElement === stage.current;
+      setNative(on);
+      // a slow native request can win after the overlay fallback opened; keep just one mode
+      if (on) setPseudo(false);
+    };
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!pseudo) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [pseudo]);
+
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    if (pseudo) {
+      setPseudo(false);
+      return;
+    }
+    const el = stage.current;
+    if (el && document.fullscreenEnabled && typeof el.requestFullscreen === "function") {
+      let settled = false;
+      el.requestFullscreen({ navigationUI: "hide" }).then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+          setPseudo(true);
+        },
+      );
+      // some in-app and embedded browsers never answer the request
+      window.setTimeout(() => {
+        if (!settled && !document.fullscreenElement) setPseudo(true);
+      }, 700);
+    } else {
+      setPseudo(true);
+    }
+  }, [pseudo]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && pseudo) {
+        setPseudo(false);
+        return;
+      }
+      if (e.key !== "f" && e.key !== "F") return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pseudo, toggle]);
+
+  return { stage, full, pseudo, toggle };
+}
+
+function FullscreenButton({ full, onToggle }: { full: boolean; onToggle: () => void }) {
+  const { t } = useI18n();
+  const label = full ? t("full.exit") : t("full.enter");
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={full}
+      title={`${label} (F)`}
+      className="glass-strong press inline-flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold text-accent"
+    >
+      {full ? <CornersInIcon size={16} weight="bold" aria-hidden /> : <CornersOutIcon size={16} weight="bold" aria-hidden />}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
 function Markdown({ children }: { children: string }) {
   return (
     <div className="md text-sm">
@@ -128,6 +228,7 @@ export function Office() {
   const [cloudReady, setCloudReady] = useState(false);
   const engineState = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
   const controllers = useRef(new Map<string, AbortController>());
+  const { stage, full: isFull, pseudo: pseudoFull, toggle: toggleFull } = useStageFullscreen();
 
   useEffect(() => {
     // Restore after hydration; tasks that were running when the page closed can't resume.
@@ -396,7 +497,12 @@ export function Office() {
           )}
 
           {/* Office floor */}
-          <section aria-labelledby="floor-heading" className="glass enter rounded-2xl p-4" style={{ ["--i" as string]: 0 }}>
+          {/* glass blur and the entrance transform would trap the fixed full-screen overlay, so drop them while it's open */}
+          <section
+            aria-labelledby="floor-heading"
+            className={`${pseudoFull ? "" : "glass enter"} rounded-2xl p-4`}
+            style={{ ["--i" as string]: 0 }}
+          >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 id="floor-heading" className="font-semibold">
                 {t("floor.title")}
@@ -421,8 +527,19 @@ export function Office() {
               />
             )}
 
-            <div className="relative mb-4">
-              <div className="relative h-[340px] overflow-hidden rounded-xl bg-surface ring-1 ring-accent/20 sm:h-[600px]">
+            <div
+              ref={stage}
+              className={
+                isFull
+                  ? "fixed inset-0 z-[70] flex flex-col bg-surface p-2 sm:p-3"
+                  : "relative mb-4"
+              }
+            >
+              <div
+                className={`relative overflow-hidden rounded-xl bg-surface ring-1 ring-accent/20 ${
+                  isFull ? "min-h-0 flex-1" : "h-[340px] sm:h-[600px]"
+                }`}
+              >
                 <OfficeScene
                   agents={agents}
                   desks={desks}
@@ -439,7 +556,8 @@ export function Office() {
                   <div className="pointer-events-auto">
                     <Stepper active={stepIndex(manager, Boolean(selected && selected.status === "done"))} />
                   </div>
-                  <div className="pointer-events-auto">
+                  <div className="pointer-events-auto flex items-start gap-2">
+                    <FullscreenButton full={isFull} onToggle={toggleFull} />
                     <HowItWorks
                       open={guideOpen}
                       onToggle={() => {
@@ -461,7 +579,13 @@ export function Office() {
                 </div>
               </div>
               {focusAgent && (
-                <div className="mt-3 flex justify-center sm:absolute sm:bottom-2 sm:right-2 sm:mt-0 sm:max-h-[calc(100%-6rem)] sm:justify-end">
+                <div
+                  className={
+                    isFull
+                      ? "absolute inset-x-4 bottom-4 flex max-h-[55%] justify-center sm:inset-x-auto sm:right-5 sm:bottom-5 sm:max-h-[calc(100%-7rem)] sm:justify-end"
+                      : "mt-3 flex justify-center sm:absolute sm:bottom-2 sm:right-2 sm:mt-0 sm:max-h-[calc(100%-6rem)] sm:justify-end"
+                  }
+                >
                   <AgentPanel agent={focusAgent} tasks={tasks} onClose={() => setFocusId(null)} />
                 </div>
               )}
