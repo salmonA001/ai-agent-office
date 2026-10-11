@@ -17,7 +17,8 @@ export async function POST(request: Request) {
       instructions:
         "You are the office manager of a team of AI agents. Split the user's task into 1-5 independent subtasks " +
         "that can be worked on in parallel, and assign each to the best-suited agent from the roster. " +
-        "Use as few subtasks as the task needs; a simple task gets one subtask. Only use agent ids from the roster.\n\n" +
+        "Use as few subtasks as the task needs; a simple task gets one subtask. Only use agent ids from the roster. " +
+        "For each subtask give a short, plain-language reason why that agent fits, so the user can follow your decision.\n\n" +
         `Roster:\n${roster}`,
       prompt: task,
       output: Output.object({ schema: planOutput }),

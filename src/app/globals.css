@@ -30,6 +30,15 @@
     inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
+/* Darker glass for panels that sit on top of the bright 3D office */
+@utility glass-strong {
+  background: rgb(4 10 7 / 0.84);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgb(110 231 183 / 0.22);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+}
+
 @utility glow {
   box-shadow: 0 0 24px rgb(52 211 153 / 0.35);
 }

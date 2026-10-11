@@ -7,6 +7,8 @@ Hand any job to a team of AI agents. The **manager** splits your task into paral
 - **3D PCs on every desk** show each agent's real AI output streaming like a terminal (scanline, blinking LED, keys lighting up as they type). While the manager plans, every worker turns to face the meeting room, monitors show spinners, Max presents at the projector and his dashboard sweeps a progress bar.
 - Black + green **glassmorphism** UI.
 - **Works with zero setup**: with no AI key (or when the cloud quota runs out, or a visitor has no access code), agents run on a small model **inside your browser** via WebGPU (Qwen2.5 1.5B, ~1 GB one-time download).
+- **Explainable**: Max gives a plain-language reason for every assignment ("Why Wren: emails are writer work"). Each task has a step-by-step timeline (planned, assigned, started, finished, merged, with word counts and timings). A stage stepper (Assign > Plan > Work > Merge > Done) and a "How to read this" guide sit on the 3D view, a live log shows the latest steps, and clicking any agent shows who they are, what they're doing right now, why they got their job and their live output.
+- **Lively**: emoji emotes float over agents (coffee, ping-pong, naps, ideas), the coffee machine steams, palms sway, a real ping-pong ball rallies when someone's playing, and Max paces in front of the projector while the team works.
 - Run several tasks at once; the office floor shows who is working on what.
 - Hire your own agents (name, role, instructions) for custom work.
 - Cancel, re-run, copy results. Task history and agents are kept in your browser.

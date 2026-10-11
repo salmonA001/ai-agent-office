@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { type Agent, DEFAULT_AGENTS } from "@/lib/agents";
 import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { AgentPanel, AgentStatusText, HowItWorks, Stepper, stepIndex, Ticker, Timeline } from "./OfficeExplain";
 import type { BoardLine, DeskState, ManagerState, ScreenState } from "./OfficeScene";
 
 const OfficeScene = dynamic(() => import("./OfficeScene"), {
@@ -90,6 +91,13 @@ export function Office() {
   const [needCode, setNeedCode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [showHire, setShowHire] = useState(false);
+  // agent whose details are open (click an agent in 3D or its card)
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const selectAgent = useCallback((id: string) => {
+    setGuideOpen(false);
+    setFocusId((cur) => (cur === id ? null : id));
+  }, []);
   const [engine, setEngine] = useState<Engine | null>(null);
   const [cloudReady, setCloudReady] = useState(false);
   const engineState = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
@@ -142,6 +150,7 @@ export function Office() {
         subtasks: [],
         final: "",
         engine: engine ?? "browser",
+        events: [{ at: Date.now(), kind: "received", text: "You assigned the task. Max picks it up." }],
       };
       const controller = new AbortController();
       controllers.current.set(task.id, controller);
@@ -180,6 +189,7 @@ export function Office() {
   };
 
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
+  const focusAgent = agents.find((a) => a.id === focusId) ?? null;
   const running = tasks.filter((t) => ACTIVE.includes(t.status));
 
   // What each agent is doing right now, across every running task, and what its PC screen shows.
@@ -316,8 +326,40 @@ export function Office() {
           />
         )}
 
-        <div className="mb-4 h-[340px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[580px]">
-          <OfficeScene agents={agents} desks={desks} manager={manager} board={board} />
+        <div className="relative mb-4">
+        <div className="relative h-[340px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[580px]">
+          <OfficeScene
+            agents={agents}
+            desks={desks}
+            manager={manager}
+            board={board}
+            selectedId={focusId}
+            onSelectAgent={selectAgent}
+          />
+          {/* explanations layered over the 3D office */}
+          <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-between gap-2">
+            <div className="pointer-events-auto">
+              <Stepper active={stepIndex(manager, Boolean(selected && selected.status === "done"))} />
+            </div>
+            <div className="pointer-events-auto">
+              <HowItWorks
+                open={guideOpen}
+                onToggle={() => {
+                  setGuideOpen((v) => !v);
+                  setFocusId(null);
+                }}
+              />
+            </div>
+          </div>
+          <div className="pointer-events-none absolute bottom-2 left-2 hidden md:block">
+            <Ticker events={(running[0] ?? selected)?.events ?? []} />
+          </div>
+        </div>
+          {focusAgent && (
+            <div className="mt-3 flex justify-center sm:absolute sm:bottom-2 sm:right-2 sm:mt-0 sm:max-h-[calc(100%-6rem)] sm:justify-end">
+              <AgentPanel agent={focusAgent} tasks={tasks} onClose={() => setFocusId(null)} />
+            </div>
+          )}
         </div>
 
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="Agents">
@@ -328,8 +370,14 @@ export function Office() {
                 key={a.id}
                 className={`relative flex flex-col gap-2 rounded-xl border p-3 ${
                   doing ? "glow border-accent bg-primary/10" : "border-white/10 bg-well"
-                }`}
+                } ${focusId === a.id ? "ring-2 ring-accent" : ""}`}
               >
+                <button
+                  type="button"
+                  onClick={() => selectAgent(a.id)}
+                  aria-pressed={focusId === a.id}
+                  className="flex flex-col gap-2 text-left"
+                >
                 <div className="flex items-center gap-2">
                   <span
                     aria-hidden
@@ -345,8 +393,9 @@ export function Office() {
                   </div>
                 </div>
                 <p className="line-clamp-2 text-xs text-muted">
-                  {doing ? `Working on: ${doing.join(", ")}` : "Available"}
+                  {doing ? `Working on: ${doing.join(", ")}` : <AgentStatusText id={a.id} fallback="Available" />}
                 </p>
+                </button>
                 {a.custom && (
                   <button
                     type="button"
@@ -521,6 +570,12 @@ function TaskView({
                   </div>
                   <StatusPill status={s.status} />
                 </div>
+                {s.reason && (
+                  <p className="rounded-lg border border-accent/20 bg-primary/5 px-2.5 py-1.5 text-xs text-ink/90">
+                    <span className="font-semibold text-accent">Why {agent?.name ?? "this agent"}: </span>
+                    {s.reason}
+                  </p>
+                )}
                 <details className="text-xs text-muted">
                   <summary className="cursor-pointer">Brief</summary>
                   <p className="mt-1 whitespace-pre-wrap">{s.brief}</p>
@@ -537,6 +592,8 @@ function TaskView({
           })}
         </section>
       )}
+
+      <Timeline events={task.events} start={task.createdAt} />
 
       {(task.final || task.status === "synthesizing") && (
         <section aria-labelledby="final-heading" className="glass glow rounded-2xl border-accent/60 p-4">

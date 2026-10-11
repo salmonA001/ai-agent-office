@@ -3,7 +3,7 @@
 import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { memo, useEffect, useRef, useState } from "react";
-import { CanvasTexture, type Group, type Mesh, SRGBColorSpace } from "three";
+import { CanvasTexture, type Group, type Mesh, type Sprite, type SpriteMaterial, SRGBColorSpace } from "three";
 import type { Agent } from "@/lib/agents";
 import {
   type BoardLine,
@@ -15,7 +15,8 @@ import {
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
-import { type Home, type P2, type Spot, type WalkPhase, Wanderer } from "./office-nav";
+import { setAgentActivity } from "./agent-activity";
+import { type Home, isPresent, type P2, type Spot, type WalkPhase, Wanderer } from "./office-nav";
 import { clip, hash, reducedMotion, useDisposable } from "./scene-utils";
 
 export type { BoardLine } from "./OfficeFloor";
@@ -922,13 +923,94 @@ type AvatarProps = {
   seed: number;
   lift: number;
   canWander: boolean;
+  selected: boolean;
+  onSelect?: (id: string) => void;
 };
 
 const ACTIVITY_ACTION: Record<Spot["activity"], Action> = { look: "idle", sip: "sip", play: "play", rest: "idle" };
 
+// ---------- Floating emoji emotes ----------
+
+const emojiTextures = new Map<string, CanvasTexture>();
+
+function emojiTexture(emoji: string) {
+  let tex = emojiTextures.get(emoji);
+  if (!tex) {
+    const c = document.createElement("canvas");
+    c.width = 128;
+    c.height = 128;
+    const g = c.getContext("2d")!;
+    g.font = '92px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(emoji, 64, 70);
+    tex = new CanvasTexture(c);
+    tex.colorSpace = SRGBColorSpace;
+    emojiTextures.set(emoji, tex);
+  }
+  return tex;
+}
+
+/** Every few seconds an emoji from `pool` pops up beside the head, floats and fades. */
+function Emote({ pool, seed, y = 1.25 }: { pool: string[]; seed: number; y?: number }) {
+  const sprite = useRef<Sprite>(null);
+  const material = useRef<SpriteMaterial>(null);
+  const live = useRef(pool);
+  useEffect(() => {
+    live.current = pool;
+  });
+  const timing = useRef({ next: 2 + (seed % 5), shownAt: -99 });
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    const spr = sprite.current;
+    const mat = material.current;
+    if (!spr || !mat || still) return;
+    const t = clock.elapsedTime;
+    const s = timing.current;
+    if (t > s.next && live.current.length) {
+      mat.map = emojiTexture(live.current[Math.floor(Math.random() * live.current.length)]);
+      mat.needsUpdate = true;
+      s.shownAt = t;
+      s.next = t + 5 + Math.random() * 7;
+    }
+    const k = (t - s.shownAt) / 2.2;
+    spr.visible = k < 1;
+    if (k < 1) {
+      spr.position.y = y + k * 0.45;
+      mat.opacity = k < 0.15 ? k / 0.15 : 1 - Math.max(0, (k - 0.6) / 0.4);
+      const size = 0.42 * (k < 0.15 ? 0.6 + (k / 0.15) * 0.4 : 1);
+      spr.scale.set(size, size, 1);
+    }
+  });
+  return (
+    <sprite ref={sprite} position={[0.5, y, 0]} visible={false}>
+      <spriteMaterial ref={material} transparent depthWrite={false} />
+    </sprite>
+  );
+}
+
+function describe(phase: WalkPhase, working: boolean, attentive: boolean, task?: string) {
+  if (phase.kind === "seated") {
+    if (working) return `Typing at their desk${task ? `: "${task}"` : ""}`;
+    if (attentive) return "Watching Max present the plan";
+    return "Sitting at their desk, free for work";
+  }
+  if (phase.kind === "walking") return phase.rushing ? "Rushing back to the desk: work just arrived" : "Strolling around the office";
+  return `${phase.spot.say} ${phase.spot.where}`;
+}
+
+function emotePool(phase: WalkPhase, working: boolean, attentive: boolean) {
+  if (phase.kind === "spot") return phase.spot.emoji;
+  if (phase.kind === "walking") return phase.rushing ? ["❗", "🏃"] : ["🎵", "🙂"];
+  if (working) return ["💡", "⌨️", "🤓", "🧠"];
+  if (attentive) return ["👂", "📝", "🤔"];
+  return ["🙂", "🎵", "😊"];
+}
+
 function AgentAvatarImpl(props: AvatarProps) {
-  const { agent, look, home, working, attentive, bubble, lastDoneAt, seed, lift } = props;
+  const { agent, look, home, working, attentive, bubble, lastDoneAt, seed, lift, selected, onSelect } = props;
   const group = useRef<Group>(null);
+  const ring = useRef<Mesh>(null);
   const live = useRef(props);
   useEffect(() => {
     live.current = props;
@@ -944,6 +1026,7 @@ function AgentAvatarImpl(props: AvatarProps) {
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
     g.position.set(walker.x, walker.y, walker.z);
     g.rotation.y = walker.yaw;
+    if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
   });
 
   const seated = phase.kind === "seated";
@@ -965,8 +1048,34 @@ function AgentAvatarImpl(props: AvatarProps) {
         : undefined
       : phase.spot.say;
 
+  useEffect(() => {
+    setAgentActivity(agent.id, describe(phase, working, attentive, bubble));
+  }, [agent.id, phase, working, attentive, bubble]);
+
   return (
-    <group ref={group} position={[home.seat[0], SEAT_Y, home.seat[1]]} scale={DESK_SCALE}>
+    <group
+      ref={group}
+      position={[home.seat[0], SEAT_Y, home.seat[1]]}
+      scale={DESK_SCALE}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect?.(agent.id);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "";
+      }}
+    >
+      {selected && (
+        <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.02, 0]}>
+          <ringGeometry args={[0.42, 0.52, 40]} />
+          <meshBasicMaterial color="#34d399" toneMapped={false} />
+        </mesh>
+      )}
+      <Emote pool={emotePool(phase, working, attentive)} seed={seed} />
       <Mochi
         look={look}
         accessory={ACCESSORY[agent.id] ?? null}
@@ -995,8 +1104,35 @@ const AgentAvatar = memo(
     a.lastDoneAt === b.lastDoneAt &&
     a.seed === b.seed &&
     a.lift === b.lift &&
-    a.canWander === b.canWander,
+    a.canWander === b.canWander &&
+    a.selected === b.selected &&
+    a.onSelect === b.onSelect,
 );
+
+/** The ping-pong ball rallies whenever someone is standing at the table. */
+function PingPongBall() {
+  const ball = useRef<Mesh>(null);
+  useFrame(({ clock }) => {
+    const b = ball.current;
+    if (!b) return;
+    const playing = isPresent("pong-a") || isPresent("pong-b");
+    if (!playing) {
+      b.position.set(-5.7, 0.8, 4.3);
+      return;
+    }
+    const t = clock.elapsedTime * 0.9;
+    const leg = t % 1; // one crossing of the table
+    const forward = Math.floor(t) % 2 === 0;
+    const k = forward ? leg : 1 - leg;
+    b.position.set(-6.0 + Math.sin(t * 2.3) * 0.35, 0.8 + Math.abs(Math.sin(leg * Math.PI * 2)) * 0.3, 2.55 + k * 2.3);
+  });
+  return (
+    <mesh ref={ball} position={[-5.7, 0.8, 4.3]} castShadow>
+      <sphereGeometry args={[0.04, 10, 10]} />
+      <meshStandardMaterial color="#f97316" />
+    </mesh>
+  );
+}
 
 const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
 const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
@@ -1015,18 +1151,45 @@ function Presenter({ state, board }: { state: ManagerState; board: BoardLine[] }
       <group position={[MANAGER_TV.x, -0.03, MANAGER_TV.z]} rotation-y={Math.PI / 2}>
         <ManagerMonitor state={state} done={done} total={board.length} />
       </group>
-      <group position={[PRESENTER.x, 0, PRESENTER.z]}>
+      <Pacer pacing={state === "watching"}>
         <Mochi
           look={MANAGER_LOOK}
           accessory="tie"
           facing={state === "planning" ? "back" : "front"}
-          action={state === "planning" ? "chalk" : state === "merging" ? "wave" : "idle"}
+          action={state === "planning" ? "chalk" : state === "merging" ? "wave" : state === "watching" ? "walk" : "idle"}
           seed={42}
           scale={1.7}
         />
         <ThinkingOrbs active={state === "planning" || state === "merging"} />
-      </group>
-      <Label name="Max · Manager" bubble={label} position={[PRESENTER.x, 2.75, PRESENTER.z]} scale={LABEL_SCALE * 1.3} />
+        <Emote
+          pool={state === "planning" ? ["📋", "🤔", "💡"] : state === "merging" ? ["🧩", "✍️"] : state === "watching" ? ["👀", "👍"] : ["☕", "🙂"]}
+          seed={9}
+          y={1.9}
+        />
+        <Label name="Max · Manager" bubble={label} position={[0, 2.75, 0]} scale={LABEL_SCALE * 1.3} />
+      </Pacer>
+    </group>
+  );
+}
+
+/** Walks Max back and forth in front of the projector while `pacing`, otherwise stands at his spot. */
+function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNode }) {
+  const ref = useRef<Group>(null);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }, delta) => {
+    const g = ref.current;
+    if (!g) return;
+    const t = clock.elapsedTime * 0.45;
+    const targetX = pacing && !still ? PRESENTER.x - 0.9 + Math.sin(t) * 0.9 : PRESENTER.x;
+    const dx = targetX - g.position.x;
+    g.position.x += dx * Math.min(1, delta * 4);
+    const yaw = pacing && !still ? (Math.cos(t) > 0 ? Math.PI / 2 : -Math.PI / 2) : 0;
+    const diff = Math.atan2(Math.sin(yaw - g.rotation.y), Math.cos(yaw - g.rotation.y));
+    g.rotation.y += diff * Math.min(1, delta * 6);
+  });
+  return (
+    <group ref={ref} position={[PRESENTER.x, 0, PRESENTER.z]}>
+      {children}
     </group>
   );
 }
@@ -1058,11 +1221,15 @@ export default function OfficeScene({
   desks,
   manager,
   board,
+  selectedId,
+  onSelectAgent,
 }: {
   agents: Agent[];
   desks: Record<string, DeskState>;
   manager: ManagerState;
   board: BoardLine[];
+  selectedId?: string | null;
+  onSelectAgent?: (id: string) => void;
 }) {
   // One row of desks for up to 4 agents, otherwise two rows facing the meeting rooms.
   const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
@@ -1105,6 +1272,7 @@ export default function OfficeScene({
         <Clock position={[0, 0, 0]} />
       </group>
       <Presenter state={manager} board={board} />
+      <PingPongBall />
       {rowZ.slice(0, rows).map((z) => (
         <group key={z}>
           <Planter p={[-rowHalf - 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
@@ -1135,6 +1303,8 @@ export default function OfficeScene({
               seed={i * 1.7}
               lift={col % 2 ? 0.45 : 0}
               canWander={canWander}
+              selected={selectedId === a.id}
+              onSelect={onSelectAgent}
             />
           </group>
         );

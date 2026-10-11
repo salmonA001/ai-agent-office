@@ -9,7 +9,16 @@ export type Subtask = PlannedSubtask & {
   id: string;
   status: SubtaskStatus;
   output: string;
+  startedAt?: number;
   finishedAt?: number;
+};
+
+/** One line in a task's timeline, so the user can follow what the team did and why. */
+export type TaskEvent = {
+  at: number;
+  kind: "received" | "plan" | "assign" | "start" | "done" | "error" | "merge" | "info" | "finish";
+  text: string;
+  agentId?: string;
 };
 
 export type Task = {
@@ -21,6 +30,7 @@ export type Task = {
   final: string;
   error?: string;
   engine?: Engine;
+  events?: TaskEvent[];
 };
 
 export type Engine = "cloud" | "browser";
@@ -107,11 +117,21 @@ const KEYWORDS: [RegExp, string][] = [
 
 /** Used when the small model's plan is unusable: pick agents by keyword. */
 function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
-  const picked = KEYWORDS.filter(([re, id]) => re.test(task) && agents.some((a) => a.id === id)).map(([, id]) => id);
-  const ids = picked.length ? [...new Set(picked)].slice(0, 3) : [agents[0].id];
-  return ids.map((id) => {
+  const picked = KEYWORDS.flatMap(([re, id]) => {
+    const word = task.match(re)?.[0];
+    return word && agents.some((a) => a.id === id) ? [{ id, word }] : [];
+  }).slice(0, 3);
+  const chosen = picked.length ? picked : [{ id: agents[0].id, word: "" }];
+  return chosen.map(({ id, word }) => {
     const agent = agents.find((a) => a.id === id)!;
-    return { agentId: id, title: `${agent.role} part`, brief: `Handle the ${agent.role.toLowerCase()} side of the task.` };
+    return {
+      agentId: id,
+      title: `${agent.role} part`,
+      brief: `Handle the ${agent.role.toLowerCase()} side of the task.`,
+      reason: word
+        ? `The task mentions "${word}", which is ${agent.role.toLowerCase()} work.`
+        : `No clear specialty matched, so ${agent.name} takes it as the first available agent.`,
+    };
   });
 }
 
@@ -130,8 +150,9 @@ const browserBackend: Backend = {
               agentId: { type: "string", enum: agents.map((a) => a.id) },
               title: { type: "string" },
               brief: { type: "string" },
+              reason: { type: "string" },
             },
-            required: ["agentId", "title", "brief"],
+            required: ["agentId", "title", "brief", "reason"],
           },
         },
       },
@@ -145,7 +166,8 @@ const browserBackend: Backend = {
             role: "system",
             content:
               "You are an office manager. Split the user's task into 1-3 subtasks for different agents. " +
-              `Simple tasks get 1 subtask. Reply in JSON.\nAgents:\n${roster}`,
+              "Simple tasks get 1 subtask. For each, give a short reason why that agent fits. " +
+              `Reply in JSON.\nAgents:\n${roster}`,
           },
           { role: "user", content: task },
         ],
@@ -196,12 +218,21 @@ export async function runTask(
   onCloudUnavailable?: (reason: "access" | "unavailable") => void,
 ) {
   let backend = engine === "cloud" ? cloudBackend(code) : browserBackend;
+  const log = (kind: TaskEvent["kind"], text: string, agentId?: string) =>
+    update((t) => ({ ...t, events: [...(t.events ?? []), { at: Date.now(), kind, text, agentId }] }));
+  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
   // Switch this task (and, via the callback, later tasks) to the in-browser AI.
   const fallBack = (reason: "access" | "unavailable") => {
     if (backend === browserBackend) return;
     backend = browserBackend;
     engine = "browser";
     update((t) => ({ ...t, engine: "browser" }));
+    log(
+      "info",
+      reason === "access"
+        ? "No access code, so the team switched to the free in-browser AI."
+        : "The cloud AI is out of quota or unavailable, so the team switched to the free in-browser AI.",
+    );
     onCloudUnavailable?.(reason);
   };
   const withFallback = async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -216,7 +247,15 @@ export async function runTask(
     }
   };
 
+  log("plan", "Max is reading the task and deciding how to split it up.");
   const subtasks = await withFallback(() => backend.plan(task.prompt, agents, signal));
+  log(
+    "plan",
+    subtasks.length === 1
+      ? "Max kept it as one job for a single agent."
+      : `Max split it into ${subtasks.length} parts that can run at the same time.`,
+  );
+  for (const s of subtasks) log("assign", `${nameOf(s.agentId)} gets "${s.title}". ${s.reason ?? ""}`.trim(), s.agentId);
   update((t) => ({
     ...t,
     status: "working",
@@ -229,24 +268,33 @@ export async function runTask(
   const results = await Promise.all(
     subtasks.map(async (sub, i): Promise<Result | null> => {
       const agent = agents.find((a) => a.id === sub.agentId) ?? agents[0];
-      if (engine === "cloud") setSub(i, (s) => ({ ...s, status: "working" }));
+      const begin = () => {
+        log("start", `${agent.name} started "${sub.title}".`, agent.id);
+        setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
+      };
+      if (engine === "cloud") begin();
       try {
         const output = await withFallback(() => {
           let started = engine === "cloud";
           setSub(i, (s) => ({ ...s, output: "" }));
           return backend.work(task.prompt, agent, sub, signal, (chunk) => {
             // Local runs queue up, so an agent only "starts working" when its first words arrive.
-            const first = !started;
-            started = true;
-            setSub(i, (s) => ({ ...s, status: first ? "working" : s.status, output: s.output + chunk }));
+            if (!started) {
+              started = true;
+              begin();
+            }
+            setSub(i, (s) => ({ ...s, output: s.output + chunk }));
           });
         });
         if (!output.trim()) throw new Error("Agent returned no output");
         setSub(i, (s) => ({ ...s, status: "done", finishedAt: Date.now() }));
+        const words = output.trim().split(/\s+/).length;
+        log("done", `${agent.name} finished "${sub.title}" (${words} words).`, agent.id);
         return { agentName: agent.name, role: agent.role, title: sub.title, output: output.slice(0, 20000) };
       } catch (err) {
         if (signal.aborted || err instanceof AccessError) throw err;
         setSub(i, (s) => ({ ...s, status: "error", output: s.output || String((err as Error).message) }));
+        log("error", `${agent.name} hit a problem: ${(err as Error).message}`, agent.id);
         return null;
       }
     }),
@@ -255,11 +303,14 @@ export async function runTask(
   const ok = results.filter((r): r is Result => r !== null);
   if (ok.length === 0) throw new Error("Every agent failed on this task.");
 
+  const finish = () => log("finish", `All done in ${Math.round((Date.now() - task.createdAt) / 1000)} s.`);
   if (ok.length === 1 && subtasks.length === 1) {
     update((t) => ({ ...t, status: "done", final: ok[0].output }));
+    finish();
     return;
   }
 
+  log("merge", `Max is merging ${ok.length} results into one answer, removing overlap and fixing contradictions.`);
   update((t) => ({ ...t, status: "synthesizing" }));
   const final = await withFallback(() => {
     update((t) => ({ ...t, final: "" }));
@@ -267,4 +318,5 @@ export async function runTask(
   });
   if (!final.trim()) throw new Error("The manager returned no final report.");
   update((t) => ({ ...t, status: "done" }));
+  finish();
 }

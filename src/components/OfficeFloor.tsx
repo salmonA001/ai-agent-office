@@ -1,8 +1,9 @@
 "use client";
 
-import { memo } from "react";
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
-import { clip, seeded, useDisposable } from "./scene-utils";
+import { useFrame } from "@react-three/fiber";
+import { memo, useRef, useState } from "react";
+import { CanvasTexture, type Group, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import { clip, reducedMotion, seeded, useDisposable } from "./scene-utils";
 
 export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
 type V3 = [number, number, number];
@@ -373,6 +374,14 @@ function Armchair({ p, r = 0 }: { p: V3; r?: number }) {
 }
 
 export function PalmPlant({ p, s = 1 }: { p: V3; s?: number }) {
+  const leaves = useRef<Group>(null);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    if (!leaves.current || still) return;
+    const t = clock.elapsedTime + p[0];
+    leaves.current.rotation.z = Math.sin(t * 0.9) * 0.05;
+    leaves.current.rotation.x = Math.sin(t * 0.7) * 0.04;
+  });
   return (
     <group position={p} scale={s}>
       <mesh position={[0, 0.22, 0]} castShadow>
@@ -383,11 +392,47 @@ export function PalmPlant({ p, s = 1 }: { p: V3; s?: number }) {
         <cylinderGeometry args={[0.03, 0.04, 0.7, 8]} />
         <meshStandardMaterial color="#7c5a3a" />
       </mesh>
+      <group ref={leaves}>
       {Array.from({ length: 8 }, (_, i) => (
         <group key={i} position={[0, 1.1 + (i % 2) * 0.12, 0]} rotation-y={(i / 8) * Math.PI * 2}>
           <mesh position={[0, -0.05, 0.32]} rotation-x={0.55} scale={[0.14, 0.03, 0.55]} castShadow>
             <sphereGeometry args={[1, 10, 8]} />
             <meshStandardMaterial color={i % 2 ? "#2f8f4e" : "#3fae5f"} />
+          </mesh>
+        </group>
+      ))}
+      </group>
+    </group>
+  );
+}
+
+/** Wisps of steam rising from the coffee machine. */
+function Steam({ p }: { p: V3 }) {
+  const puffs = useRef<(Group | null)[]>([]);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    if (still) return;
+    puffs.current.forEach((g, i) => {
+      if (!g) return;
+      const k = (clock.elapsedTime * 0.5 + i / 3) % 1;
+      g.position.set(Math.sin(k * 6 + i) * 0.04, k * 0.45, 0);
+      g.scale.setScalar(0.5 + k);
+      const m = (g.children[0] as unknown as { material: { opacity: number } }).material;
+      m.opacity = 0.45 * (1 - k);
+    });
+  });
+  return (
+    <group position={p}>
+      {[0, 1, 2].map((i) => (
+        <group
+          key={i}
+          ref={(g) => {
+            puffs.current[i] = g;
+          }}
+        >
+          <mesh>
+            <sphereGeometry args={[0.05, 8, 8]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.4} depthWrite={false} />
           </mesh>
         </group>
       ))}
@@ -486,6 +531,7 @@ function Kitchen() {
       ))}
       {/* coffee machine */}
       <B s={[0.25, 0.35, 0.25]} p={[1.15, 1.08, back + 0.35]} c="#1f2937" />
+      <Steam p={[1.15, 1.3, back + 0.42]} />
       {/* fridge */}
       <B s={[0.85, 1.95, 0.7]} p={[2.35, 0.975, back + 0.42]} c="#26292d" rough={0.35} metal={0.3} />
       <B s={[0.03, 0.5, 0.03]} p={[2.05, 1.25, back + 0.79]} c="#9ca3af" />
@@ -581,10 +627,6 @@ function Workspace({ sky }: { sky: Texture }) {
         ].map(([x, z]) => (
           <B key={`${x}${z}`} s={[0.05, 0.72, 0.05]} p={[x, 0.36, z]} c="#374151" />
         ))}
-        <mesh position={[0.3, 0.8, 0.6]} castShadow>
-          <sphereGeometry args={[0.03, 8, 8]} />
-          <meshStandardMaterial color="#f97316" />
-        </mesh>
       </group>
       {/* breakout corner on the right: round table and beanbags */}
       <group position={[5.9, 0, 3.6]}>

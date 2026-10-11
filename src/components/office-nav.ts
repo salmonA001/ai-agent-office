@@ -66,30 +66,34 @@ export type Spot = {
   seat: number;
   activity: Activity;
   say: string;
+  /** where the agent is, for the explanation panel */
+  where: string;
+  /** emotes that float up while hanging out here */
+  emoji: string[];
 };
 
 const PI = Math.PI;
 
 export const SPOTS: Spot[] = [
-  { id: "printer", at: [-6.9, 1.6], node: "W1", approach: [], face: -PI / 2, seat: 0, activity: "look", say: "Printing stuff" },
-  { id: "window-w", at: [-7.3, 3.0], node: "W1", approach: [[-6.9, 1.5]], face: -PI / 2, seat: 0, activity: "look", say: "Nice view" },
-  { id: "pong-a", at: [-6.0, 1.95], node: "W1", approach: [], face: 0, seat: 0, activity: "play", say: "Ping-pong!" },
-  { id: "pong-b", at: [-6.0, 5.45], node: "W1", approach: [[-4.6, 1.6], [-4.6, 5.55]], face: PI, seat: 0, activity: "play", say: "Your serve" },
-  { id: "cooler", at: [6.95, 1.55], node: "W2", approach: [], face: PI / 2, seat: 0, activity: "sip", say: "Hydrating" },
-  { id: "beanbag", at: [7.0, 2.6], node: "W2", approach: [[6.9, 1.9]], face: -PI / 2, seat: 0.32, activity: "rest", say: "Comfy…" },
-  { id: "round-table", at: [5.9, 4.45], node: "W2", approach: [[4.55, 2.0], [4.55, 5.35], [5.9, 5.35]], face: PI, seat: 0.46, activity: "rest", say: "Thinking" },
-  { id: "corridor", at: [-1.5, 0.3], node: "C4", approach: [], face: PI / 2, seat: 0, activity: "look", say: "Stretching legs" },
-  { id: "whiteboard", at: [-7.15, -4.4], node: "M2", approach: [], face: -PI / 2, seat: 0, activity: "look", say: "Doodling ideas" },
-  { id: "meeting-seat", at: [-5.4, -2.25], node: "M1", approach: [], face: PI, seat: 0.5, activity: "rest", say: "Quiet room" },
-  { id: "sink", at: [-1.5, -4.75], node: "K2", approach: [], face: PI, seat: 0, activity: "look", say: "Washing my mug" },
-  { id: "coffee", at: [1.15, -4.8], node: "K1", approach: [], face: PI, seat: 0, activity: "sip", say: "Coffee time" },
-  { id: "fridge", at: [2.35, -4.75], node: "K1", approach: [], face: PI, seat: 0, activity: "look", say: "Snack run" },
-  { id: "stool", at: [-0.6, -2.6], node: "K0", approach: [[-0.6, -2.0]], face: PI, seat: 0.72, activity: "sip", say: "Tea break" },
-  { id: "dining-a", at: [-1.6, -0.75], node: "K0", approach: [[-1.6, -0.3]], face: PI, seat: 0.46, activity: "sip", say: "Lunch!" },
-  { id: "dining-b", at: [1.8, -0.75], node: "K0", approach: [[1.8, -0.3]], face: PI, seat: 0.46, activity: "rest", say: "Lunch!" },
-  { id: "sofa-a", at: [5.2, -4.3], node: "L1", approach: [[4.7, -3.65], [5.2, -3.65]], face: 0, seat: 0.46, activity: "rest", say: "Power nap" },
-  { id: "sofa-b", at: [6.0, -4.3], node: "L1", approach: [[4.7, -3.65], [6.0, -3.65]], face: 0, seat: 0.46, activity: "rest", say: "Chilling" },
-  { id: "vending", at: [6.65, -4.95], node: "L4", approach: [], face: 2.3, seat: 0, activity: "look", say: "Hmm, which snack?" },
+  { id: "printer", at: [-6.9, 1.6], node: "W1", approach: [], face: -PI / 2, seat: 0, activity: "look", say: "Printing stuff", where: "at the printer", emoji: ["🖨️", "📄"] },
+  { id: "window-w", at: [-7.3, 3.0], node: "W1", approach: [[-6.9, 1.5]], face: -PI / 2, seat: 0, activity: "look", say: "Nice view", where: "by the window", emoji: ["☀️", "✨", "🌿"] },
+  { id: "pong-a", at: [-6.0, 1.95], node: "W1", approach: [], face: 0, seat: 0, activity: "play", say: "Ping-pong!", where: "at the ping-pong table", emoji: ["🏓", "😆", "💪"] },
+  { id: "pong-b", at: [-6.0, 5.45], node: "W1", approach: [[-4.6, 1.6], [-4.6, 5.55]], face: PI, seat: 0, activity: "play", say: "Your serve", where: "at the ping-pong table", emoji: ["🏓", "😆", "💪"] },
+  { id: "cooler", at: [6.95, 1.55], node: "W2", approach: [], face: PI / 2, seat: 0, activity: "sip", say: "Hydrating", where: "at the water cooler", emoji: ["💧", "😌"] },
+  { id: "beanbag", at: [7.0, 2.6], node: "W2", approach: [[6.9, 1.9]], face: -PI / 2, seat: 0.32, activity: "rest", say: "Comfy…", where: "on a beanbag", emoji: ["💤", "😌"] },
+  { id: "round-table", at: [5.9, 4.45], node: "W2", approach: [[4.55, 2.0], [4.55, 5.35], [5.9, 5.35]], face: PI, seat: 0.46, activity: "rest", say: "Thinking", where: "at the breakout table", emoji: ["🤔", "💭"] },
+  { id: "corridor", at: [-1.5, 0.3], node: "C4", approach: [], face: PI / 2, seat: 0, activity: "look", say: "Stretching legs", where: "in the corridor", emoji: ["🚶", "🎵"] },
+  { id: "whiteboard", at: [-7.15, -4.4], node: "M2", approach: [], face: -PI / 2, seat: 0, activity: "look", say: "Doodling ideas", where: "at the meeting-room whiteboard", emoji: ["✏️", "💡"] },
+  { id: "meeting-seat", at: [-5.4, -2.25], node: "M1", approach: [], face: PI, seat: 0.5, activity: "rest", say: "Quiet room", where: "in the meeting room", emoji: ["📖", "😌"] },
+  { id: "sink", at: [-1.5, -4.75], node: "K2", approach: [], face: PI, seat: 0, activity: "look", say: "Washing my mug", where: "at the kitchen sink", emoji: ["🫧", "🧽"] },
+  { id: "coffee", at: [1.15, -4.8], node: "K1", approach: [], face: PI, seat: 0, activity: "sip", say: "Coffee time", where: "at the coffee machine", emoji: ["☕", "😋"] },
+  { id: "fridge", at: [2.35, -4.75], node: "K1", approach: [], face: PI, seat: 0, activity: "look", say: "Snack run", where: "at the fridge", emoji: ["🍎", "🧃"] },
+  { id: "stool", at: [-0.6, -2.6], node: "K0", approach: [[-0.6, -2.0]], face: PI, seat: 0.72, activity: "sip", say: "Tea break", where: "at the kitchen island", emoji: ["🍵", "😊"] },
+  { id: "dining-a", at: [-1.6, -0.75], node: "K0", approach: [[-1.6, -0.3]], face: PI, seat: 0.46, activity: "sip", say: "Lunch!", where: "at the dining table", emoji: ["🍱", "😋"] },
+  { id: "dining-b", at: [1.8, -0.75], node: "K0", approach: [[1.8, -0.3]], face: PI, seat: 0.46, activity: "rest", say: "Lunch!", where: "at the dining table", emoji: ["🥪", "😋"] },
+  { id: "sofa-a", at: [5.2, -4.3], node: "L1", approach: [[4.7, -3.65], [5.2, -3.65]], face: 0, seat: 0.46, activity: "rest", say: "Power nap", where: "on the lounge sofa", emoji: ["💤", "🛋️"] },
+  { id: "sofa-b", at: [6.0, -4.3], node: "L1", approach: [[4.7, -3.65], [6.0, -3.65]], face: 0, seat: 0.46, activity: "rest", say: "Chilling", where: "on the lounge sofa", emoji: ["😌", "🎧"] },
+  { id: "vending", at: [6.65, -4.95], node: "L4", approach: [], face: 2.3, seat: 0, activity: "look", say: "Hmm, which snack?", where: "at the vending machine", emoji: ["🍫", "🥤", "🤔"] },
 ];
 
 const dist = (a: P2, b: P2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -163,6 +167,13 @@ export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
 
 export function releaseSpot(agentId: string) {
   for (const [id, who] of taken) if (who === agentId) taken.delete(id);
+  for (const [id, who] of present) if (who === agentId) present.delete(id);
+}
+
+const present = new Map<string, string>();
+
+export function isPresent(spotId: string) {
+  return present.has(spotId);
 }
 
 // ---------- Per-agent wandering state machine (plain TS so it can be simulated without a browser) ----------
@@ -254,6 +265,7 @@ export class Wanderer {
       }
       if (this.seg >= this.path.length - 1) {
         if (this.mode === "out" && this.spot) {
+          present.set(this.spot.id, this.id);
           this.mode = "spot";
           this.timer = 8 + Math.random() * 10;
           this.phase = { kind: "spot", spot: this.spot };
@@ -277,6 +289,7 @@ export class Wanderer {
   }
 
   private start(from: Anchor, to: Anchor, speed: number, mode: "out" | "home") {
+    if ("spot" in from) present.delete(from.spot.id);
     this.path = route(from, to);
     this.seg = 0;
     this.origin = from;

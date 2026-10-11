@@ -26,6 +26,7 @@ export const planOutput = z.object({
         agentId: z.string().describe("id of the agent assigned to this subtask"),
         title: z.string().describe("short title, max 8 words"),
         brief: z.string().describe("precise instructions for the agent"),
+        reason: z.string().describe("one short sentence: why this agent is the best fit for this part"),
       }),
     )
     .min(1)
