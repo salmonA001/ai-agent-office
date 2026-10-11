@@ -15,7 +15,8 @@ function pickModels(): { manager: LanguageModel; worker: LanguageModel } {
   const m = process.env.MANAGER_MODEL;
   const w = process.env.WORKER_MODEL;
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return { manager: google(m ?? "gemini-flash-latest"), worker: google(w ?? "gemini-flash-latest") };
+    // Separate models so the free tier's per-model daily limits go further.
+    return { manager: google(m ?? "gemini-flash-latest"), worker: google(w ?? "gemini-flash-lite-latest") };
   }
   if (process.env.OPENAI_API_KEY) {
     return { manager: openai(m ?? "gpt-5.5"), worker: openai(w ?? "gpt-5.4-mini") };
@@ -61,4 +62,22 @@ export async function parseBody<T extends z.ZodType>(
     };
   }
   return { data: parsed.data };
+}
+
+/**
+ * True when a provider key is set, or the AI Gateway is explicitly enabled
+ * (AI_GATEWAY_API_KEY, or AI_GATEWAY_ENABLED=1 when relying on Vercel OIDC after billing is on).
+ */
+export const CLOUD_AI_CONFIGURED = Boolean(
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.AI_GATEWAY_API_KEY ||
+    process.env.AI_GATEWAY_ENABLED === "1",
+);
+
+/** HTTP status from a provider error, including the last attempt inside a retry error. */
+export function providerStatus(error: unknown): number {
+  const e = error as { statusCode?: number; lastError?: { statusCode?: number } };
+  return e.statusCode ?? e.lastError?.statusCode ?? 0;
 }

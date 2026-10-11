@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { planOutput, planRequest } from "@/lib/schemas";
-import { checkAccess, MANAGER_MODEL, parseBody } from "@/lib/server";
+import { checkAccess, MANAGER_MODEL, parseBody, providerStatus } from "@/lib/server";
 
 export async function POST(request: Request) {
   const denied = checkAccess(request);
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
         `Roster:\n${roster}`,
       prompt: task,
       output: Output.object({ schema: planOutput }),
+      maxRetries: 1,
     });
 
     const ids = new Set(agents.map((a) => a.id));
@@ -31,12 +32,12 @@ export async function POST(request: Request) {
     return Response.json({ subtasks });
   } catch (error) {
     console.error("plan failed", error);
-    const gatewayBlocked = [400, 401, 403].includes((error as { statusCode?: number }).statusCode ?? 0);
+    // The client switches to the in-browser AI when the cloud provider is out of quota or not set up.
+    const unavailable = [400, 401, 403, 429].includes(providerStatus(error));
     return Response.json(
       {
-        error: gatewayBlocked
-          ? "The AI provider rejected the request. Add a GOOGLE_GENERATIVE_AI_API_KEY (free at aistudio.google.com) in Vercel → Settings → Environment Variables, or enable AI Gateway billing."
-          : "The manager could not plan this task.",
+        error: unavailable ? "The cloud AI is unavailable right now (quota or setup)." : "The manager could not plan this task.",
+        code: unavailable ? "cloud_unavailable" : "plan_failed",
       },
       { status: 502 },
     );

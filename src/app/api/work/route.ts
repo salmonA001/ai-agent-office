@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     prompt: `Overall task:\n${task}\n\nYour assignment: ${subtask.title}\n${subtask.brief}`,
     maxOutputTokens: 2500,
     abortSignal: request.signal,
+    maxRetries: 1,
     onError({ error }) {
       console.error("work failed", error);
     },

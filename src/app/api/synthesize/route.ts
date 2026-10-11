@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     prompt: `Task:\n${task}\n\nTeam output:\n\n${work}`,
     maxOutputTokens: 4000,
     abortSignal: request.signal,
+    maxRetries: 1,
     onError({ error }) {
       console.error("synthesize failed", error);
     },

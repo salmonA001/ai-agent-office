@@ -1,10 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { type Agent, DEFAULT_AGENTS } from "@/lib/agents";
-import { AccessError, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
+import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import type { DeskState, ManagerState } from "./OfficeScene";
+
+const OfficeScene = dynamic(() => import("./OfficeScene"), {
+  ssr: false,
+  loading: () => <div className="grid h-full place-items-center text-sm text-muted">Building the office…</div>,
+});
+
+const IDLE_ENGINE: EngineState = { status: "idle" };
 
 const STORE = { agents: "office.agents", tasks: "office.tasks", code: "office.code" };
 
@@ -80,6 +90,9 @@ export function Office() {
   const [needCode, setNeedCode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [showHire, setShowHire] = useState(false);
+  const [engine, setEngine] = useState<Engine | null>(null);
+  const [cloudReady, setCloudReady] = useState(false);
+  const engineState = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
   const controllers = useRef(new Map<string, AbortController>());
 
   useEffect(() => {
@@ -94,6 +107,17 @@ export function Office() {
     setCode(load(STORE.code, ""));
     setLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  useEffect(() => {
+    // Use the server's AI when a key is configured; otherwise run a model in the browser.
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((d: { cloud: boolean }) => {
+        setCloudReady(d.cloud);
+        setEngine(d.cloud ? "cloud" : "browser");
+      })
+      .catch(() => setEngine("browser"));
   }, []);
 
   useEffect(() => {
@@ -117,26 +141,27 @@ export function Office() {
         status: "planning",
         subtasks: [],
         final: "",
+        engine: engine ?? "browser",
       };
       const controller = new AbortController();
       controllers.current.set(task.id, controller);
       setTasks((all) => [task, ...all]);
       setSelectedId(task.id);
 
-      runTask(task, agents, accessCode, controller.signal, (fn) => updateTask(task.id, fn))
+      runTask(task, agents, task.engine!, accessCode, controller.signal, (fn) => updateTask(task.id, fn), (reason) => {
+        setEngine("browser");
+        if (reason === "access") setNeedCode(true);
+      })
         .catch((err: Error) => {
           if (controller.signal.aborted) {
             updateTask(task.id, (t) => ({ ...t, status: "cancelled" }));
-          } else if (err instanceof AccessError) {
-            setNeedCode(true);
-            updateTask(task.id, (t) => ({ ...t, status: "error", error: "Enter the office access code, then retry." }));
           } else {
             updateTask(task.id, (t) => ({ ...t, status: "error", error: err.message }));
           }
         })
         .finally(() => controllers.current.delete(task.id));
     },
-    [agents, updateTask],
+    [agents, engine, updateTask],
   );
 
   const submit = () => {
@@ -159,11 +184,23 @@ export function Office() {
 
   // What each agent is doing right now, across every running task.
   const busy = new Map<string, string[]>();
-  for (const t of running) {
+  const desks: Record<string, DeskState> = {};
+  for (const t of tasks) {
     for (const s of t.subtasks) {
-      if (s.status === "working") busy.set(s.agentId, [...(busy.get(s.agentId) ?? []), s.title]);
+      const desk = (desks[s.agentId] ??= { working: [] });
+      if (ACTIVE.includes(t.status) && s.status === "working") {
+        desk.working.push(s.title);
+        busy.set(s.agentId, desk.working);
+      }
+      if (s.finishedAt && s.finishedAt > (desk.lastDoneAt ?? 0)) desk.lastDoneAt = s.finishedAt;
     }
   }
+  const manager: ManagerState = running.some((t) => t.status === "planning")
+    ? "planning"
+    : running.some((t) => t.status === "synthesizing")
+      ? "merging"
+      : "idle";
+  const notes = running.reduce((n, t) => n + t.subtasks.filter((s) => s.status !== "done").length, 0);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
@@ -181,17 +218,20 @@ export function Office() {
         </p>
       </header>
 
+      <EngineBanner engine={engine} state={engineState} />
+
       {needCode && (
         <form
-          className="flex flex-wrap items-end gap-3 rounded-xl border border-accent bg-panel p-4"
+          className="flex flex-wrap items-end gap-3 rounded-xl border border-white/20 bg-panel p-4"
           onSubmit={(e) => {
             e.preventDefault();
             save(STORE.code, code);
             setNeedCode(false);
+            if (cloudReady) setEngine("cloud");
           }}
         >
           <label className="flex flex-1 flex-col gap-1 text-sm">
-            This office is protected. Enter the access code:
+            Running on the free in-browser AI. Have the office access code? Enter it to use the faster cloud AI:
             <input
               type="password"
               value={code}
@@ -200,7 +240,14 @@ export function Office() {
               autoComplete="off"
             />
           </label>
-          <button className="min-h-10 rounded-lg bg-primary px-4 font-semibold text-ink">Save code</button>
+          <button className="min-h-10 rounded-lg bg-primary px-4 font-semibold text-ink">Use cloud AI</button>
+          <button
+            type="button"
+            onClick={() => setNeedCode(false)}
+            className="min-h-10 rounded-lg border border-muted/40 px-4 text-sm text-ink"
+          >
+            Stay free
+          </button>
         </form>
       )}
 
@@ -229,7 +276,11 @@ export function Office() {
           />
         )}
 
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="mb-4 h-[340px] overflow-hidden rounded-xl sm:h-[460px]">
+          <OfficeScene agents={agents} desks={desks} manager={manager} notes={notes} />
+        </div>
+
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="Agents">
           {agents.map((a) => {
             const doing = busy.get(a.id);
             return (
@@ -539,5 +590,35 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
         Hire
       </button>
     </form>
+  );
+}
+
+function EngineBanner({ engine, state }: { engine: Engine | null; state: EngineState }) {
+  if (engine !== "browser") return null;
+  if (state.status === "loading") {
+    return (
+      <div className="rounded-xl border border-accent bg-panel p-4" role="status">
+        <p className="text-sm font-semibold">Waking up the office AI (one-time download, cached afterwards)…</p>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-well">
+          <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(state.progress * 100)}%` }} />
+        </div>
+        <p className="mt-1 truncate text-xs text-muted">{state.text}</p>
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <p role="alert" className="rounded-xl border border-danger bg-panel p-4 text-sm text-error">
+        {state.message}
+      </p>
+    );
+  }
+  if (state.status === "ready") return null;
+  return (
+    <p className="rounded-xl bg-panel p-3 text-sm text-muted">
+      {webGpuSupported()
+        ? "Free mode: agents run on a small AI model inside your browser, no key needed. The first task downloads it (~1 GB) once."
+        : "Free mode needs WebGPU (recent Chrome or Edge). Add an AI provider key on the server for other browsers."}
+    </p>
   );
 }
