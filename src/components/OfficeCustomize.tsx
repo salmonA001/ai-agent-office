@@ -10,6 +10,7 @@ import {
   ClockIcon,
   CoffeeIcon,
   CubeIcon,
+  FastForwardIcon,
   FishIcon,
   FrameCornersIcon,
   GameControllerIcon,
@@ -28,6 +29,7 @@ import {
 } from "@phosphor-icons/react";
 import { type ReactNode, useId, useState } from "react";
 import { type Key, useI18n } from "@/lib/i18n";
+import { clockText, type Shift, SHIFTS, shiftAt, useOfficeMinutes } from "@/lib/office-clock";
 import {
   ACCENT_COLORS,
   ACCENTS,
@@ -70,7 +72,7 @@ const CAT_ICON: Record<SpotCat, Icon> = {
   ideas: LightbulbIcon,
 };
 
-const LIGHT_ICON: Record<Lighting, Icon> = { auto: ClockIcon, day: SunIcon, sunset: SunHorizonIcon, night: MoonIcon };
+const LIGHT_ICON: Record<Lighting, Icon> = { auto: ClockIcon, fast: FastForwardIcon, day: SunIcon, sunset: SunHorizonIcon, night: MoonIcon };
 
 /** Labelled group of single-choice options. */
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
@@ -135,7 +137,11 @@ function Segment<T extends string>({
   icon?: (v: T) => Icon;
 }) {
   return (
-    <div className={`grid gap-1 rounded-xl bg-surface/40 p-1 ${options.length === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+    <div
+      className={`grid gap-1 rounded-xl bg-surface/40 p-1 ${
+        options.length === 4 ? "grid-cols-2 sm:grid-cols-4" : options.length === 5 ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-3"
+      }`}
+    >
       {options.map((o) => {
         const I = icon?.(o);
         const on = o === value;
@@ -198,24 +204,54 @@ function Toggle({
   );
 }
 
+function Switch({ on, onToggle, label, hint }: { on: boolean; onToggle: () => void; label: string; hint: string }) {
+  const id = useId();
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <span id={id} className="block text-xs font-semibold uppercase tracking-wide text-muted">
+          {label}
+        </span>
+        <span className="mt-1 block text-xs text-muted">{hint}</span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-labelledby={id}
+        onClick={onToggle}
+        className={`press relative mt-1 inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
+          on ? "border-accent bg-accent" : "border-line bg-surface/60"
+        }`}
+      >
+        <span
+          aria-hidden
+          className={`absolute size-5 rounded-full bg-white shadow transition-transform duration-200 ${on ? "translate-x-6" : "translate-x-1"}`}
+        />
+      </button>
+    </div>
+  );
+}
+
 /** Decor and break settings for the 3D office; changes show up in the scene right away. */
-export function CustomizePanel() {
+export function CustomizePanel({ crews }: { crews: Record<Shift, number> }) {
   const { t } = useI18n();
   const custom = useOfficeCustom();
-  const [tab, setTab] = useState<"decor" | "activities">("decor");
+  const minutes = useOfficeMinutes(custom.lighting);
+  const [tab, setTab] = useState<"decor" | "activities" | "shifts">("decor");
   const base = useId();
   const signId = useId();
-  const eventsId = useId();
   const tabs = [
     ["decor", t("custom.tab.decor")],
     ["activities", t("custom.tab.activities")],
+    ["shifts", t("custom.tab.shifts")],
   ] as const;
   const noneOn = SPOT_CATS.every((c) => !custom.activities[c]);
 
   return (
     <section aria-label={t("custom.title")} className="enter-drop mb-4 flex flex-col gap-4 rounded-xl bg-well p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div role="tablist" aria-label={t("custom.title")} className="grid grid-cols-2 gap-1 rounded-xl bg-surface/40 p-1">
+        <div role="tablist" aria-label={t("custom.title")} className="grid grid-cols-3 gap-1 rounded-xl bg-surface/40 p-1">
           {tabs.map(([id, label]) => (
             <button
               key={id}
@@ -225,7 +261,7 @@ export function CustomizePanel() {
               aria-selected={tab === id}
               aria-controls={`${base}-panel`}
               onClick={() => setTab(id)}
-              className={`press min-h-10 rounded-lg px-4 text-sm font-semibold transition-colors ${
+              className={`press min-h-10 rounded-lg px-3 text-sm font-semibold transition-colors sm:px-4 ${
                 tab === id ? "bg-primary text-on-primary" : "text-muted hover:text-ink"
               }`}
             >
@@ -243,7 +279,53 @@ export function CustomizePanel() {
         </button>
       </div>
 
-      {tab === "decor" ? (
+      {tab === "shifts" ? (
+        <div key="shifts" id={`${base}-panel`} role="tabpanel" aria-labelledby={`${base}-shifts`} className="enter-fade flex flex-col gap-5">
+          <Field label={t("custom.lighting")} hint={t("custom.lightingHint")}>
+            <Segment
+              value={custom.lighting}
+              options={LIGHTING}
+              onChange={(lighting) => setOfficeCustom({ lighting })}
+              label={(l) => t(`light.${l}` as Key)}
+              icon={(l) => LIGHT_ICON[l]}
+            />
+          </Field>
+          <Switch
+            on={custom.shifts}
+            onToggle={() => setOfficeCustom({ shifts: !custom.shifts })}
+            label={t("custom.shifts")}
+            hint={t("custom.shiftsHint")}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            {SHIFTS.map((shift) => {
+              const on = minutes !== null && (!custom.shifts || shiftAt(minutes) === shift);
+              const I = shift === "day" ? SunIcon : MoonIcon;
+              return (
+                <div
+                  key={shift}
+                  className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+                    on ? "border-accent/60 bg-accent/10" : "border-line bg-surface/40"
+                  }`}
+                >
+                  <I size={22} weight="duotone" aria-hidden className={on ? "text-accent" : "text-muted"} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">
+                      {t(`shift.${shift}` as Key)} · {t("shift.count", { n: crews[shift] })}
+                    </p>
+                    <p className="text-xs text-muted">{t(shift === "day" ? "shift.dayHours" : "shift.nightHours")}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${on ? "bg-accent text-on-accent" : "bg-well text-muted"}`}>
+                    {on ? t("shift.onDuty") : t("shift.offDuty")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {minutes !== null && (
+            <p className="text-xs text-muted">{t("clock.label", { time: clockText(minutes), shift: t(`shift.${shiftAt(minutes)}` as Key) })}</p>
+          )}
+        </div>
+      ) : tab === "decor" ? (
         <div key="decor" id={`${base}-panel`} role="tabpanel" aria-labelledby={`${base}-decor`} className="enter-fade grid gap-5 lg:grid-cols-2">
           <div className="flex flex-col gap-5">
             <Field label={t("custom.floor")}>
@@ -285,15 +367,6 @@ export function CustomizePanel() {
                   />
                 ))}
               </div>
-            </Field>
-            <Field label={t("custom.lighting")} hint={t("custom.lightingHint")}>
-              <Segment
-                value={custom.lighting}
-                options={LIGHTING}
-                onChange={(lighting) => setOfficeCustom({ lighting })}
-                label={(l) => t(`light.${l}` as Key)}
-                icon={(l) => LIGHT_ICON[l]}
-              />
             </Field>
           </div>
           <div className="flex flex-col gap-5">
@@ -357,31 +430,12 @@ export function CustomizePanel() {
                 label={(b) => t(`breaks.${b}` as Key)}
               />
             </Field>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span id={eventsId} className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                  {t("custom.events")}
-                </span>
-                <span className="mt-1 block text-xs text-muted">{t("custom.eventsHint")}</span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={custom.events}
-                aria-labelledby={eventsId}
-                onClick={() => setOfficeCustom({ events: !custom.events })}
-                className={`press relative mt-1 inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
-                  custom.events ? "border-accent bg-accent" : "border-line bg-surface/60"
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className={`absolute size-5 rounded-full bg-white shadow transition-transform duration-200 ${
-                    custom.events ? "translate-x-6" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
+            <Switch
+              on={custom.events}
+              onToggle={() => setOfficeCustom({ events: !custom.events })}
+              label={t("custom.events")}
+              hint={t("custom.eventsHint")}
+            />
           </div>
         </div>
       )}

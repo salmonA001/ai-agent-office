@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { type Key, type Msg, translate } from "@/lib/i18n";
-import { EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
+import { type Activity, EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
 
 /**
  * Game layer: random office events that idle agents react to, plus XP and levels.
@@ -8,7 +8,23 @@ import { EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
  * and the UI subscribes to the store below.
  */
 
-export type EventKind = "pizza" | "drill" | "birthday" | "printer" | "server" | "plants" | "arcade" | "coffee" | "yoga";
+export type EventKind =
+  | "pizza"
+  | "drill"
+  | "birthday"
+  | "printer"
+  | "server"
+  | "plants"
+  | "arcade"
+  | "coffee"
+  | "yoga"
+  | "standup"
+  | "movie"
+  | "karaoke"
+  | "icecream"
+  | "delivery"
+  | "outage"
+  | "welcome";
 
 export type ActiveEvent = {
   id: number;
@@ -161,8 +177,15 @@ type EventDef = {
   icon: string;
   seconds: number;
   xp: number;
-  plan: (idle: string[], everyone: string[]) => Plan | null;
+  /** office hours (0-24) when it can happen at random; any time if missing */
+  when?: (hour: number) => boolean;
+  /** false: only started on purpose (e.g. the welcome party for a new hire) */
+  random?: false;
+  plan: (idle: string[], everyone: string[], hero?: string) => Plan | null;
 };
+
+/** hour within [from, to), wrapping past midnight */
+const between = (h: number, from: number, to: number) => (from < to ? h >= from && h < to : h >= from || h < to);
 
 const shuffle = <T,>(a: T[]) => [...a].sort(() => Math.random() - 0.5);
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -182,7 +205,15 @@ function chore(idle: string[], prefer: string[], spots: Spot[]) {
   return { id, orders: new Map([[id, spots]]) };
 }
 
-const fix = (s: Spot, say: string, emoji: string[], where: string): Spot => ({ ...s, say, emoji, where });
+const fix = (s: Spot, say: string, emoji: string[], where: string, activity?: Activity): Spot => ({
+  ...s,
+  say,
+  emoji,
+  where,
+  activity: activity ?? s.activity,
+});
+
+const CAFE = ["espresso", "bar-stool", "bistro-1a", "bistro-1b", "bistro-2a", "bistro-2b", "bistro-3a", "bistro-3b"];
 
 const EVENTS: EventDef[] = [
   {
@@ -290,6 +321,116 @@ const EVENTS: EventDef[] = [
     }),
   },
   {
+    kind: "standup",
+    icon: "📋",
+    seconds: 26,
+    xp: 8,
+    when: (h) => between(h, 7.3, 10) || between(h, 19.3, 22),
+    plan: (idle) => ({
+      orders: gather(idle, [
+        ...EVENT_SPOTS.meeting.slice(0, 1),
+        fix(spotById("meeting-seat"), "Yesterday I…", ["📋", "☕"], "at the stand-up", "rest"),
+        ...EVENT_SPOTS.meeting.slice(1),
+      ]),
+      dwell: 4,
+      text: { key: "ge.standup.text" },
+    }),
+  },
+  {
+    kind: "movie",
+    icon: "🎬",
+    seconds: 34,
+    xp: 8,
+    when: (h) => between(h, 20, 3),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        [EVENT_SPOTS.meeting[0], spotById("meeting-seat"), EVENT_SPOTS.meeting[1], ...EVENT_SPOTS.movie].map((s) =>
+          fix(s, "Popcorn time!", ["🍿", "🎬", "😮"], "at movie night in the meeting room"),
+        ),
+      ),
+      dwell: 4,
+      text: { key: "ge.movie.text" },
+    }),
+  },
+  {
+    kind: "karaoke",
+    icon: "🎤",
+    seconds: 30,
+    xp: 10,
+    when: (h) => between(h, 17, 3),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        [...EVENT_SPOTS.party, spotById("sofa-a"), spotById("sofa-b")].map((s, i) =>
+          fix(s, i % 2 ? "Encore!" : "La la la!", ["🎤", "🎶", "🥳"], "at karaoke in the lounge", i < 4 ? "play" : "rest"),
+        ),
+      ),
+      dwell: 4,
+      text: { key: "ge.karaoke.text" },
+    }),
+  },
+  {
+    kind: "icecream",
+    icon: "🍦",
+    seconds: 28,
+    xp: 8,
+    when: (h) => between(h, 12, 18),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        CAFE.map((id) => fix(spotById(id), "Ice cream!", ["🍦", "😋"], "at the ice cream cart in the café", "sip")),
+      ),
+      dwell: 4,
+      text: { key: "ge.icecream.text" },
+    }),
+  },
+  {
+    kind: "delivery",
+    icon: "📦",
+    seconds: 45,
+    xp: 12,
+    plan: (idle) => {
+      const { id, orders } = chore(idle, ["planner", "night-support", "marketer"], EVENT_SPOTS.delivery);
+      return { orders, dwell: 3, heroId: id, text: { key: "ge.delivery.text", params: { name: nameOf(id) } } };
+    },
+  },
+  {
+    kind: "outage",
+    icon: "🔦",
+    seconds: 18,
+    xp: 6,
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        shuffle(EVENT_SPOTS.drill)
+          .slice(0, 8)
+          .map((s) => fix(s, "Who turned off the lights?", ["🔦", "😱", "🕯️"], "in the dark corridor")),
+      ),
+      dwell: 4,
+      text: { key: "ge.outage.text" },
+    }),
+  },
+  {
+    kind: "welcome",
+    icon: "🎉",
+    seconds: 26,
+    xp: 10,
+    random: false,
+    plan: (idle, everyone, hero) => {
+      const heroId = hero ?? pick(everyone);
+      return {
+        orders: gather(
+          idle.filter((id) => id !== heroId),
+          CAFE.map((id) => fix(spotById(id), "Welcome!", ["🎉", "👋", "🥳"], "at the welcome party in the café", "chat")),
+        ),
+        dwell: 4,
+        heroId,
+        text: { key: "ge.welcome.text", params: { name: nameOf(heroId) } },
+      };
+    },
+  },
+  {
     kind: "coffee",
     icon: "☕",
     seconds: 18,
@@ -305,6 +446,18 @@ const EVENTS: EventDef[] = [
 
 let nextAt = 20; // scene seconds until the first event
 let autoEvents = true;
+let eventHour = 10;
+let pendingHero: string | undefined;
+
+/** The office clock (0-24), so evening events happen in the evening. */
+export function setEventHour(hour: number) {
+  eventHour = hour;
+}
+
+/** Note a shift hand-over in the log. */
+export function logShift(shift: "day" | "night", n: number) {
+  log(shift === "day" ? "☀️" : "🌙", { key: "gl.shift", params: { shift: { key: `shift.${shift}` }, n } });
+}
 
 /** Switch the random events on or off (the buttons in the events panel still work). */
 export function setAutoEvents(on: boolean) {
@@ -314,21 +467,23 @@ let endsAt = 0;
 let pending: EventKind | "random" | null = null;
 let eventId = 0;
 
-/** Start an event on the next frame (from the 🎲 button). */
-export function triggerEvent(kind: EventKind | "random" = "random") {
+/** Start an event on the next frame (from the 🎲 button, or the welcome party for `heroId`). */
+export function triggerEvent(kind: EventKind | "random" = "random", heroId?: string) {
   pending = kind;
+  pendingHero = heroId;
 }
 
-function begin(def: EventDef, t: number) {
-  const everyone = [...walkers.keys()];
+function begin(def: EventDef, t: number, hero?: string) {
+  // only people who are in the building take part (or are the birthday person)
+  const everyone = [...walkers.values()].filter((w) => w.isHere()).map((w) => w.id);
   const idle = everyone.filter((id) => walkers.get(id)!.isIdle());
   const title: Msg = { key: `ge.${def.kind}` };
-  if (!idle.length) {
+  if (!idle.length && def.kind !== "welcome") {
     log(def.icon, { key: "gl.postponed", params: { title } });
     nextAt = t + 20;
     return;
   }
-  const plan = def.plan(idle, everyone);
+  const plan = def.plan(idle, everyone.length ? everyone : [...walkers.keys()], hero);
   if (!plan) return;
   const agentIds: string[] = [];
   for (const [id, spots] of plan.orders) if (walkers.get(id)?.command(spots, plan.dwell)) agentIds.push(id);
@@ -376,13 +531,23 @@ export function tickEvents(t: number) {
   if (pending) {
     const kind = pending;
     pending = null;
-    begin(kind === "random" ? pick(EVENTS) : EVENTS.find((e) => e.kind === kind)!, t);
+    begin(kind === "random" ? pick(eligible()) : EVENTS.find((e) => e.kind === kind)!, t, pendingHero);
+    pendingHero = undefined;
     return;
   }
   if (t >= nextAt && walkers.size) {
     nextAt = t + 30;
-    if (autoEvents) begin(pick(EVENTS), t);
+    if (autoEvents) begin(pick(eligible()), t);
   }
 }
 
-export const EVENT_KINDS = EVENTS.map((e) => ({ kind: e.kind, icon: e.icon, titleKey: `ge.${e.kind}` as Key }));
+/** Events that fit the time of day (stand-ups in the morning, movies at night). */
+function eligible() {
+  return EVENTS.filter((e) => e.random !== false && (!e.when || e.when(eventHour)));
+}
+
+export const EVENT_KINDS = EVENTS.filter((e) => e.random !== false).map((e) => ({
+  kind: e.kind,
+  icon: e.icon,
+  titleKey: `ge.${e.kind}` as Key,
+}));

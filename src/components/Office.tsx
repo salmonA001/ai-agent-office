@@ -8,10 +8,14 @@ import {
   CornersInIcon,
   CornersOutIcon,
   CpuIcon,
+  FastForwardIcon,
   ListIcon,
+  MoonIcon,
   PaintBrushIcon,
   PaperPlaneRightIcon,
   PlusIcon,
+  SunHorizonIcon,
+  SunIcon,
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -19,13 +23,15 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { type Agent, DEFAULT_AGENTS, withDefaultAgents } from "@/lib/agents";
+import { type Agent, DEFAULT_AGENTS, shiftOf, withDefaultAgents } from "@/lib/agents";
+import { clockText, officeMinutes, onShift, phaseAt, type Shift, SHIFTS, shiftAt, useOfficeMinutes } from "@/lib/office-clock";
+import { useOfficeCustom } from "@/lib/office-custom";
 import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
 import { type Key, phrase, useI18n } from "@/lib/i18n";
 import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
-import { levelOf, rewardOnce, setNames, useGame } from "./office-events";
+import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
 import { MAX_DESKS } from "./office-nav";
 import { CustomizePanel } from "./OfficeCustomize";
 import { AgentPanel, AgentStatusText, HowItWorks, initials, Stepper, stepIndex, Ticker, Timeline } from "./OfficeExplain";
@@ -198,6 +204,24 @@ function FullscreenButton({ full, onToggle }: { full: boolean; onToggle: () => v
   );
 }
 
+/** Office time on the 3D view, with the crew on duty. */
+function ClockChip({ minutes, fast, shifts }: { minutes: number; fast: boolean; shifts: boolean }) {
+  const { t } = useI18n();
+  const phase = phaseAt(minutes);
+  const I = phase === "day" ? SunIcon : phase === "sunset" ? SunHorizonIcon : MoonIcon;
+  return (
+    <span
+      className="glass-strong inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold tabular-nums"
+      title={fast ? t("clock.fast") : undefined}
+    >
+      <I size={16} weight="fill" aria-hidden className="text-accent" />
+      {clockText(minutes)}
+      {fast && <FastForwardIcon size={12} weight="fill" aria-label={t("clock.fast")} className="text-accent" />}
+      {shifts && <span className="hidden text-muted sm:inline">· {t(`shift.${shiftAt(minutes)}` as Key)}</span>}
+    </span>
+  );
+}
+
 function Markdown({ children }: { children: string }) {
   return (
     <div className="md text-sm">
@@ -208,6 +232,8 @@ function Markdown({ children }: { children: string }) {
 
 export function Office() {
   const { lang, t } = useI18n();
+  const custom = useOfficeCustom();
+  const minutes = useOfficeMinutes(custom.lighting);
   const profileName = useProfileName();
   const [loaded, setLoaded] = useState(false);
   const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS);
@@ -273,6 +299,11 @@ export function Office() {
 
   const start = useCallback(
     (text: string, accessCode: string) => {
+      // with shifts on, only the crew on duty takes new work (everyone, if nobody is in)
+      const now = officeMinutes(custom.lighting);
+      const crew = shiftAt(now);
+      const onDuty = custom.shifts ? agents.filter((a) => onShift(a.id, shiftOf(a), now)) : agents;
+      const team = (onDuty.length ? onDuty : agents).slice(0, MAX_DESKS);
       const task: Task = {
         id: crypto.randomUUID(),
         prompt: text,
@@ -281,7 +312,19 @@ export function Office() {
         subtasks: [],
         final: "",
         engine: engine ?? "browser",
-        events: [{ at: Date.now(), kind: "received", text: "You assigned the task. Max picks it up.", msg: { key: "ev.received" } }],
+        events: [
+          { at: Date.now(), kind: "received", text: "You assigned the task. Max picks it up.", msg: { key: "ev.received" } },
+          ...(custom.shifts
+            ? [
+                {
+                  at: Date.now(),
+                  kind: "info" as const,
+                  text: `${crew === "day" ? "Day" : "Night"} shift on duty: ${team.length} agents can take this task.`,
+                  msg: { key: "ev.shift", params: { shift: { key: `shift.${crew}` }, n: team.length } },
+                },
+              ]
+            : []),
+        ],
       };
       const controller = new AbortController();
       controllers.current.set(task.id, controller);
@@ -291,7 +334,7 @@ export function Office() {
 
       runTask(
         task,
-        agents,
+        team,
         task.engine!,
         accessCode,
         controller.signal,
@@ -311,7 +354,7 @@ export function Office() {
         })
         .finally(() => controllers.current.delete(task.id));
     },
-    [agents, engine, updateTask, lang],
+    [agents, engine, updateTask, lang, custom.lighting, custom.shifts],
   );
 
   const submit = () => {
@@ -542,7 +585,14 @@ export function Office() {
               </div>
             </div>
 
-            {showCustom && <CustomizePanel />}
+            {showCustom && (
+              <CustomizePanel
+                crews={{
+                  day: agents.filter((a) => shiftOf(a) === "day").length,
+                  night: agents.filter((a) => shiftOf(a) === "night").length,
+                }}
+              />
+            )}
 
             {showHire &&
               (agents.length >= MAX_DESKS ? (
@@ -554,6 +604,8 @@ export function Office() {
                   onHire={(a) => {
                     setAgents((all) => [...all, a]);
                     setShowHire(false);
+                    setNames([[a.id, a.name]]);
+                    triggerEvent("welcome", a.id);
                   }}
                 />
               ))}
@@ -588,6 +640,7 @@ export function Office() {
                     <Stepper active={stepIndex(manager, Boolean(selected && selected.status === "done"))} />
                   </div>
                   <div className="pointer-events-auto flex items-start gap-2">
+                    {minutes !== null && <ClockChip minutes={minutes} fast={custom.lighting === "fast"} shifts={custom.shifts} />}
                     <FullscreenButton full={isFull} onToggle={toggleFull} />
                     <HowItWorks
                       open={guideOpen}
@@ -622,56 +675,105 @@ export function Office() {
               )}
             </div>
 
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label={t("floor.title")}>
-              {agents.map((a, i) => {
-                const doing = busy.get(a.id);
+            <div className="flex flex-col gap-4">
+              {(custom.shifts ? SHIFTS : [null]).map((shift: Shift | null) => {
+                const crew = shift ? agents.filter((a) => shiftOf(a) === shift) : agents;
+                if (!crew.length) return null;
+                const crewOn = !shift || (minutes !== null && shiftAt(minutes) === shift);
+                const ShiftIcon = shift === "night" ? MoonIcon : SunIcon;
                 return (
-                  <li
-                    key={a.id}
-                    className={`enter lift relative flex flex-col gap-2 rounded-xl border p-3 ${
-                      doing ? "pulse-glow border-accent bg-accent/10" : "border-line bg-well"
-                    } ${focusId === a.id ? "ring-2 ring-accent" : ""}`}
-                    style={{ ["--i" as string]: Math.min(i, 12) }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => selectAgent(a.id)}
-                      aria-pressed={focusId === a.id}
-                      className="flex flex-col gap-2 text-left"
-                    >
-                      <span className="flex items-center gap-2">
+                  <div key={shift ?? "all"} className="flex flex-col gap-2">
+                    {shift && (
+                      <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
+                        <ShiftIcon size={18} weight="duotone" aria-hidden className={crewOn ? "text-accent" : "text-muted"} />
+                        {t(`shift.${shift}` as Key)}
+                        <span className="text-xs font-normal text-muted">
+                          {t(shift === "day" ? "shift.dayHours" : "shift.nightHours")} · {t("shift.count", { n: crew.length })}
+                        </span>
                         <span
-                          aria-hidden
-                          className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold transition-colors duration-300 ${
-                            doing ? "bg-accent text-on-accent" : "bg-primary text-on-primary"
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            crewOn ? "bg-accent text-on-accent" : "bg-well text-muted"
                           }`}
                         >
-                          {initials(a.name)}
+                          {crewOn ? t("shift.onDuty") : t("shift.offDuty")}
                         </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold">{a.name}</span>
-                          <span className="block truncate text-xs text-muted">{phrase(lang, a.role)}</span>
-                        </span>
-                      </span>
-                      <XpBadge id={a.id} />
-                      <span className="line-clamp-2 text-xs text-muted">
-                        {doing ? t("agent.workingOn", { title: doing.join(", ") }) : <AgentStatusText id={a.id} fallback={t("agent.available")} />}
-                      </span>
-                    </button>
-                    {a.custom && (
-                      <button
-                        type="button"
-                        onClick={() => setAgents((all) => all.filter((x) => x.id !== a.id))}
-                        className="self-start text-xs text-error underline"
-                        aria-label={t("agent.removeLabel", { name: a.name })}
-                      >
-                        {t("agent.remove")}
-                      </button>
+                      </h3>
                     )}
-                  </li>
+                    <ul
+                      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+                      aria-label={shift ? t(`shift.${shift}` as Key) : t("floor.title")}
+                    >
+                      {crew.map((a, i) => {
+                        const doing = busy.get(a.id);
+                        const away = custom.shifts && minutes !== null && !doing && !onShift(a.id, shiftOf(a), minutes);
+                        const other = shiftOf(a) === "day" ? "night" : "day";
+                        const OtherIcon = other === "night" ? MoonIcon : SunIcon;
+                        return (
+                          <li
+                            key={a.id}
+                            className={`enter lift relative flex flex-col gap-2 rounded-xl border p-3 transition-opacity ${
+                              doing ? "pulse-glow border-accent bg-accent/10" : "border-line bg-well"
+                            } ${focusId === a.id ? "ring-2 ring-accent" : ""} ${away ? "opacity-70" : ""}`}
+                            style={{ ["--i" as string]: Math.min(i, 12) }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => selectAgent(a.id)}
+                              aria-pressed={focusId === a.id}
+                              className="flex flex-col gap-2 text-left"
+                            >
+                              <span className="flex items-center gap-2 pr-8">
+                                <span
+                                  aria-hidden
+                                  className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold transition-colors duration-300 ${
+                                    doing ? "bg-accent text-on-accent" : away ? "bg-well text-muted ring-1 ring-line" : "bg-primary text-on-primary"
+                                  }`}
+                                >
+                                  {initials(a.name)}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-semibold">{a.name}</span>
+                                  <span className="block truncate text-xs text-muted">{phrase(lang, a.role)}</span>
+                                </span>
+                              </span>
+                              <XpBadge id={a.id} />
+                              <span className="line-clamp-2 text-xs text-muted">
+                                {doing ? (
+                                  t("agent.workingOn", { title: doing.join(", ") })
+                                ) : (
+                                  <AgentStatusText id={a.id} fallback={away ? t("agent.offDuty") : t("agent.available")} />
+                                )}
+                              </span>
+                            </button>
+                            {custom.shifts && (
+                              <button
+                                type="button"
+                                onClick={() => setAgents((all) => all.map((x) => (x.id === a.id ? { ...x, shift: other } : x)))}
+                                aria-label={t(other === "night" ? "shift.moveToNight" : "shift.moveToDay", { name: a.name })}
+                                title={t(other === "night" ? "shift.moveToNight" : "shift.moveToDay", { name: a.name })}
+                                className="press absolute right-2 top-2 grid size-9 place-items-center rounded-lg border border-line bg-surface/40 text-muted hover:text-accent"
+                              >
+                                <OtherIcon size={16} weight="bold" aria-hidden />
+                              </button>
+                            )}
+                            {a.custom && (
+                              <button
+                                type="button"
+                                onClick={() => setAgents((all) => all.filter((x) => x.id !== a.id))}
+                                className="self-start text-xs text-error underline"
+                                aria-label={t("agent.removeLabel", { name: a.name })}
+                              >
+                                {t("agent.remove")}
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           </section>
 
           <div className="grid flex-1 gap-5 lg:grid-cols-[340px_1fr]">
@@ -888,6 +990,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [shift, setShift] = useState<Shift>("day");
   const valid = name.trim() && role.trim() && instructions.trim();
   const input = "min-h-10 rounded-lg border border-line bg-surface/40 px-3 text-ink transition-colors focus:border-accent/60";
 
@@ -903,6 +1006,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           role: role.trim(),
           instructions: instructions.trim(),
           custom: true,
+          shift,
         });
       }}
     >
@@ -932,6 +1036,26 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           className="rounded-lg border border-line bg-surface/40 p-3 text-ink transition-colors focus:border-accent/60"
         />
       </label>
+      <fieldset className="flex flex-col gap-1 text-sm sm:col-span-2">
+        <legend className="mb-1">{t("hire.shift")}</legend>
+        <div className="grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-surface/40 p-1">
+          {SHIFTS.map((s) => {
+            const I = s === "day" ? SunIcon : MoonIcon;
+            return (
+              <label
+                key={s}
+                className={`press inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent ${
+                  shift === s ? "bg-primary text-on-primary" : "text-muted hover:text-ink"
+                }`}
+              >
+                <input type="radio" name="hire-shift" value={s} checked={shift === s} onChange={() => setShift(s)} className="sr-only" />
+                <I size={16} weight={shift === s ? "fill" : "regular"} aria-hidden />
+                {t(`shift.${s}` as Key)}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       <button
         type="submit"
         disabled={!valid}

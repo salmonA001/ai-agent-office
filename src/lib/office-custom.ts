@@ -6,7 +6,7 @@ import { SPOT_CATS, type SpotCat } from "@/components/office-nav";
 export const FLOOR_STYLES = ["tile", "wood", "carpet", "concrete"] as const;
 export const DESK_FINISHES = ["white", "oak", "walnut", "black"] as const;
 export const ACCENTS = ["slate", "sage", "sky", "blush", "sun"] as const;
-export const LIGHTING = ["auto", "day", "sunset", "night"] as const;
+export const LIGHTING = ["auto", "fast", "day", "sunset", "night"] as const;
 export const DECOR_ITEMS = ["plants", "rugs", "art", "lamps", "deskItems", "aquarium", "stringLights", "sign"] as const;
 export const BREAKS = ["rare", "normal", "often"] as const;
 
@@ -28,6 +28,8 @@ export type OfficeCustom = {
   activities: Record<SpotCat, boolean>;
   breaks: Breaks;
   events: boolean;
+  /** day and night crews clock in and out; off = everyone is always in */
+  shifts: boolean;
 };
 
 export const ACCENT_COLORS: Record<Accent, string> = {
@@ -64,6 +66,7 @@ export const DEFAULT_CUSTOM: OfficeCustom = {
   activities: Object.fromEntries(SPOT_CATS.map((c) => [c, true])) as Record<SpotCat, boolean>,
   breaks: "normal",
   events: true,
+  shifts: true,
 };
 
 const KEY = "office.custom";
@@ -84,6 +87,7 @@ function sanitize(raw: unknown): OfficeCustom {
     activities: flags(SPOT_CATS, r.activities, DEFAULT_CUSTOM.activities),
     breaks: pick(BREAKS, r.breaks, DEFAULT_CUSTOM.breaks),
     events: typeof r.events === "boolean" ? r.events : DEFAULT_CUSTOM.events,
+    shifts: typeof r.shifts === "boolean" ? r.shifts : DEFAULT_CUSTOM.shifts,
   };
 }
 
@@ -132,12 +136,4 @@ export function resetOfficeCustom() {
 
 export function useOfficeCustom() {
   return useSyncExternalStore(subscribe, getOfficeCustom, () => DEFAULT_CUSTOM);
-}
-
-/** Day, sunset or night: picked by the user, or from the viewer's clock in "auto". */
-export function phaseFor(lighting: Lighting, hour = new Date().getHours()): Phase {
-  if (lighting !== "auto") return lighting;
-  if (hour >= 7 && hour < 17) return "day";
-  if ((hour >= 17 && hour < 19) || hour === 6) return "sunset";
-  return "night";
 }

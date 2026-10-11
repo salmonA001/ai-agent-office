@@ -41,7 +41,9 @@ const rowAisle = (row: number) => deskSlot(row * DESK_GRID.cols).aisleZ;
 const R = [0, 1, 2, 3].map(rowAisle);
 
 const NODES: Record<string, P2> = {
-  // corridor
+  // corridor, with the elevator and the time clock at its west end
+  EL: [-6.9, 0.3],
+  TC: [-6.35, 0.3],
   C3: [-5.1, 0.3],
   C2: [-3.45, 0.3],
   CW: [AISLE.west, 0.3],
@@ -91,6 +93,8 @@ const NODES: Record<string, P2> = {
 };
 
 const EDGES: [string, string][] = [
+  ["EL", "TC"],
+  ["TC", "C3"],
   ["C3", "C2"],
   ["C2", "CW"],
   ["CW", "C4"],
@@ -173,6 +177,9 @@ export type Spot = {
   pair?: string;
   /** decoration that has to be switched on for this spot to exist */
   needs?: string;
+  /** hands the agent something to carry (a parcel), or takes it back */
+  gives?: string;
+  takes?: boolean;
 };
 
 const PI = Math.PI;
@@ -281,13 +288,38 @@ export const EVENT_SPOTS = {
     spot({ id: "plant-l", at: [3.95, -5.0], node: "L1", approach: [[4.7, -3.65], [4.45, -4.5]], face: -2.36, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌱"] }),
     spot({ id: "plant-g", at: [11.35, -4.95], node: "G1", approach: [[11.05, -2.3], [11.05, -4.3]], face: 2.51, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌿"] }),
   ],
+  meeting: [
+    spot({ id: "mc-s1", at: [-6.4, -2.25], node: "M1", approach: [[-6.4, -1.3]], face: PI, seat: 0.5, activity: "rest", cat: "ideas", say: "Morning, team!", where: "at the stand-up", emoji: ["📋", "☕"] }),
+    spot({ id: "mc-s3", at: [-4.4, -2.25], node: "M1", approach: [[-4.4, -1.3]], face: PI, seat: 0.5, activity: "rest", cat: "ideas", say: "Today I'll finish…", where: "at the stand-up", emoji: ["📋", "💪"] }),
+    ...[-6.4, -5.4, -4.4].map((x, i) =>
+      spot({ id: `mc-n${i + 1}`, at: [x, -3.95], node: "M0", approach: [[-3.45, -4.45], [x, -4.45]], face: 0, seat: 0.5, activity: "rest", cat: "ideas", say: "No blockers!", where: "at the stand-up", emoji: ["📋", "👍"] }),
+    ),
+  ],
+  movie: [-6.4, -5.4, -4.4].map((x, i) =>
+    spot({ id: `mv-${i + 1}`, at: [x, -1.6], node: "M1", face: PI, activity: "sip", cat: "rest", say: "Popcorn time!", where: "at movie night in the meeting room", emoji: ["🍿", "🎬"] }),
+  ),
+  delivery: [
+    spot({ id: "parcel-pickup", at: [-7.0, 0.3], node: "EL", face: 0, activity: "look", cat: "ideas", say: "Signing for a parcel", where: "at the elevator", emoji: ["📦", "✍️"], gives: "box" }),
+    spot({ id: "parcel-drop", at: [-6.2, 14.85], node: "PB", approach: [[-6.2, 14.0]], face: 0, activity: "look", cat: "ideas", say: "Unpacking supplies", where: "at the supply cabinet", emoji: ["📦", "✨"], takes: true }),
+  ],
   yoga: [
     spot({ id: "yc-1", at: [-5.2, 9.0], node: "WN", face: PI / 2, activity: "yoga", cat: "exercise", say: "Yoga class!", where: "at the yoga class", emoji: ["🧘", "😌"] }),
     spot({ id: "yc-2", at: [-4.6, 6.4], node: "WN", face: PI / 2, activity: "yoga", cat: "exercise", say: "Reach up!", where: "at the yoga class", emoji: ["🙆", "✨"] }),
   ],
 };
 
-export const spotById = (id: string) => [...SPOTS, ...Object.values(EVENT_SPOTS).flat()].find((s) => s.id === id)!;
+/** Where agents punch in and out, and where they step in and out of the elevator. */
+export const CLOCK_SPOTS: Spot[] = [
+  spot({ id: "clock-a", at: [-6.35, 0.3], node: "TC", face: PI, activity: "look", cat: "ideas", say: "Punching in", where: "at the time clock", emoji: ["⏰"] }),
+  spot({ id: "clock-b", at: [-5.75, 0.45], node: "TC", face: -2.3, activity: "look", cat: "ideas", say: "Punching in", where: "at the time clock", emoji: ["⏰"] }),
+];
+export const LIFT_SPOTS: Spot[] = [
+  spot({ id: "lift-a", at: [-7.6, 0.05], node: "EL", face: -PI / 2, activity: "look", cat: "ideas", say: "", where: "at the elevator", emoji: ["🛗"] }),
+  spot({ id: "lift-b", at: [-7.6, 0.55], node: "EL", face: -PI / 2, activity: "look", cat: "ideas", say: "", where: "at the elevator", emoji: ["🛗"] }),
+];
+
+export const spotById = (id: string) =>
+  [...SPOTS, ...Object.values(EVENT_SPOTS).flat(), ...CLOCK_SPOTS, ...LIFT_SPOTS].find((s) => s.id === id)!;
 
 const dist = (a: P2, b: P2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
@@ -371,13 +403,23 @@ export function setBreakRules(rules: { cats: SpotCat[]; decor: string[]; breaks:
 
 const usable = (s: Spot) => allowedCats.has(s.cat) && (!s.needs || decorOn.has(s.needs));
 
-/** Real-life rhythm: coffee in the morning, lunch at noon, games after five, naps late at night. */
+let officeHour = 10;
+
+/** The office clock (0-24), for the daily rhythm of breaks. */
+export function setOfficeHour(hour: number) {
+  officeHour = hour;
+}
+
+/**
+ * Real-life rhythm for both shifts: coffee when a shift starts, lunch at noon and a meal at midnight,
+ * snacks mid-shift, games in the evening, naps in the small hours.
+ */
 function rhythm(cat: SpotCat, hour: number) {
-  if (hour >= 8 && hour < 10) return cat === "food" ? 2.2 : 1;
-  if (hour >= 12 && hour < 13) return cat === "food" ? 3 : cat === "chat" ? 1.6 : 1;
-  if (hour >= 15 && hour < 16) return cat === "food" || cat === "games" ? 1.6 : 1;
-  if (hour >= 17 && hour < 20) return cat === "games" || cat === "chat" ? 1.6 : 1;
-  if (hour >= 22 || hour < 6) return cat === "rest" ? 3 : 1;
+  if ((hour >= 12 && hour < 13) || hour < 1) return cat === "food" ? 3 : cat === "chat" ? 1.6 : 1;
+  if ((hour >= 7 && hour < 9) || (hour >= 19 && hour < 21)) return cat === "food" ? 2.2 : 1;
+  if ((hour >= 15 && hour < 16) || (hour >= 3 && hour < 4)) return cat === "food" || cat === "games" ? 1.6 : 1;
+  if (hour >= 17 && hour < 19) return cat === "games" || cat === "chat" ? 1.6 : 1;
+  if (hour >= 1 && hour < 5) return cat === "rest" ? 2.2 : 1;
   return 1;
 }
 
@@ -391,7 +433,7 @@ const present = new Map<string, string>();
 export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
   const free = SPOTS.filter((s) => s.id !== avoid && usable(s) && (!taken.has(s.id) || taken.get(s.id) === agentId));
   if (!free.length) return null;
-  const hour = new Date().getHours();
+  const hour = officeHour;
   // join a colleague who is already waiting at a table
   const weights = free.map((s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1));
   let r = Math.random() * weights.reduce((a, b) => a + b, 0);
@@ -405,6 +447,11 @@ export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
   }
   claimSpot(agentId, s);
   return s;
+}
+
+/** First spot in the list nobody else has claimed. */
+function freeSpot(list: Spot[], agentId: string) {
+  return list.find((s) => !taken.has(s.id) || taken.get(s.id) === agentId) ?? null;
 }
 
 function claimSpot(agentId: string, s: Spot) {
@@ -423,7 +470,10 @@ export function isPresent(spotId: string) {
 
 // ---------- Per-agent state machine (plain TS so it can be simulated without a browser) ----------
 
-export type WalkPhase = { kind: "seated" } | { kind: "walking"; rushing: boolean } | { kind: "spot"; spot: Spot };
+export type WalkPhase = { kind: "seated" } | { kind: "walking"; rushing: boolean } | { kind: "spot"; spot: Spot } | { kind: "away" };
+
+/** Clocking in (lift, time clock, desk), clocking out (time clock), then stepping into the lift. */
+export type Trip = "arrive" | "leave" | "exit" | null;
 
 export const STROLL = 0.9;
 export const HURRY = 1.6;
@@ -433,6 +483,8 @@ export const RUSH = 4;
  * Seated at the desk until idle for a while, then strolls between spots, sometimes heading home.
  * Office events can give it orders (a list of spots to visit). The moment the agent is busy with
  * real work it drops everything and rushes back to its chair, retracing its current route.
+ * With shifts, it arrives by elevator and punches in, and when its shift is over (and its work is
+ * done) it punches out and leaves by elevator.
  */
 export class Wanderer {
   x: number;
@@ -443,35 +495,52 @@ export class Wanderer {
   /** sideways nudge so passing agents step around each other (visual only) */
   offX = 0;
   offZ = 0;
+  trip: Trip = null;
+  /** 1 = here, 0 = gone into the elevator */
+  fade = 1;
+  /** what the agent is carrying, e.g. a parcel during a delivery */
+  holding: string | null = null;
   readonly id: string;
   readonly seatY: number;
-  private mode: "seated" | "out" | "spot" | "home" = "seated";
+  private mode: "seated" | "out" | "spot" | "home" | "away" = "seated";
   private origin: Anchor;
   private path: P2[] = [];
   private seg = 0;
   private speed = STROLL;
   private spot: Spot | null = null;
   private timer: number;
+  /** seconds to stand still before walking (doors opening) */
+  private hold = 0;
+  /** a few seconds' grace before clocking in or out, so a whole crew doesn't move at once */
+  private shiftWait = -1;
   private busy = false;
   private canWander = true;
+  /** on the shift schedule right now */
+  private duty = true;
   private orders: Spot[] = [];
   private ordered = false;
   private dwellEach = 4;
   /** the current/last trip was an order from an office event */
   private onOrder = false;
 
-  constructor(id: string, home: Home, seatY: number, firstWait: number) {
+  constructor(id: string, home: Home, seatY: number, firstWait: number, here = true) {
     this.id = id;
     this.seatY = seatY;
     this.timer = firstWait;
     [this.x, this.z] = home.seat;
     this.y = seatY;
     this.origin = { home };
+    if (!here) this.goAway();
   }
 
-  /** Free to take part in office events. */
+  /** In the building (not clocked out). */
+  isHere() {
+    return this.mode !== "away";
+  }
+
+  /** Free to take part in office events (not if their shift is over and they're about to leave). */
   isIdle() {
-    return !this.busy && this.canWander;
+    return !this.busy && this.canWander && this.duty && this.mode !== "away" && !this.trip;
   }
 
   /** Visit these spots in order (dwelling `dwellEach` seconds at all but the last), then wait for release(). */
@@ -490,19 +559,67 @@ export class Wanderer {
     if (this.mode === "spot") this.timer = Math.min(this.timer, 1 + Math.random() * 3);
   }
 
-  /** Advance one frame. Returns true when `phase` changed (the caller re-renders then). */
-  update(dt: number, home: Home, busy: boolean, canWander: boolean): boolean {
+  /**
+   * Advance one frame. `onDuty` is the shift schedule; busy agents stay (or come in) regardless.
+   * Returns true when `phase` changed (the caller re-renders then).
+   */
+  update(dt: number, home: Home, busy: boolean, canWander: boolean, onDuty = true): boolean {
     const before = this.phase;
     dt = Math.min(dt, 0.1);
     this.busy = busy;
     this.canWander = canWander;
-    if ((busy || !canWander) && this.mode !== "seated") {
+    this.duty = onDuty;
+    const wanted = onDuty || busy;
+
+    // no walking (reduced motion): simply at the desk, or not in
+    if (!canWander) {
+      this.orders = [];
+      this.ordered = false;
+      this.trip = null;
+      this.holding = null;
+      releaseSpot(this.id);
+      if (!wanted) {
+        if (this.mode !== "away") this.goAway();
+      } else if (this.mode !== "seated") {
+        this.mode = "seated";
+        this.spot = null;
+        this.fade = 1;
+        this.phase = { kind: "seated" };
+      }
+      if (this.mode === "seated") {
+        [this.x, this.z] = home.seat;
+        this.y = this.seatY;
+        this.yaw = 0;
+      }
+      this.offX = this.offZ = 0;
+      return this.phase !== before;
+    }
+
+    if (this.mode === "away") {
+      if (!wanted) this.shiftWait = -1;
+      else if (busy) this.arrive(home);
+      else {
+        if (this.shiftWait < 0) this.shiftWait = Math.random() * 7;
+        if ((this.shiftWait -= dt) <= 0) this.arrive(home);
+      }
+      return this.phase !== before;
+    }
+
+    // fade in after stepping out of the elevator
+    if (this.trip !== "exit") this.fade = Math.min(1, this.fade + dt * 2.5);
+
+    if (busy && this.mode !== "seated") {
       this.orders = [];
       this.ordered = false;
       this.goHome(home);
     }
     // a hangout spot that was switched off in the settings: wrap up soon
-    if (this.mode === "spot" && this.spot && !this.ordered && !usable(this.spot)) this.timer = Math.min(this.timer, 0.5);
+    if (this.mode === "spot" && this.spot && !this.ordered && !this.trip && !usable(this.spot)) this.timer = Math.min(this.timer, 0.5);
+    // shift over: head for the time clock (busy agents stay to finish their work)
+    if (!wanted && !this.trip && !this.ordered && !this.orders.length && (this.mode === "seated" || this.mode === "spot")) {
+      if (this.shiftWait < 0) this.shiftWait = 1 + Math.random() * 7;
+      if ((this.shiftWait -= dt) <= 0) this.leave(home);
+    } else if (wanted) this.shiftWait = -1;
 
     let targetY = 0;
     let targetYaw = this.yaw;
@@ -510,7 +627,7 @@ export class Wanderer {
       [this.x, this.z] = home.seat;
       targetY = this.seatY;
       targetYaw = 0;
-      if (busy || !canWander) {
+      if (busy) {
         this.orders = [];
         this.ordered = false;
         this.timer = Math.max(this.timer, 4 + Math.random() * 4);
@@ -527,26 +644,42 @@ export class Wanderer {
       targetY = this.spot.seat;
       targetYaw = this.spot.face;
       this.timer -= dt;
-      // an office event sent someone else to this spot: move on
-      if (!this.ordered && taken.get(this.spot.id) !== this.id) this.timer = Math.min(this.timer, 0);
-      if (this.orders.length) {
-        // new orders interrupt a normal hangout at once; along an ordered route, wait out each stop
-        if (!this.onOrder || this.timer <= 0) this.takeOrder({ spot: this.spot });
-      } else if (!this.ordered && this.timer <= 0) {
-        const from = this.spot;
-        const homeChance = breakScale > 1 ? 0.65 : breakScale < 1 ? 0.15 : 0.35;
-        const next = Math.random() < homeChance ? null : claimRandomSpot(this.id, from.id);
-        if (next) {
-          this.spot = next;
-          this.start({ spot: from }, { spot: next }, STROLL, "out");
-        } else {
+      if (this.trip === "exit") {
+        // stepping into the elevator
+        this.fade = Math.max(0, this.fade - dt * 2);
+        if (this.fade <= 0) this.goAway();
+      } else if (this.trip === "leave") {
+        if (this.timer <= 0) this.exit({ spot: this.spot });
+      } else if (this.trip === "arrive") {
+        if (this.timer <= 0) {
+          const from = this.spot;
           releaseSpot(this.id);
+          this.spot = null;
           this.start({ spot: from }, { home }, STROLL, "home");
+        }
+      } else {
+        // an office event sent someone else to this spot: move on
+        if (!this.ordered && taken.get(this.spot.id) !== this.id) this.timer = Math.min(this.timer, 0);
+        if (this.orders.length) {
+          // new orders interrupt a normal hangout at once; along an ordered route, wait out each stop
+          if (!this.onOrder || this.timer <= 0) this.takeOrder({ spot: this.spot });
+        } else if (!this.ordered && this.timer <= 0) {
+          const from = this.spot;
+          const homeChance = breakScale > 1 ? 0.65 : breakScale < 1 ? 0.15 : 0.35;
+          const next = Math.random() < homeChance ? null : claimRandomSpot(this.id, from.id);
+          if (next) {
+            this.spot = next;
+            this.start({ spot: from }, { spot: next }, STROLL, "out");
+          } else {
+            releaseSpot(this.id);
+            this.start({ spot: from }, { home }, STROLL, "home");
+          }
         }
       }
     } else {
       const target = this.path[this.seg + 1];
-      if (target) {
+      if (this.hold > 0) this.hold -= dt;
+      else if (target) {
         const dx = target[0] - this.x;
         const dz = target[1] - this.z;
         const d = Math.hypot(dx, dz);
@@ -560,16 +693,20 @@ export class Wanderer {
           this.z += (dz / d) * step;
         }
       }
-      if (this.seg >= this.path.length - 1) {
+      if (this.hold <= 0 && this.seg >= this.path.length - 1) {
         if (this.mode === "out" && this.spot) {
           if (taken.get(this.spot.id) === this.id) present.set(this.spot.id, this.id);
           this.mode = "spot";
-          // under orders: short stops along a route, then stay until the event ends
-          this.timer = this.ordered ? (this.orders.length ? this.dwellEach : 1e9) : 10 + Math.random() * 14;
+          // punching the clock takes a moment; under orders: short stops, then stay until the event ends
+          this.timer = this.trip ? 1.6 : this.ordered ? (this.orders.length ? this.dwellEach : 1e9) : 10 + Math.random() * 14;
           this.phase = { kind: "spot", spot: this.spot };
+          if (this.spot.gives) this.holding = this.spot.gives;
+          if (this.spot.takes) this.holding = null;
         } else {
           this.mode = "seated";
           this.spot = null;
+          this.trip = null;
+          this.holding = null;
           this.timer = (8 + Math.random() * 10) * breakScale;
           this.phase = { kind: "seated" };
         }
@@ -588,13 +725,68 @@ export class Wanderer {
     walkers.delete(this.id);
   }
 
+  private goAway() {
+    releaseSpot(this.id);
+    this.mode = "away";
+    this.phase = { kind: "away" };
+    this.trip = null;
+    this.spot = null;
+    this.holding = null;
+    this.orders = [];
+    this.ordered = false;
+    this.fade = 0;
+  }
+
+  /** Step out of the elevator, punch in (unless work is waiting), then go to the desk. */
+  private arrive(home: Home) {
+    this.shiftWait = -1;
+    const lift = freeSpot(LIFT_SPOTS, this.id) ?? LIFT_SPOTS[0];
+    [this.x, this.z] = lift.at;
+    this.y = 0;
+    this.yaw = PI / 2;
+    this.fade = 0;
+    this.hold = 0.6;
+    const punch = this.busy ? null : freeSpot(CLOCK_SPOTS, this.id);
+    if (punch) {
+      claimSpot(this.id, punch);
+      this.spot = punch;
+      this.start({ spot: lift }, { spot: punch }, STROLL, "out");
+    } else {
+      this.spot = null;
+      this.start({ spot: lift }, { home }, this.busy ? RUSH : STROLL, "home");
+    }
+    this.trip = "arrive";
+  }
+
+  /** Shift over: punch out at the time clock (or go straight to the elevator if it's crowded). */
+  private leave(home: Home) {
+    this.shiftWait = -1;
+    const from: Anchor = this.mode === "spot" && this.spot ? { spot: this.spot } : { home };
+    releaseSpot(this.id);
+    const punch = freeSpot(CLOCK_SPOTS, this.id);
+    if (!punch) return this.exit(from);
+    claimSpot(this.id, punch);
+    this.spot = punch;
+    this.start(from, { spot: punch }, STROLL, "out");
+    this.trip = "leave";
+  }
+
+  private exit(from: Anchor) {
+    releaseSpot(this.id);
+    const lift = freeSpot(LIFT_SPOTS, this.id) ?? LIFT_SPOTS[0];
+    claimSpot(this.id, lift);
+    this.spot = lift;
+    this.start(from, { spot: lift }, STROLL, "out");
+    this.trip = "exit";
+  }
+
   /** Walking agents ease sideways away from anyone close by, so two people in an aisle pass instead of merging. */
   private sidestep(dt: number) {
     let px = 0;
     let pz = 0;
     if (this.phase.kind === "walking") {
       for (const other of walkers.values()) {
-        if (other === this || other.phase.kind === "seated") continue;
+        if (other === this || other.phase.kind === "seated" || other.phase.kind === "away") continue;
         const dx = this.x - other.x;
         const dz = this.z - other.z;
         const d = Math.hypot(dx, dz);
@@ -636,6 +828,19 @@ export class Wanderer {
 
   private goHome(home: Home) {
     releaseSpot(this.id);
+    this.holding = null;
+    if (this.trip === "arrive" && this.mode === "out" && this.spot) {
+      // was heading to the time clock: skip it and rush to the desk
+      const rest = this.path.slice(this.seg + 1);
+      this.path = [[this.x, this.z], ...rest, ...route({ spot: this.spot }, { home }).slice(1)];
+      this.seg = 0;
+      this.spot = null;
+      this.speed = RUSH;
+      this.mode = "home";
+      this.phase = { kind: "walking", rushing: true };
+      return;
+    }
+    if (this.trip !== "arrive") this.trip = null;
     if (this.mode === "spot" && this.spot) {
       this.start({ spot: this.spot }, { home }, RUSH, "home");
     } else if (this.mode === "out") {

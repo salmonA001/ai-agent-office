@@ -4,7 +4,7 @@ import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasTexture, type Group, type Mesh, Object3D, type Sprite, type SpriteMaterial, SRGBColorSpace, Vector3 } from "three";
-import type { Agent } from "@/lib/agents";
+import { type Agent, shiftOf } from "@/lib/agents";
 import {
   type BoardLine,
   EventProps,
@@ -17,9 +17,10 @@ import {
   Projector,
 } from "./OfficeFloor";
 import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
-import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, phaseFor, useOfficeCustom } from "@/lib/office-custom";
+import { arrivalOf, clockText, onShift, phaseAt, type Shift, SHIFT_HOURS, shiftAt, useOfficeMinutes } from "@/lib/office-clock";
+import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { currentEventKind, setAutoEvents, tickEvents, useGame } from "./office-events";
+import { awardXp, currentEventKind, logShift, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
 import {
   type Activity,
   DESK_SCALE,
@@ -29,7 +30,9 @@ import {
   MAX_DESKS,
   registerWalker,
   setBreakRules,
+  setOfficeHour,
   SPOT_CATS,
+  type Trip,
   type WalkPhase,
   Wanderer,
 } from "./office-nav";
@@ -90,9 +93,23 @@ function Label({
 
 // ---------- Kawaii workers ----------
 
-export type Species = "bear" | "bunny" | "cat" | "hamster" | "puppy" | "chick";
-type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | "beret" | "cap" | null;
-type Action = "idle" | "write" | "chalk" | "wave" | "walk" | "sip" | "play" | "read" | "phone" | "yoga" | "run" | "talk" | "nap";
+export type Species = "bear" | "bunny" | "cat" | "hamster" | "puppy" | "chick" | "owl";
+type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | "beret" | "cap" | "beanie" | null;
+type Action =
+  | "idle"
+  | "write"
+  | "chalk"
+  | "wave"
+  | "walk"
+  | "sip"
+  | "play"
+  | "read"
+  | "phone"
+  | "yoga"
+  | "run"
+  | "talk"
+  | "nap"
+  | "carry";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -109,7 +126,22 @@ const LOOKS: Look[] = [
   { species: "puppy", color: "#ffe3e3", inner: "#ffa8a8" },
 ];
 
+/** The night crew: cool moonlit pastels, with owls. */
+const NIGHT_LOOKS: Look[] = [
+  { species: "owl", color: "#ddd0ff", inner: "#b8a4f0" },
+  { species: "cat", color: "#cdd6ff", inner: "#a5b4fc" },
+  { species: "bunny", color: "#d4e6ff", inner: "#93c5fd" },
+  { species: "owl", color: "#eadfcd", inner: "#c9ab82" },
+  { species: "puppy", color: "#dfe3ff", inner: "#c4b5fd" },
+  { species: "hamster", color: "#ece6ff", inner: "#c4b5fd" },
+];
+
 const ACCESSORY: Record<string, Accessory> = {
+  "night-researcher": "glasses",
+  "night-writer": "beanie",
+  "night-coder": "beanie",
+  "night-designer": "beanie",
+  "night-support": "headphones",
   researcher: "glasses",
   writer: "bow",
   coder: "headphones",
@@ -173,6 +205,24 @@ function Ears({ species, color, inner }: Look) {
             <Ink />
           </mesh>
         ))}
+      </>
+    );
+  }
+  if (species === "owl") {
+    return (
+      <>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[s * 0.27, 0.36, -0.02]} rotation-z={-s * 0.55} scale={[1, 1, 0.6]} castShadow>
+            <coneGeometry args={[0.09, 0.22, 10]} />
+            <Toon color={color} />
+            <Ink />
+          </mesh>
+        ))}
+        {/* pale face disc around the eyes */}
+        <mesh position={[0, 0.02, 0.33]} scale={[1.25, 0.85, 0.25]}>
+          <sphereGeometry args={[0.2, 20, 14]} />
+          <Toon color="#fffaf2" />
+        </mesh>
       </>
     );
   }
@@ -292,6 +342,25 @@ function AccessoryMesh({ kind }: { kind: Accessory }) {
       </group>
     );
   }
+  if (kind === "beanie") {
+    return (
+      <group position={[0, 0.14, -0.01]}>
+        <mesh scale={[1.12, 0.78, 1.04]}>
+          <sphereGeometry args={[0.4, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <Toon color="#3b4a8f" />
+          <Ink t={0.008} />
+        </mesh>
+        <mesh position={[0, 0.02, 0]} scale={[1.12, 1, 1.04]}>
+          <cylinderGeometry args={[0.405, 0.405, 0.08, 28]} />
+          <Toon color="#5566b0" />
+        </mesh>
+        <mesh position={[0, 0.33, 0]}>
+          <sphereGeometry args={[0.07, 12, 10]} />
+          <Toon color="#f8fafc" />
+        </mesh>
+      </group>
+    );
+  }
   if (kind === "flower") {
     return (
       <group position={[0.24, 0.33, 0.12]} rotation-x={-0.4}>
@@ -373,7 +442,7 @@ function Mochi({
     }
     root.current.rotation.y += (target - root.current.rotation.y) * Math.min(1, delta * 6);
 
-    const walking = (action === "walk" || action === "run") && !cheering;
+    const walking = (action === "walk" || action === "run" || action === "carry") && !cheering;
     const pace = action === "run" ? 13 : 9;
     feet.current.forEach((f, i) => {
       if (!f) return;
@@ -427,7 +496,7 @@ function Mochi({
     } else if (action === "wave") {
       L.set(-0.2, 0, -0.25);
       R.set(-2.6, 0, 0.5 + Math.sin(t * 8) * 0.4);
-    } else if (walking) {
+    } else if (walking && action !== "carry") {
       L.set(Math.sin(t * 9) * 0.65, 0, -0.25);
       R.set(-Math.sin(t * 9) * 0.65, 0, 0.25);
     } else if (action === "sip") {
@@ -460,6 +529,9 @@ function Mochi({
     } else if (action === "nap") {
       L.set(-0.35, 0, -0.1);
       R.set(-0.35, 0, 0.1);
+    } else if (action === "carry") {
+      L.set(-1.35, 0, 0.3);
+      R.set(-1.35, 0, -0.3);
     } else {
       L.set(-0.15 + Math.sin(t * 1.5) * 0.06, 0, -0.3);
       R.set(-0.15 - Math.sin(t * 1.5) * 0.06, 0, 0.3);
@@ -528,6 +600,19 @@ function Mochi({
             </mesh>
           )}
         </group>
+        {action === "carry" && (
+          <group position={[0, 0.5, 0.4]}>
+            <mesh>
+              <boxGeometry args={[0.36, 0.26, 0.26]} />
+              <meshToonMaterial color="#d6b483" />
+              <Ink t={0.008} />
+            </mesh>
+            <mesh position={[0, 0.131, 0]}>
+              <boxGeometry args={[0.37, 0.01, 0.06]} />
+              <meshToonMaterial color="#9a7a4c" />
+            </mesh>
+          </group>
+        )}
         {action === "read" && (
           <group position={[0, 0.5, 0.36]} rotation-x={-0.75}>
             <mesh position={[-0.08, 0, 0]} rotation-z={0.12}>
@@ -566,10 +651,10 @@ function Mochi({
               </group>
             ))}
           </group>
-          {species === "chick" ? (
-            <mesh position={[0, -0.07, 0.42]} rotation-x={Math.PI / 2}>
+          {species === "chick" || species === "owl" ? (
+            <mesh position={[0, -0.07, 0.42]} rotation-x={species === "owl" ? Math.PI / 2 + 0.5 : Math.PI / 2}>
               <coneGeometry args={[0.045, 0.08, 10]} />
-              <Toon color="#ff9f43" />
+              <Toon color={species === "owl" ? "#f4a259" : "#ff9f43"} />
             </mesh>
           ) : (
             [-1, 1].map((s) => (
@@ -1099,21 +1184,33 @@ type DeskProps = {
   position: V3;
   lang: Lang;
   desk: DeskLook;
+  /** coloured stripe on the screen: sun yellow for the day crew, indigo for the night crew */
+  shift: Shift | null;
+  /** owner is off duty: monitor off */
+  off: boolean;
 };
 
-function AgentDeskImpl({ agent, look, state, seed, position, lang, desk }: DeskProps) {
+const SHIFT_STRIPE: Record<Shift, string> = { day: "#f2c14e", night: "#5b6abf" };
+
+function AgentDeskImpl({ agent, look, state, seed, position, lang, desk, shift, off }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
       <DeskFrame look={desk} />
+      {shift && (
+        <mesh position={[0, 1.255, -0.39]}>
+          <boxGeometry args={[1.5, 0.03, 0.05]} />
+          <meshStandardMaterial color={SHIFT_STRIPE[shift]} emissive={SHIFT_STRIPE[shift]} emissiveIntensity={off ? 0 : 0.35} />
+        </mesh>
+      )}
       {/* mug in the owner's colour */}
       <mesh position={[-0.55, 0.815, 0.05]} castShadow>
         <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
         <meshStandardMaterial color={look.inner} />
       </mesh>
       {desk.items && <DeskItems seed={seed} />}
-      {desk.lamp && <DeskLamp glow={desk.glow} />}
-      <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
-      <OfficeChair p={[0, 0, 0.62]} />
+      {desk.lamp && <DeskLamp glow={desk.glow && !off} />}
+      {off ? <DarkMonitor /> : <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />}
+      <OfficeChair p={[0, 0, off ? 0.45 : 0.62]} />
     </group>
   );
 }
@@ -1128,10 +1225,31 @@ const AgentDesk = memo(
     a.position.join() === b.position.join() &&
     a.lang === b.lang &&
     a.desk === b.desk &&
+    a.shift === b.shift &&
+    a.off === b.off &&
     a.state.screen.mode === b.state.screen.mode &&
     a.state.screen.title === b.state.screen.title &&
     Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
 );
+
+/** A monitor that is switched off. */
+function DarkMonitor() {
+  return (
+    <group position={[0, 0.765, -0.2]} scale={1.25}>
+      <mesh position={[0, 0.008, 0]}>
+        <cylinderGeometry args={[0.09, 0.1, 0.016, 24]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.1, -0.02]}>
+        <boxGeometry args={[0.035, 0.18, 0.03]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <RoundedBox args={[0.6, 0.39, 0.035]} radius={0.015} position={[0, 0.36, 0]} castShadow>
+        <meshStandardMaterial color="#0b0f0d" roughness={0.25} metalness={0.2} />
+      </RoundedBox>
+    </group>
+  );
+}
 
 /** A free desk waiting for a new hire: monitor off, chair tucked in. */
 const EmptyDesk = memo(
@@ -1139,19 +1257,7 @@ const EmptyDesk = memo(
     return (
       <group position={position} scale={DESK_SCALE}>
         <DeskFrame look={desk} />
-        <group position={[0, 0.765, -0.2]} scale={1.25}>
-          <mesh position={[0, 0.008, 0]}>
-            <cylinderGeometry args={[0.09, 0.1, 0.016, 24]} />
-            <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
-          </mesh>
-          <mesh position={[0, 0.1, -0.02]}>
-            <boxGeometry args={[0.035, 0.18, 0.03]} />
-            <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
-          </mesh>
-          <RoundedBox args={[0.6, 0.39, 0.035]} radius={0.015} position={[0, 0.36, 0]} castShadow>
-            <meshStandardMaterial color="#0b0f0d" roughness={0.25} metalness={0.2} />
-          </RoundedBox>
-        </group>
+        <DarkMonitor />
         <OfficeChair p={[0, 0, 0.45]} />
       </group>
     );
@@ -1169,6 +1275,9 @@ type AvatarProps = {
   busy: boolean;
   working: boolean;
   attentive: boolean;
+  /** the shift schedule says this agent should be in */
+  duty: boolean;
+  shift: Shift;
   bubble?: string;
   lastDoneAt?: number;
   seed: number;
@@ -1253,33 +1362,42 @@ function Emote({ pool, seed, y = 1.25 }: { pool: string[]; seed: number; y?: num
   );
 }
 
-function describe(lang: Lang, phase: WalkPhase, working: boolean, attentive: boolean, task?: string) {
+type Doing = { working: boolean; attentive: boolean; task?: string; trip: Trip; duty: boolean; shift: Shift; backAt: string };
+
+function describe(lang: Lang, phase: WalkPhase, d: Doing) {
+  if (phase.kind === "away") return translate(lang, "act.away", { time: d.backAt });
+  if (d.trip === "arrive") return translate(lang, phase.kind === "spot" ? "act.clockIn" : "act.arriving");
+  if (d.trip === "leave") return translate(lang, phase.kind === "spot" ? "act.clockOut" : "act.leaving");
+  if (d.trip === "exit") return translate(lang, "act.leaving");
   if (phase.kind === "seated") {
-    if (working) return task ? translate(lang, "act.typingOn", { title: task }) : translate(lang, "act.typing");
-    if (attentive) return translate(lang, "act.watching");
+    if (d.working && !d.duty) return translate(lang, "act.overtime", { title: d.task ?? "" });
+    if (d.working) return d.task ? translate(lang, "act.typingOn", { title: d.task }) : translate(lang, "act.typing");
+    if (d.attentive) return translate(lang, "act.watching");
     return translate(lang, "act.free");
   }
   if (phase.kind === "walking") return translate(lang, phase.rushing ? "act.rushing" : "act.strolling");
   return `${phrase(lang, phase.spot.say)} ${phrase(lang, phase.spot.where)}`;
 }
 
-function emotePool(phase: WalkPhase, working: boolean, attentive: boolean) {
+function emotePool(phase: WalkPhase, d: Doing) {
+  if (d.trip === "arrive") return d.shift === "day" ? ["☀️", "👋", "☕"] : ["🌙", "👋", "🦉"];
+  if (d.trip) return d.shift === "day" ? ["🏠", "👋", "😮‍💨"] : ["🌅", "🏠", "😴"];
   if (phase.kind === "spot") return phase.spot.emoji;
   if (phase.kind === "walking") return phase.rushing ? ["❗", "🏃"] : ["🎵", "🙂"];
-  if (working) return ["💡", "⌨️", "🤓", "🧠"];
-  if (attentive) return ["👂", "📝", "🤔"];
+  if (d.working) return d.duty ? ["💡", "⌨️", "🤓", "🧠"] : ["😪", "⌨️", "☕"];
+  if (d.attentive) return ["👂", "📝", "🤔"];
   return ["🙂", "🎵", "😊"];
 }
 
 function AgentAvatarImpl(props: AvatarProps) {
-  const { agent, look, home, working, attentive, bubble, lastDoneAt, seed, lift, selected, onSelect } = props;
+  const { agent, look, home, working, attentive, duty, shift, bubble, lastDoneAt, seed, lift, selected, onSelect } = props;
   const group = useRef<Group>(null);
   const ring = useRef<Mesh>(null);
   const live = useRef(props);
   useEffect(() => {
     live.current = props;
   });
-  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5)));
+  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5), props.duty || props.busy));
   const [phase, setPhase] = useState<WalkPhase>(walker.phase);
   // whether the person across the table has arrived, for chats
   const [partnerHere, setPartnerHere] = useState(false);
@@ -1292,42 +1410,75 @@ function AgentAvatarImpl(props: AvatarProps) {
     const g = group.current;
     if (!g) return;
     const p = live.current;
-    if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
+    const wasHere = walker.isHere();
+    if (walker.update(delta, p.home, p.busy, p.canWander, p.duty)) {
+      setPhase(walker.phase);
+      // a full shift done: a little XP on the way out
+      if (wasHere && !walker.isHere() && !p.duty) awardXp(agent.id, 5, { key: "why.shift" }, true);
+    }
     g.position.set(walker.x + walker.offX, walker.y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
+    // pop in and out of the elevator
+    const k = walker.fade;
+    g.visible = walker.isHere() && k > 0.02;
+    g.scale.setScalar(DESK_SCALE * (0.35 + 0.65 * k));
     if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
     const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
     const here = pair ? isPresent(pair) : false;
     if (here !== partnerHere) setPartnerHere(here);
   });
 
+  // trip and parcel change together with the phase, which re-renders this component
+  const trip = walker.trip;
+  const holding = walker.holding;
+  const backAt = clockText(arrivalOf(agent.id, shift));
+  const doing: Doing = { working, attentive, task: bubble, trip, duty, shift, backAt };
   const seated = phase.kind === "seated";
   const facing = seated && (working || attentive) ? "back" : "front";
   const chatAlone = phase.kind === "spot" && phase.spot.activity === "chat" && !partnerHere;
-  const action: Action = seated
-    ? working
-      ? "write"
-      : "idle"
-    : phase.kind === "walking"
-      ? "walk"
-      : chatAlone
-        ? "sip"
-        : ACTIVITY_ACTION[phase.spot.activity];
-  const say = seated
-    ? working
-      ? bubble
-      : undefined
-    : phase.kind === "walking"
-      ? phase.rushing
-        ? translate(props.lang, "bubble.onMyWay")
-        : undefined
-      : chatAlone
-        ? translate(props.lang, "bubble.saving")
-        : phrase(props.lang, phase.spot.say);
+  const action: Action =
+    phase.kind === "away" || seated
+      ? working
+        ? "write"
+        : "idle"
+      : phase.kind === "walking"
+        ? holding
+          ? "carry"
+          : "walk"
+        : trip
+          ? "wave"
+          : chatAlone
+            ? "sip"
+            : ACTIVITY_ACTION[phase.spot.activity];
+  const greet = (k: "in" | "out") =>
+    translate(props.lang, k === "in" ? (shift === "day" ? "bubble.morning" : "bubble.nightIn") : shift === "day" ? "bubble.bye" : "bubble.byeNight");
+  const say =
+    phase.kind === "away"
+      ? undefined
+      : seated
+        ? working
+          ? bubble
+          : undefined
+        : phase.kind === "walking"
+          ? phase.rushing
+            ? translate(props.lang, "bubble.onMyWay")
+            : holding
+              ? translate(props.lang, "bubble.parcel")
+              : undefined
+          : trip === "arrive"
+            ? greet("in")
+            : trip === "leave"
+              ? greet("out")
+              : trip
+                ? undefined
+                : chatAlone
+                  ? translate(props.lang, "bubble.saving")
+                  : phrase(props.lang, phase.spot.say);
 
+  const status = describe(props.lang, phase, doing);
   useEffect(() => {
-    setAgentActivity(agent.id, describe(props.lang, phase, working, attentive, bubble));
-  }, [agent.id, phase, working, attentive, bubble, props.lang]);
+    setAgentActivity(agent.id, status);
+  }, [agent.id, status]);
 
   return (
     <group
@@ -1352,7 +1503,7 @@ function AgentAvatarImpl(props: AvatarProps) {
           <meshBasicMaterial color="#34d399" toneMapped={false} />
         </mesh>
       )}
-      <Emote pool={emotePool(phase, working, attentive)} seed={seed} />
+      <Emote pool={emotePool(phase, doing)} seed={seed} />
       <Mochi
         look={look}
         accessory={ACCESSORY[agent.id] ?? null}
@@ -1377,6 +1528,8 @@ const AgentAvatar = memo(
     a.busy === b.busy &&
     a.working === b.working &&
     a.attentive === b.attentive &&
+    a.duty === b.duty &&
+    a.shift === b.shift &&
     a.bubble === b.bubble &&
     a.lastDoneAt === b.lastDoneAt &&
     a.seed === b.seed &&
@@ -1491,8 +1644,13 @@ const ROOM_LIGHTS: V3[] = [
   [5.5, 2.4, -3.2],
 ];
 
+/** Power cut: almost dark, red emergency lights. */
+const OUTAGE: LightSet = { ambient: ["#8090c0", 0.16], hemi: ["#33405f", "#151320", 0.18], sun: ["#9fb0ff", 0.12, [-6, 14, 8]], lamps: 0 };
+
 function Lights({ phase }: { phase: Phase }) {
-  const set = LIGHTS[phase];
+  const game = useGame();
+  const outage = game.event?.kind === "outage";
+  const set = outage ? OUTAGE : LIGHTS[phase];
   // the sun aims at the middle of the floor; the target has to be in the scene for that
   const [target] = useState(() => new Object3D());
   const sun: V3 = [TARGET[0] + set.sun[2][0], set.sun[2][1], TARGET[2] + set.sun[2][2]];
@@ -1517,6 +1675,12 @@ function Lights({ phase }: { phase: Phase }) {
       />
       {set.lamps > 0 &&
         ROOM_LIGHTS.map((p) => <pointLight key={p.join()} position={p} color="#ffd59a" intensity={set.lamps} distance={9} decay={1.6} />)}
+      {outage &&
+        [
+          [-5, 2.2, 0.3],
+          [5, 2.2, 0.3],
+          [4.5, 2.4, 9],
+        ].map((p) => <pointLight key={p.join()} position={p as V3} color="#ff3b3b" intensity={5} distance={8} decay={1.6} />)}
     </>
   );
 }
@@ -1526,6 +1690,48 @@ function EventDirector() {
   const game = useGame();
   useFrame(({ clock }) => tickEvents(clock.elapsedTime));
   return <EventProps kind={game.event?.kind ?? currentEventKind()} />;
+}
+
+function shiftSignTexture(text: string, on: boolean, color: string) {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = on ? color : "rgba(120,120,130,0.55)";
+  g.beginPath();
+  g.roundRect(4, 4, 1016, 120, 60);
+  g.fill();
+  g.fillStyle = "#ffffff";
+  g.font = '800 58px system-ui, "Segoe UI", "Leelawadee UI", "Noto Sans Thai", sans-serif';
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(text, 512, 68);
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** Banner hanging over the west end of a section: day crew in the front rows, night crew in the back. */
+function ShiftSign({ shift, z, on, lang }: { shift: Shift; z: number; on: boolean; lang: Lang }) {
+  const h = SHIFT_HOURS[shift];
+  const text = `${shift === "day" ? "☀" : "☾"}  ${translate(lang, `shift.${shift}` as Key).toUpperCase()}  ${clockText(h.start)}–${clockText(h.end)}`;
+  const tex = useDisposable(() => shiftSignTexture(text, on, shift === "day" ? "#d9a21b" : "#4f5bb5"), `${text}|${on}`);
+  // turned towards the default camera so it reads straight on
+  return (
+    <group position={[-2.3, 2.85, z]} rotation-y={0.69}>
+      {[-1.1, 1.1].map((x) => (
+        <mesh key={x} position={[x, 0.45, 0]}>
+          <cylinderGeometry args={[0.006, 0.006, 0.6, 4]} />
+          <meshBasicMaterial color="#6b7280" />
+        </mesh>
+      ))}
+      <mesh>
+        <planeGeometry args={[2.8, 0.35]} />
+        <meshBasicMaterial map={tex} transparent toneMapped={false} />
+      </mesh>
+    </group>
+  );
 }
 
 /** Fit the orthographic camera to the whole floor whenever the canvas is resized. */
@@ -1586,13 +1792,16 @@ export default function OfficeScene({
   lang?: Lang;
 }) {
   const custom = useOfficeCustom();
-  // "auto" lighting follows the viewer's clock
-  const [hour, setHour] = useState(() => new Date().getHours());
+  // office clock: real time, time-lapse or a fixed time of day
+  const minutes = useOfficeMinutes(custom.lighting, true) ?? 600;
+  const minute = Math.floor(minutes);
+  const phase = phaseAt(minutes);
+  const shiftsOn = custom.shifts;
+  const crewNow = shiftAt(minutes);
   useEffect(() => {
-    const id = window.setInterval(() => setHour(new Date().getHours()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  const phase = phaseFor(custom.lighting, hour);
+    setOfficeHour(minute / 60);
+    setEventHour(minute / 60);
+  }, [minute]);
   const decor = useMemo<FloorDecor>(
     () => ({ floor: custom.floor, accent: ACCENT_COLORS[custom.accent], items: custom.items, sign: custom.sign, phase }),
     [custom.floor, custom.accent, custom.items, custom.sign, phase],
@@ -1616,8 +1825,27 @@ export default function OfficeScene({
   }, [custom.activities, custom.items, custom.breaks]);
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
 
-  const still = useStill();
+  // day crew fills desks from the front rows, night crew from the back rows
   const seated = agents.slice(0, MAX_DESKS);
+  const dayCrew = seated.filter((a) => shiftOf(a) === "day");
+  const nightCrew = seated.filter((a) => shiftOf(a) === "night");
+  const placed = [
+    ...dayCrew.map((a, i) => ({ a, slot: i, look: LOOKS[i % LOOKS.length] })),
+    ...nightCrew.map((a, k) => ({ a, slot: MAX_DESKS - 1 - k, look: NIGHT_LOOKS[k % NIGHT_LOOKS.length] })),
+  ];
+  const used = new Set(placed.map((p) => p.slot));
+
+  // note the hand-over in the events log
+  const lastCrew = useRef<Shift | null>(null);
+  useEffect(() => {
+    if (shiftsOn && lastCrew.current && lastCrew.current !== crewNow) {
+      logShift(crewNow, (crewNow === "day" ? dayCrew : nightCrew).length);
+    }
+    lastCrew.current = crewNow;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crewNow, shiftsOn]);
+
+  const still = useStill();
 
   return (
     <Canvas
@@ -1637,28 +1865,52 @@ export default function OfficeScene({
       </group>
       <Presenter state={manager} board={board} lang={lang} />
       <PingPongBall />
-      {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {
-        const d = deskSlot(seated.length + k);
-        return <EmptyDesk key={`free-${d.index}`} position={[d.x, 0, d.z]} desk={deskLook} />;
-      })}
-      {seated.map((a, i) => {
-        const d = deskSlot(i);
+      {shiftsOn && (
+        <>
+          <ShiftSign shift="day" z={4.3} on={crewNow === "day"} lang={lang} />
+          <ShiftSign shift="night" z={10.2} on={crewNow === "night"} lang={lang} />
+        </>
+      )}
+      {Array.from({ length: MAX_DESKS }, (_, i) => i)
+        .filter((i) => !used.has(i))
+        .map((i) => {
+          const d = deskSlot(i);
+          return <EmptyDesk key={`free-${i}`} position={[d.x, 0, d.z]} desk={deskLook} />;
+        })}
+      {placed.map(({ a, slot, look }) => {
+        const d = deskSlot(slot);
         const state = desks[a.id] ?? IDLE_DESK;
-        const attentive = manager === "planning";
-        const look = LOOKS[i % LOOKS.length];
+        const shift = shiftOf(a);
+        const duty = !shiftsOn || onShift(a.id, shift, minutes);
+        const attentive = manager === "planning" && duty;
+        const busy = attentive || state.screen.mode === "working" || state.screen.mode === "queued";
+        const seed = slot * 1.7;
         return (
           <group key={a.id}>
-            <AgentDesk agent={a} look={look} state={state} seed={i * 1.7} position={[d.x, 0, d.z]} lang={lang} desk={deskLook} />
+            <AgentDesk
+              agent={a}
+              look={look}
+              state={state}
+              seed={seed}
+              position={[d.x, 0, d.z]}
+              lang={lang}
+              desk={deskLook}
+              shift={shiftsOn ? shift : null}
+              off={!duty && !busy}
+            />
             <AgentAvatar
+              key={slot}
               agent={a}
               look={look}
               home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row }}
-              busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
+              busy={busy}
               working={state.working.length > 0}
               attentive={attentive}
+              duty={duty}
+              shift={shift}
               bubble={state.working[0]}
               lastDoneAt={state.lastDoneAt}
-              seed={i * 1.7}
+              seed={seed}
               lift={d.col % 2 ? 0.45 : 0}
               level={levels[a.id] ?? 1}
               lang={lang}

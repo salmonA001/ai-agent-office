@@ -21,7 +21,8 @@ export const langRule = (l?: "en" | "th") => (l === "th" ? " Write all of your o
 export const planRequest = z.object({
   task,
   lang,
-  agents: z.array(agentRef).min(1).max(16),
+  // one per desk (MAX_DESKS in office-nav)
+  agents: z.array(agentRef).min(1).max(24),
 });
 
 export const planOutput = z.object({

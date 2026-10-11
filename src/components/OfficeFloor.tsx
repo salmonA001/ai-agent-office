@@ -10,6 +10,7 @@ import {
   type Mesh,
   type MeshBasicMaterial,
   Object3D,
+  type PointLight,
   RepeatWrapping,
   SRGBColorSpace,
   type Texture,
@@ -17,6 +18,7 @@ import {
 import { type Lang, translate } from "@/lib/i18n";
 import type { DecorItem, FloorStyle, Phase } from "@/lib/office-custom";
 import { currentEventKind } from "./office-events";
+import { walkers } from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, seeded, useDisposable } from "./scene-utils";
 
@@ -1378,7 +1380,10 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
 
       {/* exterior walls: full height at the back, cut low at the front */}
       <Wall a={[x0, z0]} b={[x1, z0]} h={EXT_H} />
-      <Wall a={[x0, z0]} b={[x0, z1]} h={EXT_H} />
+      <Wall a={[x0, z0]} b={[x0, LIFT.z0]} h={EXT_H} />
+      <Wall a={[x0, LIFT.z1]} b={[x0, z1]} h={EXT_H} />
+      <Elevator />
+      <TimeClock />
       <Wall a={[x0, z1]} b={[x1, z1]} h={0.3} />
       <Wall a={[x1, z0]} b={[x1, z1]} h={0.3} />
       {/* room dividers */}
@@ -1406,6 +1411,89 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
     </group>
   );
 });
+
+// ---------- Elevator and time clock at the west end of the corridor ----------
+
+const LIFT = { z0: -0.25, z1: 0.85 };
+
+/** Elevator in the west wall; its doors slide open while someone steps in or out. */
+function Elevator() {
+  const left = useRef<Mesh>(null);
+  const right = useRef<Mesh>(null);
+  const lamp = useRef<MeshBasicMaterial>(null);
+  const open = useRef(0);
+  const half = (LIFT.z1 - LIFT.z0) / 2;
+  useFrame((_, dt) => {
+    let near = false;
+    for (const w of walkers.values()) {
+      if (!w.isHere() || (w.trip !== "arrive" && w.trip !== "exit")) continue;
+      if (Math.hypot(w.x + 7.6, w.z - 0.3) < 1.4) near = true;
+    }
+    open.current += ((near ? 1 : 0) - open.current) * Math.min(1, dt * 5);
+    const w = half * (1 - open.current * 0.92);
+    if (left.current) {
+      left.current.scale.z = w / half;
+      left.current.position.z = LIFT.z0 + w / 2;
+    }
+    if (right.current) {
+      right.current.scale.z = w / half;
+      right.current.position.z = LIFT.z1 - w / 2;
+    }
+    lamp.current?.color.set(near ? "#34d399" : "#3f3f46");
+  });
+  const x = FLOOR.x0;
+  return (
+    <group>
+      {/* the car behind the doors, lit warm */}
+      <mesh position={[x - 0.06, 1.02, (LIFT.z0 + LIFT.z1) / 2]} rotation-y={Math.PI / 2}>
+        <planeGeometry args={[LIFT.z1 - LIFT.z0, 2.05]} />
+        <meshBasicMaterial color="#e9d8b4" />
+      </mesh>
+      {[LIFT.z0, LIFT.z1].map((z) => (
+        <B key={z} s={[0.2, EXT_H, 0.12]} p={[x + 0.02, EXT_H / 2, z]} c="#9ca3af" metal={0.5} rough={0.35} />
+      ))}
+      <B s={[0.2, EXT_H - 2.1, LIFT.z1 - LIFT.z0 + 0.12]} p={[x + 0.02, (EXT_H + 2.1) / 2, (LIFT.z0 + LIFT.z1) / 2]} c="#9ca3af" metal={0.5} rough={0.35} />
+      <mesh ref={left} position={[x + 0.04, 1.05, LIFT.z0 + half / 2]}>
+        <boxGeometry args={[0.04, 2.08, half]} />
+        <meshStandardMaterial color="#c7ccd1" metalness={0.7} roughness={0.25} />
+      </mesh>
+      <mesh ref={right} position={[x + 0.04, 1.05, LIFT.z1 - half / 2]}>
+        <boxGeometry args={[0.04, 2.08, half]} />
+        <meshStandardMaterial color="#c7ccd1" metalness={0.7} roughness={0.25} />
+      </mesh>
+      {/* floor indicator and call button */}
+      <mesh position={[x + 0.13, 2.24, (LIFT.z0 + LIFT.z1) / 2]} rotation-y={Math.PI / 2}>
+        <circleGeometry args={[0.07, 3]} />
+        <meshBasicMaterial ref={lamp} color="#3f3f46" toneMapped={false} />
+      </mesh>
+      <B s={[0.03, 0.22, 0.1]} p={[x + 0.09, 1.1, LIFT.z0 - 0.22]} c="#d1d5db" metal={0.5} />
+    </group>
+  );
+}
+
+/** Punch clock where agents clock in and out. */
+function TimeClock() {
+  return (
+    <group position={[-6.35, 0, -0.13]}>
+      <B s={[0.06, 1.0, 0.06]} p={[0, 0.5, 0]} c="#4b5563" />
+      <B s={[0.36, 0.42, 0.18]} p={[0, 1.15, 0]} c="#f2c14e" />
+      <mesh position={[0, 1.22, 0.095]}>
+        <circleGeometry args={[0.1, 24]} />
+        <meshBasicMaterial color="#fffdf5" />
+      </mesh>
+      <B s={[0.012, 0.07, 0.01]} p={[0, 1.24, 0.1]} c="#2a1d1d" />
+      <B s={[0.06, 0.012, 0.01]} p={[0.025, 1.22, 0.1]} c="#2a1d1d" />
+      <B s={[0.2, 0.03, 0.02]} p={[0, 1.02, 0.095]} c="#2a1d1d" />
+      {/* time cards in a rack */}
+      <group position={[0.34, 1.1, 0]}>
+        <B s={[0.24, 0.36, 0.06]} p={[0, 0, 0]} c="#9ca3af" />
+        {[0.1, 0, -0.1].map((y) => (
+          <B key={y} s={[0.06, 0.1, 0.012]} p={[-0.05 + (y + 0.1) * 0.5, y + 0.03, 0.035]} c="#fdf6e3" />
+        ))}
+      </group>
+    </group>
+  );
+}
 
 /** Live projector screen in the meeting room showing the task list. */
 export function Projector({ lines, merging, lang }: { lines: BoardLine[]; merging: boolean; lang: Lang }) {
@@ -1527,6 +1615,138 @@ function PrinterWarning() {
   );
 }
 
+/** Lyrics TV and a spinning disco ball for karaoke in the lounge. */
+function Karaoke() {
+  const ball = useRef<Mesh>(null);
+  const bar = useRef<Mesh>(null);
+  const light = useRef<PointLight>(null);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    if (ball.current) ball.current.rotation.y = t * 1.5;
+    if (bar.current) {
+      const k = (t * 0.35) % 1;
+      bar.current.scale.x = Math.max(0.02, k);
+      bar.current.position.z = -0.45 + (k * 0.9) / 2;
+    }
+    light.current?.color.setHSL((t * 0.2) % 1, 0.9, 0.6);
+  });
+  return (
+    <group>
+      <group position={[7.9, 1.35, -3.05]} rotation-y={-Math.PI / 2}>
+        <B s={[1.25, 0.74, 0.05]} p={[0, 0, 0]} c="#111827" />
+        <mesh position={[0, 0, 0.03]}>
+          <planeGeometry args={[1.15, 0.64]} />
+          <meshBasicMaterial color="#312e81" toneMapped={false} />
+        </mesh>
+        {[0.12, -0.04].map((y, i) => (
+          <mesh key={y} position={[-0.05 * i, y, 0.035]}>
+            <planeGeometry args={[0.9 - i * 0.2, 0.05]} />
+            <meshBasicMaterial color="#e0e7ff" toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+      {/* the sung part of the line lights up */}
+      <mesh ref={bar} position={[7.86, 1.47, -3.05]} rotation-y={-Math.PI / 2}>
+        <planeGeometry args={[0.9, 0.05]} />
+        <meshBasicMaterial color="#f472b6" toneMapped={false} />
+      </mesh>
+      <group position={[5.5, 0, -2.45]}>
+        <mesh position={[0, 0.6, 0]}>
+          <cylinderGeometry args={[0.015, 0.015, 1.2, 8]} />
+          <meshStandardMaterial color="#374151" />
+        </mesh>
+        <mesh position={[0, 1.22, 0.04]}>
+          <sphereGeometry args={[0.05, 12, 10]} />
+          <meshStandardMaterial color="#6b7280" metalness={0.6} />
+        </mesh>
+      </group>
+      <mesh ref={ball} position={[5.5, 1.75, -3.1]}>
+        <icosahedronGeometry args={[0.16, 1]} />
+        <meshStandardMaterial color="#e5e7eb" metalness={0.9} roughness={0.15} flatShading />
+      </mesh>
+      <pointLight ref={light} position={[5.5, 1.6, -3.1]} intensity={6} distance={5} decay={1.6} />
+    </group>
+  );
+}
+
+function IceCreamCart() {
+  return (
+    <group position={[10.7, 0, 14.4]}>
+      <B s={[0.9, 0.7, 0.55]} p={[0, 0.45, 0]} c="#fbcfe8" />
+      <B s={[0.92, 0.1, 0.57]} p={[0, 0.82, 0]} c="#ffffff" />
+      {[-0.3, 0.3].map((x) => (
+        <mesh key={x} position={[x, 0.1, 0.28]} rotation-x={Math.PI / 2}>
+          <cylinderGeometry args={[0.1, 0.1, 0.04, 16]} />
+          <meshStandardMaterial color="#374151" />
+        </mesh>
+      ))}
+      {["#fde68a", "#a7f3d0", "#fca5a5"].map((c, i) => (
+        <group key={c} position={[-0.25 + i * 0.25, 0.92, 0]}>
+          <mesh position={[0, 0, 0]} rotation-x={Math.PI}>
+            <coneGeometry args={[0.05, 0.14, 10]} />
+            <meshStandardMaterial color="#d6a35c" />
+          </mesh>
+          <mesh position={[0, 0.09, 0]}>
+            <sphereGeometry args={[0.06, 12, 10]} />
+            <meshStandardMaterial color={c} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0.35, 1.3, -0.15]}>
+        <cylinderGeometry args={[0.015, 0.015, 1.0, 6]} />
+        <meshStandardMaterial color="#6b7280" />
+      </mesh>
+      <mesh position={[0.35, 1.85, -0.15]}>
+        <coneGeometry args={[0.6, 0.3, 16, 1, true]} />
+        <meshStandardMaterial color="#f472b6" side={DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+function Parcels() {
+  return (
+    <group position={[-6.9, 0, 0.66]}>
+      <B s={[0.42, 0.3, 0.3]} p={[0, 0.15, 0]} c="#c8a26b" />
+      <B s={[0.3, 0.24, 0.26]} p={[0.05, 0.42, 0]} c="#d6b483" r={0.3} />
+      <B s={[0.43, 0.02, 0.06]} p={[0, 0.3, 0]} c="#9a7a4c" />
+    </group>
+  );
+}
+
+/** A film plays on the meeting-room screen. */
+function MovieScreen() {
+  const screen = useRef<MeshBasicMaterial>(null);
+  const blobs = useRef<(Mesh | null)[]>([]);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    screen.current?.color.setHSL((0.6 + Math.sin(t * 0.3) * 0.1 + 1) % 1, 0.55, 0.28);
+    blobs.current.forEach((m, i) => {
+      if (m) m.position.x = Math.sin(t * (0.6 + i * 0.25) + i * 2) * 0.9;
+    });
+  });
+  return (
+    <group position={[PROJECTOR.x, 1.35, PROJECTOR.z + 0.13]}>
+      <mesh>
+        <planeGeometry args={[2.7, 1.52]} />
+        <meshBasicMaterial ref={screen} color="#1e3a8a" toneMapped={false} />
+      </mesh>
+      {["#fde68a", "#f9a8d4", "#a7f3d0"].map((c, i) => (
+        <mesh
+          key={c}
+          ref={(m) => {
+            blobs.current[i] = m;
+          }}
+          position={[0, -0.35 + i * 0.3, 0.01]}
+        >
+          <circleGeometry args={[0.16 + i * 0.04, 24]} />
+          <meshBasicMaterial color={c} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 /** Props that appear while an office event is running. */
 export function EventProps({ kind }: { kind: string | null }) {
   if (kind === "pizza") {
@@ -1542,5 +1762,9 @@ export function EventProps({ kind }: { kind: string | null }) {
   if (kind === "birthday") return <Cake p={[5.5, 0.39, -3.0]} />;
   if (kind === "drill") return <Beacons />;
   if (kind === "printer") return <PrinterWarning />;
+  if (kind === "karaoke") return <Karaoke />;
+  if (kind === "icecream") return <IceCreamCart />;
+  if (kind === "delivery") return <Parcels />;
+  if (kind === "movie") return <MovieScreen />;
   return null;
 }
