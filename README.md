@@ -2,8 +2,8 @@
 
 Hand any job to a team of AI agents. The **manager** splits your task into parallel subtasks, assigns each to the best-suited agent, the agents work at the same time (streamed live to their desks), and the manager merges everything into one final result.
 
-- A cute animated **3D anime-style classroom**: chubby pastel animal workers (bear, bunny, cat, hamster, puppy, chick) turn and wave when idle, face their desk and scribble while working, and jump up cheering with pom-poms when they finish. The chick teacher writes the live task list on the chalkboard.
-- **3D PCs on every desk** show each agent's real AI output streaming like a terminal (scanline, blinking LED, keys lighting up as they type). While the manager plans, every student turns to watch the board, monitors show spinners, and the teacher's dashboard sweeps a progress bar.
+- A cute animated **3D isometric office floor** (meeting room with a live projector, kitchen, lounge, yellow corridor, open-plan workspace). Chubby pastel animal workers (bear, bunny, cat, hamster, puppy, chick) turn and wave when idle, face their PC and type while working, and jump up cheering with pom-poms when they finish. Drag to rotate, scroll or pinch to zoom.
+- **3D PCs on every desk** show each agent's real AI output streaming like a terminal (scanline, blinking LED, keys lighting up as they type). While the manager plans, every worker turns to face the meeting room, monitors show spinners, Max presents at the projector and his dashboard sweeps a progress bar.
 - Black + green **glassmorphism** UI.
 - **Works with zero setup**: with no AI key (or when the cloud quota runs out, or a visitor has no access code), agents run on a small model **inside your browser** via WebGPU (Qwen2.5 1.5B, ~1 GB one-time download).
 - Run several tasks at once; the office floor shows who is working on what.

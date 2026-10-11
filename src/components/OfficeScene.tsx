@@ -1,149 +1,52 @@
 "use client";
 
 import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { CanvasTexture, type Group, type Mesh, RepeatWrapping, SRGBColorSpace } from "three";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { memo, useEffect, useRef, useState } from "react";
+import { CanvasTexture, type Group, type Mesh, SRGBColorSpace } from "three";
 import type { Agent } from "@/lib/agents";
+import {
+  type BoardLine,
+  FLOOR,
+  MANAGER_TV,
+  OfficeChair,
+  OfficeFloor,
+  Planter,
+  PRESENTER,
+  Projector,
+} from "./OfficeFloor";
+import { clip, hash, reducedMotion, useDisposable } from "./scene-utils";
 
+export type { BoardLine } from "./OfficeFloor";
 export type DeskState = { working: string[]; lastDoneAt?: number; screen: ScreenState };
 export type ManagerState = "idle" | "planning" | "watching" | "merging";
-export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
+type V3 = [number, number, number];
 
 const FONT = "/fonts/Geist-Regular.ttf";
 const INK = "#4a3535";
-const CHALK_FONT = '"Segoe Print", "Comic Sans MS", "Chalkboard SE", "Marker Felt", cursive';
-
-const reducedMotion = () =>
-  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-function clip(text: string, max: number) {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-/** Deterministic noise so textures look the same on every render. */
-function seeded(seed: number) {
-  let s = seed;
-  return () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-// ---------- Procedural textures ----------
-
-function woodTexture(repeatX: number, repeatY: number) {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 512;
-  const g = c.getContext("2d")!;
-  const rnd = seeded(7);
-  const plank = 64;
-  for (let x = 0; x < 512; x += plank) {
-    const offset = (x / plank) % 2 ? 128 : 0;
-    for (let y = -256; y < 512; y += 256) {
-      g.fillStyle = `hsl(${26 + rnd() * 6}, ${55 + rnd() * 10}%, ${48 + rnd() * 10}%)`;
-      g.fillRect(x, y + offset, plank, 256);
-      g.fillStyle = "rgba(60,30,10,0.55)";
-      g.fillRect(x, y + offset, plank, 2);
-    }
-    g.fillStyle = "rgba(60,30,10,0.6)";
-    g.fillRect(x, 0, 2, 512);
-    for (let i = 0; i < 6; i++) {
-      g.fillStyle = `rgba(90,50,20,${0.08 + rnd() * 0.1})`;
-      g.fillRect(x + 6 + rnd() * (plank - 12), 0, 1, 512);
-    }
-  }
-  const tex = new CanvasTexture(c);
-  tex.colorSpace = SRGBColorSpace;
-  tex.wrapS = tex.wrapT = RepeatWrapping;
-  tex.repeat.set(repeatX, repeatY);
-  tex.anisotropy = 8;
-  return tex;
-}
-
-function skyTexture() {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
-  const g = c.getContext("2d")!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, "#8fd0f2");
-  grad.addColorStop(0.55, "#fff1cc");
-  grad.addColorStop(1, "#ffcf8a");
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 256, 256);
-  const rnd = seeded(3);
-  for (let i = 0; i < 18; i++) {
-    g.fillStyle = `hsl(${105 + rnd() * 30}, 45%, ${38 + rnd() * 15}%)`;
-    g.beginPath();
-    g.arc(rnd() * 256, 210 + rnd() * 50, 22 + rnd() * 26, 0, Math.PI * 2);
-    g.fill();
-  }
-  const tex = new CanvasTexture(c);
-  tex.colorSpace = SRGBColorSpace;
-  return tex;
-}
-
-function boardTexture(lines: BoardLine[], manager: ManagerState) {
-  const c = document.createElement("canvas");
-  c.width = 1024;
-  c.height = 400;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#2f5a4b";
-  g.fillRect(0, 0, 1024, 400);
-  const rnd = seeded(11);
-  for (let i = 0; i < 45; i++) {
-    g.fillStyle = `rgba(255,255,255,${rnd() * 0.05})`;
-    g.beginPath();
-    g.ellipse(rnd() * 1024, rnd() * 400, 40 + rnd() * 140, 8 + rnd() * 30, rnd() * 3, 0, Math.PI * 2);
-    g.fill();
-  }
-  g.fillStyle = "#fffbe6";
-  g.font = `700 42px ${CHALK_FONT}`;
-  g.fillText(manager === "merging" ? "Putting it all together!" : "Today's tasks", 40, 66);
-  g.fillRect(40, 80, 300, 3);
-  if (lines.length === 0) {
-    g.fillStyle = "#ffd6e7";
-    g.font = `700 46px ${CHALK_FONT}`;
-    g.fillText("Give the class a task!  ♪", 210, 230);
-  }
-  lines.slice(0, 6).forEach((l, i) => {
-    g.font = `600 31px ${CHALK_FONT}`;
-    g.fillStyle =
-      l.status === "done" ? "#ffe27a" : l.status === "working" ? "#ffffff" : l.status === "error" ? "#ff9a90" : "#bfe6ff";
-    const mark = l.status === "done" ? "✓" : l.status === "working" ? "✎" : l.status === "error" ? "✗" : "・";
-    g.fillText(`${mark}  ${clip(l.text, 44)}`, 52, 130 + i * 44);
-  });
-  g.fillStyle = "#fffbe6";
-  g.font = `600 24px ${CHALK_FONT}`;
-  g.fillText("On duty: Max", 850, 370);
-  g.fillStyle = "#ffb3cf";
-  g.fillText("✿", 960, 66);
-  const tex = new CanvasTexture(c);
-  tex.colorSpace = SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
-/** Builds a texture once per key and disposes it when the key changes or the scene unmounts. */
-function useDisposable<T extends { dispose(): void }>(factory: () => T, key: string) {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const value = useMemo(() => factory(), [key]);
-  useEffect(() => () => value.dispose(), [value]);
-  return value;
-}
 
 // ---------- Labels ----------
 
 /** Name tag plus an optional speech bubble, always facing the camera. Drawn in WebGL (no DOM). */
-function Label({ name, bubble, position }: { name: string; bubble?: string; position: [number, number, number] }) {
+function Label({
+  name,
+  bubble,
+  position,
+  scale = 1,
+  lift = 0,
+}: {
+  name: string;
+  bubble?: string;
+  position: V3;
+  scale?: number;
+  lift?: number;
+}) {
   const tag = clip(name, 26);
-  const say = bubble ? clip(bubble, 28) : null;
+  const say = bubble ? clip(bubble, 24) : null;
   return (
-    <Billboard position={position}>
+    <Billboard position={position} scale={scale}>
       {say && (
-        <group position={[0, 0.34, 0]}>
+        <group position={[0, 0.34 + lift, 0]}>
           <RoundedBox args={[say.length * 0.085 + 0.32, 0.3, 0.02]} radius={0.12}>
             <meshBasicMaterial color="#fffdf7" />
           </RoundedBox>
@@ -537,29 +440,6 @@ function Mochi({
   );
 }
 
-// ---------- Classroom furniture ----------
-
-const METAL = "#a3a9ae";
-const DESK_WOOD = "#e2ad70";
-
-function Legs({ w, d, h }: { w: number; d: number; h: number }) {
-  return (
-    <>
-      {[
-        [-w / 2, -d / 2],
-        [w / 2, -d / 2],
-        [-w / 2, d / 2],
-        [w / 2, d / 2],
-      ].map(([x, z]) => (
-        <mesh key={`${x}:${z}`} position={[x, h / 2, z]} castShadow>
-          <cylinderGeometry args={[0.018, 0.018, h, 8]} />
-          <meshStandardMaterial color={METAL} metalness={0.6} roughness={0.4} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
 // ---------- Workstations (3D PCs with live screens) ----------
 
 export type ScreenMode = "idle" | "planning" | "queued" | "working" | "done" | "error";
@@ -682,12 +562,6 @@ function screenTexture(screen: ScreenState, name: string) {
   return tex;
 }
 
-/** Stable pseudo-random value in [0, 1) for a step number, used to pick which key lights up. */
-function hash(n: number) {
-  const h = Math.sin(n * 12.9898) * 43758.5453;
-  return h - Math.floor(h);
-}
-
 function Workstation({ screen, name, seed }: { screen: ScreenState; name: string; seed: number }) {
   // Redraw the screen texture only every ~30 streamed characters.
   const key = `${screen.mode}|${screen.title ?? ""}|${Math.floor((screen.len ?? 0) / 30)}|${name}`;
@@ -720,8 +594,8 @@ function Workstation({ screen, name, seed }: { screen: ScreenState; name: string
 
   return (
     <group>
-      {/* monitor, angled toward the chair so the camera can see it past the worker */}
-      <group position={[0.48, 0.76, -0.12]} rotation-y={-0.32} scale={1.3}>
+      {/* monitor at the back of the desk; the high camera sees it over the worker */}
+      <group position={[0, 0.765, -0.2]} scale={1.25}>
         <mesh position={[0, 0.008, 0]} castShadow>
           <cylinderGeometry args={[0.09, 0.1, 0.016, 24]} />
           <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
@@ -757,7 +631,7 @@ function Workstation({ screen, name, seed }: { screen: ScreenState; name: string
         </group>
       </group>
       {/* keyboard + mouse in front of the worker */}
-      <group position={[0.02, 0.76, 0.12]} rotation-y={-0.08}>
+      <group position={[0, 0.765, 0.1]}>
         <RoundedBox args={[0.42, 0.018, 0.13]} radius={0.006} position={[0, 0.009, 0]} castShadow>
           <meshStandardMaterial color="#111827" roughness={0.5} />
         </RoundedBox>
@@ -779,87 +653,6 @@ function Workstation({ screen, name, seed }: { screen: ScreenState; name: string
     </group>
   );
 }
-
-type DeskProps = {
-  agent: Agent;
-  look: Look;
-  state: DeskState;
-  attentive: boolean;
-  seed: number;
-  position: [number, number, number];
-};
-
-function SchoolDeskImpl({ agent, look, state, attentive, seed, position }: DeskProps) {
-  const working = state.working.length > 0;
-  return (
-    <group position={position}>
-      {/* desk */}
-      <RoundedBox args={[1.25, 0.04, 0.6]} radius={0.015} position={[0.08, 0.74, 0]} castShadow receiveShadow>
-        <meshStandardMaterial color={DESK_WOOD} roughness={0.55} />
-      </RoundedBox>
-      <mesh position={[0.08, 0.63, -0.02]} castShadow>
-        <boxGeometry args={[1.12, 0.12, 0.48]} />
-        <meshStandardMaterial color="#8e959b" metalness={0.4} roughness={0.5} />
-      </mesh>
-      <group position={[0.08, 0, 0]}>
-        <Legs w={1.12} d={0.48} h={0.72} />
-      </group>
-      {/* notebook */}
-      <mesh position={[-0.36, 0.765, 0.02]} rotation-y={0.2} receiveShadow>
-        <boxGeometry args={[0.22, 0.01, 0.28]} />
-        <meshStandardMaterial color="#f3eee2" />
-      </mesh>
-      <Workstation screen={state.screen} name={agent.name} seed={seed} />
-      {/* chair, on the camera side of the desk */}
-      <group position={[0, 0, 0.62]}>
-        <RoundedBox args={[0.46, 0.035, 0.42]} radius={0.012} position={[0, 0.44, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color={DESK_WOOD} roughness={0.55} />
-        </RoundedBox>
-        <RoundedBox args={[0.46, 0.26, 0.03]} radius={0.012} position={[0, 0.8, 0.2]} castShadow>
-          <meshStandardMaterial color={DESK_WOOD} roughness={0.55} />
-        </RoundedBox>
-        <Legs w={0.4} d={0.36} h={0.43} />
-        {[-0.2, 0.2].map((x) => (
-          <mesh key={x} position={[x, 0.64, 0.2]}>
-            <cylinderGeometry args={[0.014, 0.014, 0.4, 8]} />
-            <meshStandardMaterial color={METAL} metalness={0.6} roughness={0.4} />
-          </mesh>
-        ))}
-        <group position={[0, 0.46, 0]}>
-          <Mochi
-            look={look}
-            accessory={ACCESSORY[agent.id] ?? null}
-            facing={working || attentive ? "back" : "front"}
-            action={working ? "write" : "idle"}
-            lastDoneAt={state.lastDoneAt}
-            seed={seed}
-          />
-        </group>
-      </group>
-      <Label
-        name={`${agent.name} · ${agent.role}`}
-        bubble={working ? state.working[0] : undefined}
-        position={[0, 1.95, 0.62]}
-      />
-    </group>
-  );
-}
-
-/** Re-render a desk only when what it shows changes (streamed text is bucketed like the screen). */
-const SchoolDesk = memo(
-  SchoolDeskImpl,
-  (a, b) =>
-    a.agent === b.agent &&
-    a.look === b.look &&
-    a.seed === b.seed &&
-    a.attentive === b.attentive &&
-    a.position.join() === b.position.join() &&
-    a.state.working.join("|") === b.state.working.join("|") &&
-    a.state.lastDoneAt === b.state.lastDoneAt &&
-    a.state.screen.mode === b.state.screen.mode &&
-    a.state.screen.title === b.state.screen.title &&
-    Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
-);
 
 function ClockHand({ len, w, color, z, unit }: { len: number; w: number; color: string; z: number; unit: "h" | "m" | "s" }) {
   const ref = useRef<Group>(null);
@@ -910,266 +703,6 @@ function Clock({ position }: { position: [number, number, number] }) {
     </group>
   );
 }
-
-/** The chalkboard lists the live subtasks in chalk. */
-function Chalkboard({ lines, manager, z }: { lines: BoardLine[]; manager: ManagerState; z: number }) {
-  const key = JSON.stringify([lines, manager]);
-  const tex = useDisposable(() => {
-    const [l, m] = JSON.parse(key) as [BoardLine[], ManagerState];
-    return boardTexture(l, m);
-  }, key);
-  return (
-    <group position={[0, 1.95, z]}>
-      <mesh position={[0, 0, -0.02]}>
-        <boxGeometry args={[4.2, 1.75, 0.05]} />
-        <meshStandardMaterial color="#b07a45" />
-      </mesh>
-      <mesh position={[0, 0, 0.01]}>
-        <planeGeometry args={[4.0, 1.56]} />
-        <meshStandardMaterial map={tex} roughness={0.95} />
-      </mesh>
-      <mesh position={[0, -0.86, 0.06]}>
-        <boxGeometry args={[4.2, 0.04, 0.12]} />
-        <meshStandardMaterial color="#9a6a3c" />
-      </mesh>
-      {["#ffffff", "#ffd166", "#ff9ec4"].map((c, i) => (
-        <mesh key={c} position={[1.2 + i * 0.12, -0.83, 0.07]} rotation-z={Math.PI / 2}>
-          <cylinderGeometry args={[0.012, 0.012, 0.09, 8]} />
-          <meshStandardMaterial color={c} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function NoticeBoard({ x, z, seed }: { x: number; z: number; seed: number }) {
-  const notes = useMemo(() => {
-    const rnd = seeded(seed);
-    return Array.from({ length: 5 }, (_, i) => ({
-      x: -0.35 + (i % 3) * 0.35 + rnd() * 0.06,
-      y: 0.35 - Math.floor(i / 3) * 0.55 - rnd() * 0.1,
-      r: (rnd() - 0.5) * 0.3,
-      c: ["#fffaf0", "#ffe4ec", "#e3f6ff", "#fff3c4", "#e9ffe9"][i],
-      h: 0.32 + rnd() * 0.12,
-    }));
-  }, [seed]);
-  return (
-    <group position={[x, 1.95, z]}>
-      <mesh position={[0, 0, -0.02]}>
-        <boxGeometry args={[1.2, 1.4, 0.05]} />
-        <meshStandardMaterial color="#9a6a3c" />
-      </mesh>
-      <mesh position={[0, 0, 0.01]}>
-        <planeGeometry args={[1.1, 1.3]} />
-        <meshStandardMaterial color="#d7a36a" roughness={1} />
-      </mesh>
-      {notes.map((n, i) => (
-        <group key={i} position={[n.x, n.y, 0.02 + i * 0.002]} rotation-z={n.r}>
-          <mesh>
-            <planeGeometry args={[0.26, n.h]} />
-            <meshStandardMaterial color={n.c} />
-          </mesh>
-          {[0, 1, 2].map((k) => (
-            <mesh key={k} position={[0, n.h / 2 - 0.08 - k * 0.06, 0.001]}>
-              <planeGeometry args={[0.18 - k * 0.03, 0.012]} />
-              <meshBasicMaterial color="#9aa3b5" />
-            </mesh>
-          ))}
-          <mesh position={[0, n.h / 2 - 0.03, 0.01]}>
-            <sphereGeometry args={[0.018, 8, 8]} />
-            <meshStandardMaterial color={["#e74c3c", "#3498db", "#f1c40f"][i % 3]} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  );
-}
-
-function Cabinet({ position }: { position: [number, number, number] }) {
-  const books = useMemo(() => {
-    const rnd = seeded(5);
-    return Array.from({ length: 14 }, (_, i) => ({
-      x: -0.38 + i * 0.058,
-      h: 0.2 + rnd() * 0.08,
-      c: ["#c0392b", "#2e86c1", "#27ae60", "#f39c12", "#8e44ad", "#16a085"][i % 6],
-    }));
-  }, []);
-  return (
-    <group position={position}>
-      <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.95, 1.0, 0.4]} />
-        <meshStandardMaterial color="#b07a45" />
-      </mesh>
-      {[0.3, 0.72].map((y) => (
-        <group key={y}>
-          <mesh position={[0, y + 0.12, 0.15]}>
-            <boxGeometry args={[0.85, 0.32, 0.12]} />
-            <meshStandardMaterial color="#5b3a22" />
-          </mesh>
-          {books.map((b, i) => (
-            <mesh key={i} position={[b.x, y + b.h / 2 - 0.02, 0.19]}>
-              <boxGeometry args={[0.05, b.h, 0.06]} />
-              <meshStandardMaterial color={b.c} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-      <mesh position={[0, 1.27, 0]} castShadow>
-        <boxGeometry args={[0.7, 0.5, 0.15]} />
-        <meshStandardMaterial color="#222222" />
-      </mesh>
-      <mesh position={[0, 1.27, 0.08]}>
-        <planeGeometry args={[0.62, 0.42]} />
-        <meshStandardMaterial color="#1b2a33" emissive="#4fc3d1" emissiveIntensity={0.15} />
-      </mesh>
-    </group>
-  );
-}
-
-function Plant({ position }: { position: [number, number, number] }) {
-  return (
-    <group position={position}>
-      <mesh position={[0, 0.2, 0]} castShadow>
-        <cylinderGeometry args={[0.18, 0.14, 0.4, 20]} />
-        <meshToonMaterial color="#e07a5f" />
-      </mesh>
-      {[
-        [0, 0.6, 0, 0.26],
-        [0.12, 0.78, 0.04, 0.18],
-        [-0.12, 0.74, -0.04, 0.2],
-      ].map(([x, y, z, r], i) => (
-        <mesh key={i} position={[x, y, z]} castShadow>
-          <sphereGeometry args={[r, 16, 16]} />
-          <meshToonMaterial color="#5cb85c" />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function Classroom({ width, back, front }: { width: number; back: number; front: number }) {
-  const depth = front - back;
-  const cz = (front + back) / 2;
-  const H = 4;
-  const floor = useDisposable(() => woodTexture(width / 2.5, depth / 2.5), `${width}:${depth}`);
-  const sky = useDisposable(skyTexture, "sky");
-  const windowCount = Math.max(2, Math.floor((depth - 1.2) / 1.8));
-  const paneW = (depth - 1.2) / windowCount;
-
-  return (
-    <group>
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0, cz]} receiveShadow>
-        <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial map={floor} roughness={0.5} />
-      </mesh>
-      {/* ceiling + fluorescent lights */}
-      <mesh rotation-x={Math.PI / 2} position={[0, H, cz]}>
-        <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial color="#f3ecdc" />
-      </mesh>
-      {[-width / 4, width / 4].flatMap((x) =>
-        [back + depth * 0.3, back + depth * 0.7].map((z) => (
-          <group key={`${x}:${z}`} position={[x, H - 0.05, z]}>
-            <mesh>
-              <boxGeometry args={[0.2, 0.06, 1.5]} />
-              <meshStandardMaterial color="#d9d9d9" />
-            </mesh>
-            <mesh position={[0, -0.035, 0]}>
-              <boxGeometry args={[0.08, 0.03, 1.4]} />
-              <meshBasicMaterial color="#ffffff" toneMapped={false} />
-            </mesh>
-          </group>
-        )),
-      )}
-      {/* back wall: cream with a darker lower band */}
-      <mesh position={[0, H / 2, back]} receiveShadow>
-        <planeGeometry args={[width, H]} />
-        <meshStandardMaterial color="#ecd6a6" />
-      </mesh>
-      <mesh position={[0, 0.45, back + 0.01]}>
-        <planeGeometry args={[width, 0.9]} />
-        <meshStandardMaterial color="#d9b47c" />
-      </mesh>
-      <mesh position={[-width / 2, H / 2, cz]} rotation-y={Math.PI / 2} receiveShadow>
-        <planeGeometry args={[depth, H]} />
-        <meshStandardMaterial color="#f1e4c6" />
-      </mesh>
-      <mesh position={[width / 2, H / 2, cz]} rotation-y={-Math.PI / 2} receiveShadow>
-        <planeGeometry args={[depth, H]} />
-        <meshStandardMaterial color="#f1e4c6" />
-      </mesh>
-      {(
-        [
-          [0, back + 0.02, 0, width],
-          [-width / 2 + 0.02, cz, Math.PI / 2, depth],
-          [width / 2 - 0.02, cz, -Math.PI / 2, depth],
-        ] as const
-      ).map(([x, z, r, len], i) => (
-        <mesh key={i} position={[x, 0.07, z]} rotation-y={r}>
-          <planeGeometry args={[len, 0.14]} />
-          <meshStandardMaterial color="#8a5a32" />
-        </mesh>
-      ))}
-
-      {/* left wall: big sunny windows with curtains */}
-      {Array.from({ length: windowCount }, (_, i) => (
-        <group key={i} position={[-width / 2 + 0.02, 2.15, back + 0.6 + paneW * (i + 0.5)]} rotation-y={Math.PI / 2}>
-          <mesh>
-            <planeGeometry args={[paneW - 0.12, 2.1]} />
-            <meshBasicMaterial map={sky} toneMapped={false} />
-          </mesh>
-          <mesh position={[0, 0, 0.01]}>
-            <planeGeometry args={[paneW - 0.12, 0.05]} />
-            <meshStandardMaterial color="#5f6b70" />
-          </mesh>
-          <mesh position={[0, 0, 0.01]}>
-            <planeGeometry args={[0.05, 2.1]} />
-            <meshStandardMaterial color="#5f6b70" />
-          </mesh>
-          <mesh position={[0, -1.08, 0.04]}>
-            <boxGeometry args={[paneW, 0.06, 0.12]} />
-            <meshStandardMaterial color="#c9cfd2" />
-          </mesh>
-        </group>
-      ))}
-      {[back + 0.4, front - 0.5].map((z) => (
-        <group key={z} position={[-width / 2 + 0.12, 2.1, z]}>
-          {[-0.12, 0, 0.12].map((dz) => (
-            <mesh key={dz} position={[(dz + 0.12) * 0.3, 0, dz]} castShadow>
-              <cylinderGeometry args={[0.07, 0.08, 2.8, 12]} />
-              <meshToonMaterial color="#d9546e" />
-            </mesh>
-          ))}
-        </group>
-      ))}
-
-      {/* right wall: sliding doors */}
-      {[back + 1.1, front - 1.3].map((z) => (
-        <group key={z} position={[width / 2 - 0.02, 0, z]} rotation-y={-Math.PI / 2}>
-          <mesh position={[0, 1.1, 0]}>
-            <boxGeometry args={[1.1, 2.2, 0.05]} />
-            <meshStandardMaterial color="#a0693b" />
-          </mesh>
-          <mesh position={[0, 1.6, 0.03]}>
-            <planeGeometry args={[0.6, 0.55]} />
-            <meshBasicMaterial map={sky} toneMapped={false} />
-          </mesh>
-          <mesh position={[0.4, 1.0, 0.04]}>
-            <boxGeometry args={[0.04, 0.2, 0.03]} />
-            <meshStandardMaterial color="#555555" />
-          </mesh>
-        </group>
-      ))}
-
-      <Plant position={[-width / 2 + 0.5, 0, front - 1.2]} />
-      <Plant position={[width / 2 - 0.5, 0, back + 2.3]} />
-    </group>
-  );
-}
-
-const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
-
-const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
 
 function managerTexture(state: ManagerState, done: number, total: number) {
   const c = document.createElement("canvas");
@@ -1267,13 +800,13 @@ function ThinkingOrbs({ active }: { active: boolean }) {
     ref.current.visible = active;
     if (!still) {
       ref.current.rotation.y = clock.elapsedTime * 2.2;
-      ref.current.position.y = 2.0 + Math.sin(clock.elapsedTime * 3) * 0.04;
+      ref.current.position.y = 2.4 + Math.sin(clock.elapsedTime * 3) * 0.05;
     }
   });
   return (
-    <group ref={ref} position={[0, 2.0, 0]} visible={false}>
+    <group ref={ref} position={[0, 2.4, 0]} visible={false}>
       {[0, 1, 2, 3].map((i) => (
-        <mesh key={i} position={[Math.cos((i / 4) * Math.PI * 2) * 0.55, 0, Math.sin((i / 4) * Math.PI * 2) * 0.55]}>
+        <mesh key={i} position={[Math.cos((i / 4) * Math.PI * 2) * 0.75, 0, Math.sin((i / 4) * Math.PI * 2) * 0.75]}>
           <sphereGeometry args={[0.05, 12, 12]} />
           <meshBasicMaterial color={i % 2 ? "#34d399" : "#a7f3d0"} toneMapped={false} />
         </mesh>
@@ -1282,45 +815,137 @@ function ThinkingOrbs({ active }: { active: boolean }) {
   );
 }
 
-function Teacher({ state, x, z, board }: { state: ManagerState; x: number; z: number; board: BoardLine[] }) {
+// ---------- Agent desks in the open workspace ----------
+
+const LABEL_SCALE = 1.5;
+/** Chibi scale: workers and their desks are drawn larger than the room furniture so they read at a glance. */
+const DESK_SCALE = 1.35;
+
+type DeskProps = {
+  agent: Agent;
+  look: Look;
+  state: DeskState;
+  attentive: boolean;
+  seed: number;
+  lift: number;
+  position: V3;
+};
+
+function AgentDeskImpl({ agent, look, state, attentive, seed, lift, position }: DeskProps) {
+  const working = state.working.length > 0;
+  return (
+    <group position={position} scale={DESK_SCALE}>
+      {/* desk with a fabric privacy screen at the back */}
+      <RoundedBox args={[1.5, 0.05, 0.75]} radius={0.015} position={[0, 0.74, 0]} castShadow receiveShadow>
+        <meshStandardMaterial color="#f4f4f2" roughness={0.45} />
+      </RoundedBox>
+      {[-0.7, 0.7].map((x) => (
+        <mesh key={x} position={[x, 0.36, 0]} castShadow>
+          <boxGeometry args={[0.05, 0.72, 0.68]} />
+          <meshStandardMaterial color="#374151" />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.0, -0.39]} castShadow>
+        <boxGeometry args={[1.5, 0.5, 0.04]} />
+        <meshStandardMaterial color="#8f9aa1" roughness={0.95} />
+      </mesh>
+      <mesh position={[-0.55, 0.815, 0.05]} castShadow>
+        <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
+        <meshStandardMaterial color={look.inner} />
+      </mesh>
+      <Workstation screen={state.screen} name={agent.name} seed={seed} />
+      <OfficeChair p={[0, 0, 0.62]} />
+      <group position={[0, 0.5, 0.62]}>
+        <Mochi
+          look={look}
+          accessory={ACCESSORY[agent.id] ?? null}
+          facing={working || attentive ? "back" : "front"}
+          action={working ? "write" : "idle"}
+          lastDoneAt={state.lastDoneAt}
+          seed={seed}
+        />
+      </group>
+      <Label
+        name={agent.name}
+        bubble={working ? state.working[0] : undefined}
+        position={[0, 2.05, 0.62]}
+        scale={LABEL_SCALE}
+        lift={lift}
+      />
+    </group>
+  );
+}
+
+/** Re-render a desk only when what it shows changes (streamed text is bucketed like the screen). */
+const AgentDesk = memo(
+  AgentDeskImpl,
+  (a, b) =>
+    a.agent === b.agent &&
+    a.look === b.look &&
+    a.seed === b.seed &&
+    a.lift === b.lift &&
+    a.attentive === b.attentive &&
+    a.position.join() === b.position.join() &&
+    a.state.working.join("|") === b.state.working.join("|") &&
+    a.state.lastDoneAt === b.state.lastDoneAt &&
+    a.state.screen.mode === b.state.screen.mode &&
+    a.state.screen.title === b.state.screen.title &&
+    Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
+);
+
+const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
+const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
+
+/** Max presents at the projector in the meeting room. */
+function Presenter({ state, board }: { state: ManagerState; board: BoardLine[] }) {
   const label = {
     idle: "Waiting for tasks",
     planning: "Planning the work…",
-    watching: "Watching the class…",
+    watching: "Watching the team…",
     merging: "Merging results…",
   }[state];
   const done = board.filter((l) => l.status === "done").length;
   return (
     <group>
-      {/* teacher's desk */}
-      <group position={[-1.5, 0, z + 0.25]} rotation-y={0.25}>
-        <RoundedBox args={[1.5, 0.05, 0.7]} radius={0.015} position={[0, 0.78, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color="#c58a50" />
-        </RoundedBox>
-        <mesh position={[0, 0.39, -0.1]} castShadow>
-          <boxGeometry args={[1.4, 0.76, 0.45]} />
-          <meshStandardMaterial color="#b07a45" />
-        </mesh>
-        <mesh position={[-0.55, 0.88, 0.1]} castShadow>
-          <cylinderGeometry args={[0.07, 0.06, 0.14, 16]} />
-          <meshToonMaterial color="#9fd8ff" />
-        </mesh>
+      <group position={[MANAGER_TV.x, -0.03, MANAGER_TV.z]} rotation-y={Math.PI / 2}>
         <ManagerMonitor state={state} done={done} total={board.length} />
       </group>
-      <group position={[x, 0, z]}>
+      <group position={[PRESENTER.x, 0, PRESENTER.z]}>
         <Mochi
           look={MANAGER_LOOK}
           accessory="tie"
           facing={state === "planning" ? "back" : "front"}
           action={state === "planning" ? "chalk" : state === "merging" ? "wave" : "idle"}
           seed={42}
-          scale={1.3}
+          scale={1.7}
         />
         <ThinkingOrbs active={state === "planning" || state === "merging"} />
       </group>
-      <Label name="Max · Manager" bubble={label} position={[x, 2.3, z]} />
+      <Label name="Max · Manager" bubble={label} position={[PRESENTER.x, 2.75, PRESENTER.z]} scale={LABEL_SCALE * 1.3} />
     </group>
   );
+}
+
+/** Fit the orthographic camera to the floor whenever the canvas is resized. */
+function CameraFit() {
+  const get = useThree((s) => s.get);
+  const width = useThree((s) => s.size.width);
+  const height = useThree((s) => s.size.height);
+  // Re-run once OrbitControls registers itself as the default controls.
+  const hasControls = useThree((s) => Boolean(s.controls));
+  useEffect(() => {
+    const { camera, controls } = get();
+    // Narrow screens crop the side walls a little so the desks stay readable.
+    const zoom = Math.min(width / (width < 500 ? 16 : 20), height / 13);
+    camera.zoom = zoom;
+    camera.updateProjectionMatrix();
+    const orbit = controls as unknown as { minZoom: number; maxZoom: number } | null;
+    if (orbit) {
+      orbit.minZoom = zoom * 0.7;
+      orbit.maxZoom = zoom * 4;
+    }
+  }, [get, width, height, hasControls]);
+  return null;
 }
 
 export default function OfficeScene({
@@ -1334,85 +959,78 @@ export default function OfficeScene({
   manager: ManagerState;
   board: BoardLine[];
 }) {
-  const cols = agents.length <= 3 ? Math.max(1, agents.length) : agents.length <= 6 ? 3 : 4;
-  const rows = Math.max(1, Math.ceil(agents.length / cols));
-  const spacingX = 2.1;
-  const spacingZ = 2.15;
-  const width = Math.max(8.6, cols * spacingX + 3.6);
-  const back = -4;
-  const firstRow = -1;
-  const front = firstRow + (rows - 1) * spacingZ + 3.2;
+  // One row of desks for up to 4 agents, otherwise two rows facing the meeting rooms.
+  const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
+  const rows = Math.ceil(agents.length / perRow);
+  const spacing = Math.min(2.4, 14 / perRow);
+  const rowZ = rows === 1 ? [3.0] : [2.2, 4.55];
+  const rowHalf = (perRow * spacing) / 2;
 
   return (
     <Canvas
       shadows
+      orthographic
       dpr={[1, 1.5]}
       gl={{ powerPreference: "high-performance" }}
-      camera={{ position: [0.5, 3.4, front + 1.6], fov: 50 }}
+      camera={{ position: [13, 17, 15], zoom: 30, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
       <color attach="background" args={["#030504"]} />
-      <ambientLight intensity={0.55} color="#fff2e0" />
-      <hemisphereLight args={["#fff6e5", "#c9955c", 0.8]} />
-      {/* warm afternoon sun through the left windows */}
+      <ambientLight intensity={0.85} />
+      <hemisphereLight args={["#ffffff", "#c9c2b8", 1.0]} />
+      {/* sun from the camera side so the workers' faces are lit */}
       <directionalLight
-        position={[-width / 2 - 4, 6, (back + front) / 2 + 1.5]}
-        intensity={2.3}
-        color="#ffd29a"
+        position={[7, 15, 12]}
+        intensity={1.6}
         castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-9}
-        shadow-camera-right={9}
-        shadow-camera-top={9}
-        shadow-camera-bottom={-9}
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-12}
+        shadow-camera-right={12}
+        shadow-camera-top={12}
+        shadow-camera-bottom={-12}
         shadow-bias={-0.0005}
       />
-      <Classroom width={width} back={back} front={front} />
-      <Chalkboard lines={board} manager={manager} z={back + 0.03} />
-      <NoticeBoard x={-2.85} z={back + 0.03} seed={21} />
-      <NoticeBoard x={2.85} z={back + 0.03} seed={34} />
-      <Clock position={[0, 3.3, back + 0.04]} />
-      {[-1.1, 1.1].map((x) => (
-        <group key={x} position={[x, 3.3, back + 0.03]}>
-          <mesh>
-            <boxGeometry args={[0.5, 0.36, 0.03]} />
-            <meshStandardMaterial color="#5a3a2a" />
-          </mesh>
-          <mesh position={[0, 0, 0.02]}>
-            <planeGeometry args={[0.42, 0.28]} />
-            <meshStandardMaterial color="#f7f1e3" />
-          </mesh>
+      <OfficeFloor />
+      <Projector lines={board} merging={manager === "merging"} />
+      <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
+        <Clock position={[0, 0, 0]} />
+      </group>
+      <Presenter state={manager} board={board} />
+      {rowZ.slice(0, rows).map((z) => (
+        <group key={z}>
+          <Planter p={[-rowHalf - 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
+          <Planter p={[rowHalf + 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
         </group>
       ))}
-      <Cabinet position={[width / 2 - 0.6, 0, back + 0.35]} />
-      <Teacher state={manager} x={1.3} z={back + 1.1} board={board} />
       {agents.map((a, i) => {
-        const row = Math.floor(i / cols);
-        const inRow = Math.min(cols, agents.length - row * cols);
-        const x = ((i % cols) - (inRow - 1) / 2) * spacingX;
-        const z = firstRow + row * spacingZ;
+        const row = Math.floor(i / perRow);
+        const inRow = Math.min(perRow, agents.length - row * perRow);
+        const col = i % perRow;
+        const x = (col - (inRow - 1) / 2) * spacing;
         return (
-          <SchoolDesk
+          <AgentDesk
             key={a.id}
             agent={a}
             look={LOOKS[i % LOOKS.length]}
             state={desks[a.id] ?? IDLE_DESK}
             attentive={manager === "planning"}
             seed={i * 1.7}
-            position={[x, 0, z]}
+            lift={col % 2 ? 0.45 : 0}
+            position={[x, 0, rowZ[row] ?? FLOOR.z1 - 1]}
           />
         );
       })}
       <OrbitControls
-        target={[0, 1.3, back + 2.2]}
-        enablePan={false}
-        minDistance={2.5}
-        maxDistance={front - back + 3}
-        minPolarAngle={0.6}
-        maxPolarAngle={1.5}
-        minAzimuthAngle={-0.8}
-        maxAzimuthAngle={0.8}
+        makeDefault
+        target={[0, 0.6, -0.9]}
+        enablePan
+        screenSpacePanning
+        minPolarAngle={0.35}
+        maxPolarAngle={1.2}
+        minAzimuthAngle={-0.2}
+        maxAzimuthAngle={1.6}
       />
+      <CameraFit />
     </Canvas>
   );
 }

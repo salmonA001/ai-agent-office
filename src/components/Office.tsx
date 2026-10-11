@@ -316,7 +316,7 @@ export function Office() {
           />
         )}
 
-        <div className="mb-4 h-[360px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[520px]">
+        <div className="mb-4 h-[340px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[580px]">
           <OfficeScene agents={agents} desks={desks} manager={manager} board={board} />
         </div>
 
