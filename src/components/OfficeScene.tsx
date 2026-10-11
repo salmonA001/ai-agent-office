@@ -15,6 +15,7 @@ import {
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
+import { type Home, type P2, type Spot, type WalkPhase, Wanderer } from "./office-nav";
 import { clip, hash, reducedMotion, useDisposable } from "./scene-utils";
 
 export type { BoardLine } from "./OfficeFloor";
@@ -73,7 +74,7 @@ function Label({
 
 export type Species = "bear" | "bunny" | "cat" | "hamster" | "puppy" | "chick";
 type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | null;
-type Action = "idle" | "write" | "chalk" | "wave";
+type Action = "idle" | "write" | "chalk" | "wave" | "walk" | "sip" | "play";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -296,6 +297,7 @@ function Mochi({
   const right = useRef<Group>(null);
   const eyes = useRef<Group>(null);
   const party = useRef<Group>(null);
+  const feet = useRef<(Mesh | null)[]>([]);
   const [still] = useState(reducedMotion);
 
   useFrame(({ clock }, delta) => {
@@ -313,14 +315,27 @@ function Mochi({
     }
     root.current.rotation.y += (target - root.current.rotation.y) * Math.min(1, delta * 6);
 
+    const walking = action === "walk" && !cheering;
+    feet.current.forEach((f, i) => {
+      if (!f) return;
+      const step = walking ? Math.sin(t * 9 + i * Math.PI) : 0;
+      f.position.z = 0.22 + step * 0.09;
+      f.position.y = 0.05 + Math.max(0, step) * 0.05;
+    });
+
     let y: number;
     if (cheering) y = Math.abs(Math.sin(since * Math.PI * 3)) * 0.28;
+    else if (walking) y = Math.abs(Math.sin(t * 9)) * 0.06;
     else if (action === "idle") {
       const hop = t % 7;
       y = Math.sin(t * 2) * 0.015 + (hop < 0.45 ? Math.sin((hop / 0.45) * Math.PI) * 0.1 : 0);
     } else y = Math.abs(Math.sin(t * 8)) * 0.012;
     root.current.position.y = y;
-    root.current.rotation.z = action === "idle" && !cheering ? Math.sin(t * 1.4) * 0.05 : 0;
+    root.current.rotation.z = walking
+      ? Math.sin(t * 9) * 0.07
+      : action === "idle" && !cheering
+        ? Math.sin(t * 1.4) * 0.05
+        : 0;
 
     head.current.rotation.z = action === "idle" && !cheering ? Math.sin(t * 0.8) * 0.12 : 0;
     head.current.rotation.x = action === "write" && !cheering ? 0.22 : 0;
@@ -339,6 +354,17 @@ function Mochi({
     } else if (action === "wave") {
       L.set(-0.2, 0, -0.25);
       R.set(-2.6, 0, 0.5 + Math.sin(t * 8) * 0.4);
+    } else if (walking) {
+      L.set(Math.sin(t * 9) * 0.65, 0, -0.25);
+      R.set(-Math.sin(t * 9) * 0.65, 0, 0.25);
+    } else if (action === "sip") {
+      // cup to mouth every few seconds
+      const lift = Math.sin(t * 1.2) > 0.3 ? 1 : 0;
+      L.set(-0.15, 0, -0.3);
+      R.set(-0.9 - lift * 1.1, 0, -0.35 * lift);
+    } else if (action === "play") {
+      L.set(-0.3, 0, -0.3);
+      R.set(-1.2 + Math.sin(t * 10) * 0.8, 0, 0.35);
     } else {
       L.set(-0.15 + Math.sin(t * 1.5) * 0.06, 0, -0.3);
       R.set(-0.15 - Math.sin(t * 1.5) * 0.06, 0, 0.3);
@@ -362,8 +388,16 @@ function Mochi({
           </mesh>
         )}
         {/* feet */}
-        {[-1, 1].map((s) => (
-          <mesh key={s} position={[s * 0.15, 0.05, 0.22]} scale={[1, 0.65, 1.3]} castShadow>
+        {[-1, 1].map((s, i) => (
+          <mesh
+            key={s}
+            ref={(m) => {
+              feet.current[i] = m;
+            }}
+            position={[s * 0.15, 0.05, 0.22]}
+            scale={[1, 0.65, 1.3]}
+            castShadow
+          >
             <sphereGeometry args={[0.09, 16, 16]} />
             <Toon color={color} />
             <Ink />
@@ -820,19 +854,20 @@ function ThinkingOrbs({ active }: { active: boolean }) {
 const LABEL_SCALE = 1.5;
 /** Chibi scale: workers and their desks are drawn larger than the room furniture so they read at a glance. */
 const DESK_SCALE = 1.35;
+/** Mochi's seat height on the office chair, in world metres. */
+const SEAT_Y = 0.5 * DESK_SCALE;
+/** Chair offset from the desk centre, in world metres. */
+const CHAIR_Z = 0.62 * DESK_SCALE;
 
 type DeskProps = {
   agent: Agent;
   look: Look;
   state: DeskState;
-  attentive: boolean;
   seed: number;
-  lift: number;
   position: V3;
 };
 
-function AgentDeskImpl({ agent, look, state, attentive, seed, lift, position }: DeskProps) {
-  const working = state.working.length > 0;
+function AgentDeskImpl({ agent, look, state, seed, position }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
       {/* desk with a fabric privacy screen at the back */}
@@ -855,23 +890,6 @@ function AgentDeskImpl({ agent, look, state, attentive, seed, lift, position }: 
       </mesh>
       <Workstation screen={state.screen} name={agent.name} seed={seed} />
       <OfficeChair p={[0, 0, 0.62]} />
-      <group position={[0, 0.5, 0.62]}>
-        <Mochi
-          look={look}
-          accessory={ACCESSORY[agent.id] ?? null}
-          facing={working || attentive ? "back" : "front"}
-          action={working ? "write" : "idle"}
-          lastDoneAt={state.lastDoneAt}
-          seed={seed}
-        />
-      </group>
-      <Label
-        name={agent.name}
-        bubble={working ? state.working[0] : undefined}
-        position={[0, 2.05, 0.62]}
-        scale={LABEL_SCALE}
-        lift={lift}
-      />
     </group>
   );
 }
@@ -883,14 +901,101 @@ const AgentDesk = memo(
     a.agent === b.agent &&
     a.look === b.look &&
     a.seed === b.seed &&
-    a.lift === b.lift &&
-    a.attentive === b.attentive &&
     a.position.join() === b.position.join() &&
-    a.state.working.join("|") === b.state.working.join("|") &&
-    a.state.lastDoneAt === b.state.lastDoneAt &&
     a.state.screen.mode === b.state.screen.mode &&
     a.state.screen.title === b.state.screen.title &&
     Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
+);
+
+// ---------- Agents that wander the office when idle ----------
+
+type AvatarProps = {
+  agent: Agent;
+  look: Look;
+  home: Home;
+  /** working, queued, or listening to the plan: stay at (or rush back to) the desk */
+  busy: boolean;
+  working: boolean;
+  attentive: boolean;
+  bubble?: string;
+  lastDoneAt?: number;
+  seed: number;
+  lift: number;
+  canWander: boolean;
+};
+
+const ACTIVITY_ACTION: Record<Spot["activity"], Action> = { look: "idle", sip: "sip", play: "play", rest: "idle" };
+
+function AgentAvatarImpl(props: AvatarProps) {
+  const { agent, look, home, working, attentive, bubble, lastDoneAt, seed, lift } = props;
+  const group = useRef<Group>(null);
+  const live = useRef(props);
+  useEffect(() => {
+    live.current = props;
+  });
+  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 4 + ((seed * 7) % 8)));
+  const [phase, setPhase] = useState<WalkPhase>(walker.phase);
+  useEffect(() => () => walker.dispose(), [walker]);
+
+  useFrame((_, delta) => {
+    const g = group.current;
+    if (!g) return;
+    const p = live.current;
+    if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
+    g.position.set(walker.x, walker.y, walker.z);
+    g.rotation.y = walker.yaw;
+  });
+
+  const seated = phase.kind === "seated";
+  const facing = seated && (working || attentive) ? "back" : "front";
+  const action: Action = seated
+    ? working
+      ? "write"
+      : "idle"
+    : phase.kind === "walking"
+      ? "walk"
+      : ACTIVITY_ACTION[phase.spot.activity];
+  const say = seated
+    ? working
+      ? bubble
+      : undefined
+    : phase.kind === "walking"
+      ? phase.rushing
+        ? "On my way!"
+        : undefined
+      : phase.spot.say;
+
+  return (
+    <group ref={group} position={[home.seat[0], SEAT_Y, home.seat[1]]} scale={DESK_SCALE}>
+      <Mochi
+        look={look}
+        accessory={ACCESSORY[agent.id] ?? null}
+        facing={facing}
+        action={action}
+        lastDoneAt={lastDoneAt}
+        seed={seed}
+      />
+      <Label name={agent.name} bubble={say} position={[0, 1.55, 0]} scale={LABEL_SCALE} lift={lift} />
+    </group>
+  );
+}
+
+const AgentAvatar = memo(
+  AgentAvatarImpl,
+  (a, b) =>
+    a.agent === b.agent &&
+    a.look === b.look &&
+    a.home.seat.join() === b.home.seat.join() &&
+    a.home.aisleZ === b.home.aisleZ &&
+    a.home.sideX === b.home.sideX &&
+    a.busy === b.busy &&
+    a.working === b.working &&
+    a.attentive === b.attentive &&
+    a.bubble === b.bubble &&
+    a.lastDoneAt === b.lastDoneAt &&
+    a.seed === b.seed &&
+    a.lift === b.lift &&
+    a.canWander === b.canWander,
 );
 
 const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
@@ -963,8 +1068,12 @@ export default function OfficeScene({
   const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
   const rows = Math.ceil(agents.length / perRow);
   const spacing = Math.min(2.4, 14 / perRow);
-  const rowZ = rows === 1 ? [3.0] : [2.2, 4.55];
+  const rowZ = rows === 1 ? [3.0] : [2.0, 4.2];
   const rowHalf = (perRow * spacing) / 2;
+  // Agents walk out along the aisle behind their row to a side column, then into the office.
+  const sideX = Math.max(4.6, rowHalf + 0.95);
+  const [still] = useState(reducedMotion);
+  const canWander = !still && sideX <= 7.2;
 
   return (
     <Canvas
@@ -1007,17 +1116,27 @@ export default function OfficeScene({
         const inRow = Math.min(perRow, agents.length - row * perRow);
         const col = i % perRow;
         const x = (col - (inRow - 1) / 2) * spacing;
+        const z = rowZ[row] ?? FLOOR.z1 - 1;
+        const state = desks[a.id] ?? IDLE_DESK;
+        const attentive = manager === "planning";
+        const seat: P2 = [x, z + CHAIR_Z];
         return (
-          <AgentDesk
-            key={a.id}
-            agent={a}
-            look={LOOKS[i % LOOKS.length]}
-            state={desks[a.id] ?? IDLE_DESK}
-            attentive={manager === "planning"}
-            seed={i * 1.7}
-            lift={col % 2 ? 0.45 : 0}
-            position={[x, 0, rowZ[row] ?? FLOOR.z1 - 1]}
-          />
+          <group key={a.id}>
+            <AgentDesk agent={a} look={LOOKS[i % LOOKS.length]} state={state} seed={i * 1.7} position={[x, 0, z]} />
+            <AgentAvatar
+              agent={a}
+              look={LOOKS[i % LOOKS.length]}
+              home={{ seat, aisleZ: seat[1] + 0.62, sideX: x <= 0 ? -sideX : sideX }}
+              busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
+              working={state.working.length > 0}
+              attentive={attentive}
+              bubble={state.working[0]}
+              lastDoneAt={state.lastDoneAt}
+              seed={i * 1.7}
+              lift={col % 2 ? 0.45 : 0}
+              canWander={canWander}
+            />
+          </group>
         );
       })}
       <OrbitControls
