@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { type Key, type Msg, translate } from "@/lib/i18n";
 import { EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
 
 /**
@@ -13,8 +14,9 @@ export type ActiveEvent = {
   id: number;
   kind: EventKind;
   icon: string;
-  title: string;
-  text: string;
+  /** translatable title and description */
+  title: Msg;
+  text: Msg;
   /** wall-clock ms, for the UI countdown */
   startedAt: number;
   durationMs: number;
@@ -23,14 +25,15 @@ export type ActiveEvent = {
   heroId?: string;
 };
 
-export type LogEntry = { id?: number; at: number; icon: string; text: string };
+/** `text` is the English form kept for logs saved before translations existed. */
+export type LogEntry = { id?: number; at: number; icon: string; text: string; msg?: Msg };
 
 type GameState = {
   event: ActiveEvent | null;
   xp: Record<string, number>;
   log: LogEntry[];
   eventsHandled: number;
-  toast: { id: number; icon: string; text: string } | null;
+  toast: { id: number; icon: string; msg: Msg } | null;
 };
 
 const STORE_KEY = "office.game";
@@ -112,35 +115,37 @@ export function levelProgress(xp: number) {
 }
 
 let logSeq = Date.now();
-function log(icon: string, text: string, xpState = state.xp) {
-  set({ log: [{ id: ++logSeq, at: Date.now(), icon, text }, ...state.log].slice(0, 30), xp: xpState });
+function log(icon: string, msg: Msg, xpState = state.xp) {
+  const text = translate("en", msg.key as Key, msg.params);
+  set({ log: [{ id: ++logSeq, at: Date.now(), icon, text, msg }, ...state.log].slice(0, 30), xp: xpState });
 }
 
 let toastId = 0;
-function toast(icon: string, text: string) {
+function toast(icon: string, msg: Msg) {
   const id = ++toastId;
-  set({ toast: { id, icon, text } });
+  set({ toast: { id, icon, msg } });
   setTimeout(() => {
     if (state.toast?.id === id) set({ toast: null });
   }, 3500);
 }
 
-export function awardXp(agentId: string, amount: number, why: string, quiet = false) {
+export function awardXp(agentId: string, amount: number, why: Msg, quiet = false) {
   load();
   const before = state.xp[agentId] ?? 0;
   const xp = { ...state.xp, [agentId]: before + amount };
-  if (!quiet) log("✨", `${nameOf(agentId)} +${amount} XP: ${why}`, xp);
+  if (!quiet) log("✨", { key: "gl.xp", params: { name: nameOf(agentId), n: amount, why } }, xp);
   else set({ xp });
   const lvl = levelOf(before + amount);
   if (lvl > levelOf(before)) {
-    log("⭐", `${nameOf(agentId)} reached level ${lvl}!`);
-    toast("⭐", `${nameOf(agentId)} reached level ${lvl}!`);
+    const msg: Msg = { key: "gl.level", params: { name: nameOf(agentId), n: lvl } };
+    log("⭐", msg);
+    toast("⭐", msg);
   }
   save();
 }
 
 /** Reward finished work once per id (subtasks, tasks), even across reloads. */
-export function rewardOnce(key: string, agentId: string, amount: number, why: string) {
+export function rewardOnce(key: string, agentId: string, amount: number, why: Msg) {
   load();
   if (rewarded.has(key)) return;
   rewarded.add(key);
@@ -149,12 +154,11 @@ export function rewardOnce(key: string, agentId: string, amount: number, why: st
 
 // ---------- Events ----------
 
-type Plan = { orders: Map<string, Spot[]>; dwell: number; heroId?: string; text: string };
+type Plan = { orders: Map<string, Spot[]>; dwell: number; heroId?: string; text: Msg };
 
 type EventDef = {
   kind: EventKind;
   icon: string;
-  title: string;
   seconds: number;
   xp: number;
   plan: (idle: string[], everyone: string[]) => Plan | null;
@@ -184,7 +188,6 @@ const EVENTS: EventDef[] = [
   {
     kind: "pizza",
     icon: "🍕",
-    title: "Pizza party!",
     seconds: 28,
     xp: 8,
     plan: (idle) => ({
@@ -195,25 +198,23 @@ const EVENTS: EventDef[] = [
         ),
       ]),
       dwell: 4,
-      text: "Free pizza in the kitchen! Everyone who isn't busy heads over.",
+      text: { key: "ge.pizza.text" },
     }),
   },
   {
     kind: "drill",
     icon: "🚨",
-    title: "Fire drill",
     seconds: 20,
     xp: 6,
     plan: (idle) => ({
       orders: gather(idle, shuffle(EVENT_SPOTS.drill)),
       dwell: 4,
-      text: "Alarm! Free agents leave their spots and line up in the corridor. Busy agents keep working.",
+      text: { key: "ge.drill.text" },
     }),
   },
   {
     kind: "birthday",
     icon: "🎂",
-    title: "Birthday party",
     seconds: 28,
     xp: 8,
     plan: (idle, everyone) => {
@@ -227,68 +228,63 @@ const EVENTS: EventDef[] = [
         ]),
         dwell: 4,
         heroId,
-        text: `It's ${nameOf(heroId)}'s birthday! Cake in the lounge.`,
+        text: { key: "ge.birthday.text", params: { name: nameOf(heroId) } },
       };
     },
   },
   {
     kind: "printer",
     icon: "🖨️",
-    title: "Printer jam",
     seconds: 18,
     xp: 15,
     plan: (idle) => {
       const { id, orders } = chore(idle, ["coder", "qa"], [fix(spotById("printer"), "Fixing the printer", ["🔧", "😤", "📄"], "fixing the printer")]);
-      return { orders, dwell: 4, heroId: id, text: `The printer jammed. ${nameOf(id)} goes to fix it.` };
+      return { orders, dwell: 4, heroId: id, text: { key: "ge.printer.text", params: { name: nameOf(id) } } };
     },
   },
   {
     kind: "server",
     icon: "🖥️",
-    title: "Server alarm",
     seconds: 20,
     xp: 15,
     plan: (idle) => {
       const { id, orders } = chore(idle, ["coder", "data", "qa"], [
         fix(spotById("server-check"), "Rebooting servers", ["🔧", "💻", "😅"], "fixing the servers"),
       ]);
-      return { orders, dwell: 4, heroId: id, text: `A server is overheating! ${nameOf(id)} rushes to the server room.` };
+      return { orders, dwell: 4, heroId: id, text: { key: "ge.server.text", params: { name: nameOf(id) } } };
     },
   },
   {
     kind: "plants",
     icon: "🌱",
-    title: "Thirsty plants",
     seconds: 40,
     xp: 12,
     plan: (idle) => {
       const { id, orders } = chore(idle, ["planner"], shuffle(EVENT_SPOTS.plants));
-      return { orders, dwell: 4.5, heroId: id, text: `The office plants need water. ${nameOf(id)} does the rounds.` };
+      return { orders, dwell: 4.5, heroId: id, text: { key: "ge.plants.text", params: { name: nameOf(id) } } };
     },
   },
   {
     kind: "arcade",
     icon: "🕹️",
-    title: "Arcade tournament",
     seconds: 28,
     xp: 10,
     plan: (idle) => ({
       orders: gather(idle, ["arcade-1", "arcade-2", "foos-a", "foos-b"].map((id) => spotById(id))),
       dwell: 4,
-      text: "Tournament in the game room! Up to four free agents compete.",
+      text: { key: "ge.arcade.text" },
     }),
   },
   {
     kind: "coffee",
     icon: "☕",
-    title: "Coffee machine broke",
     seconds: 18,
     xp: 12,
     plan: (idle) => {
       const { id, orders } = chore(idle, ["qa", "coder"], [
         fix(spotById("coffee"), "Fixing the coffee machine", ["🔧", "☕", "😩"], "fixing the coffee machine"),
       ]);
-      return { orders, dwell: 4, heroId: id, text: `The coffee machine is smoking! ${nameOf(id)} saves the day.` };
+      return { orders, dwell: 4, heroId: id, text: { key: "ge.coffee.text", params: { name: nameOf(id) } } };
     },
   },
 ];
@@ -306,8 +302,9 @@ export function triggerEvent(kind: EventKind | "random" = "random") {
 function begin(def: EventDef, t: number) {
   const everyone = [...walkers.keys()];
   const idle = everyone.filter((id) => walkers.get(id)!.isIdle());
+  const title: Msg = { key: `ge.${def.kind}` };
   if (!idle.length) {
-    log(def.icon, `${def.title} postponed: everyone is busy working.`);
+    log(def.icon, { key: "gl.postponed", params: { title } });
     nextAt = t + 20;
     return;
   }
@@ -321,7 +318,7 @@ function begin(def: EventDef, t: number) {
       id: ++eventId,
       kind: def.kind,
       icon: def.icon,
-      title: def.title,
+      title,
       text: plan.text,
       startedAt: Date.now(),
       durationMs: def.seconds * 1000,
@@ -329,7 +326,7 @@ function begin(def: EventDef, t: number) {
       heroId: plan.heroId,
     },
   });
-  log(def.icon, `${def.title}: ${plan.text}`);
+  log(def.icon, { key: "gl.started", params: { title, text: plan.text } });
 }
 
 function finish(t: number) {
@@ -338,9 +335,14 @@ function finish(t: number) {
   const def = EVENTS.find((e) => e.kind === ev.kind)!;
   for (const id of ev.agentIds) walkers.get(id)?.release();
   set({ event: null, eventsHandled: state.eventsHandled + 1 });
-  if (ev.heroId) awardXp(ev.heroId, def.xp * (ev.kind === "birthday" ? 2 : 1), ev.kind === "birthday" ? "birthday gifts" : `handled the ${def.title.toLowerCase()}`);
-  for (const id of ev.agentIds) if (id !== ev.heroId) awardXp(id, def.xp, `joined the ${def.title.toLowerCase()}`, true);
-  if (ev.agentIds.length) log("✅", `${def.title} over. ${ev.agentIds.length} agent${ev.agentIds.length > 1 ? "s" : ""} earned XP.`);
+  if (ev.heroId)
+    awardXp(
+      ev.heroId,
+      def.xp * (ev.kind === "birthday" ? 2 : 1),
+      ev.kind === "birthday" ? { key: "why.birthday" } : { key: "why.handled", params: { event: ev.title } },
+    );
+  for (const id of ev.agentIds) if (id !== ev.heroId) awardXp(id, def.xp, { key: "why.joined", params: { event: ev.title } }, true);
+  if (ev.agentIds.length) log("✅", { key: "gl.over", params: { title: ev.title, n: ev.agentIds.length } });
   save();
   nextAt = t + 45 + Math.random() * 45;
 }
@@ -363,4 +365,4 @@ export function tickEvents(t: number) {
   }
 }
 
-export const EVENT_KINDS = EVENTS.map((e) => ({ kind: e.kind, icon: e.icon, title: e.title }));
+export const EVENT_KINDS = EVENTS.map((e) => ({ kind: e.kind, icon: e.icon, titleKey: `ge.${e.kind}` as Key }));

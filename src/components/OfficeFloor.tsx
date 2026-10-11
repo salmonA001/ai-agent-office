@@ -3,6 +3,7 @@
 import { useFrame } from "@react-three/fiber";
 import { memo, useRef, useState } from "react";
 import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import { type Lang, translate } from "@/lib/i18n";
 import { currentEventKind } from "./office-events";
 import { clip, reducedMotion, seeded, useDisposable } from "./scene-utils";
 
@@ -149,7 +150,7 @@ function finish(c: HTMLCanvasElement, repeat: [number, number]) {
 }
 
 /** Projector slide listing the live subtasks. */
-function slideTexture(lines: BoardLine[], merging: boolean) {
+function slideTexture(lines: BoardLine[], merging: boolean, lang: Lang) {
   const c = document.createElement("canvas");
   c.width = 1024;
   c.height = 576;
@@ -161,11 +162,11 @@ function slideTexture(lines: BoardLine[], merging: boolean) {
   g.fillRect(0, 0, 1024, 96);
   g.fillStyle = "#ffffff";
   g.font = `700 46px ${font}`;
-  g.fillText(merging ? "Final review: merging results" : "Sprint board: today's tasks", 40, 64);
+  g.fillText(translate(lang, merging ? "slide.merging" : "slide.title"), 40, 64);
   if (lines.length === 0) {
     g.fillStyle = "#6b7280";
     g.font = `500 40px ${font}`;
-    g.fillText("Assign a task below to get started", 150, 320);
+    g.fillText(translate(lang, "slide.empty"), 150, 320);
   }
   lines.slice(0, 7).forEach((l, i) => {
     const y = 150 + i * 60;
@@ -184,7 +185,8 @@ function slideTexture(lines: BoardLine[], merging: boolean) {
   });
   g.fillStyle = "#9ca3af";
   g.font = `500 22px ${font}`;
-  g.fillText("presented by Max · Manager", 720, 552);
+  g.textAlign = "right";
+  g.fillText(translate(lang, "slide.footer"), 1000, 552);
   return finish(c, [1, 1]);
 }
 
@@ -841,9 +843,9 @@ export const OfficeFloor = memo(function OfficeFloor() {
 });
 
 /** Live projector screen in the meeting room showing the task list. */
-export function Projector({ lines, merging }: { lines: BoardLine[]; merging: boolean }) {
-  const key = JSON.stringify([lines, merging]);
-  const tex = useDisposable(() => slideTexture(lines, merging), key);
+export function Projector({ lines, merging, lang }: { lines: BoardLine[]; merging: boolean; lang: Lang }) {
+  const key = JSON.stringify([lines, merging, lang]);
+  const tex = useDisposable(() => slideTexture(lines, merging, lang), key);
   return (
     <mesh position={[PROJECTOR.x, 1.35, PROJECTOR.z + 0.12]}>
       <planeGeometry args={[2.7, 1.52]} />

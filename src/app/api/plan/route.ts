@@ -1,5 +1,5 @@
 import { generateText, Output } from "ai";
-import { planOutput, planRequest } from "@/lib/schemas";
+import { langRule, planOutput, planRequest } from "@/lib/schemas";
 import { checkAccess, MANAGER_MODEL, parseBody, providerStatus } from "@/lib/server";
 
 export async function POST(request: Request) {
@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   if (denied) return denied;
   const body = await parseBody(request, planRequest);
   if ("error" in body) return body.error;
-  const { task, agents } = body.data;
+  const { task, agents, lang } = body.data;
 
   const roster = agents.map((a) => `- id "${a.id}": ${a.name}, ${a.role}`).join("\n");
 
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
         "that can be worked on in parallel, and assign each to the best-suited agent from the roster. " +
         "Use as few subtasks as the task needs; a simple task gets one subtask. Only use agent ids from the roster. " +
         "For each subtask give a short, plain-language reason why that agent fits, so the user can follow your decision.\n\n" +
-        `Roster:\n${roster}`,
+        `Roster:\n${roster}${langRule(lang)}`,
       prompt: task,
       output: Output.object({ schema: planOutput }),
       maxRetries: 1,

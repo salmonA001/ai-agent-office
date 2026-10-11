@@ -1,5 +1,7 @@
 import type { Agent } from "./agents";
 import { chat } from "./browser-ai";
+import { type Key, type Lang, type Msg, translate } from "./i18n";
+import { countWords } from "./words";
 import { MAX_SUBTASKS, planOutput, type PlannedSubtask } from "./schemas";
 
 export type SubtaskStatus = "queued" | "working" | "done" | "error";
@@ -17,7 +19,10 @@ export type Subtask = PlannedSubtask & {
 export type TaskEvent = {
   at: number;
   kind: "received" | "plan" | "assign" | "start" | "done" | "error" | "merge" | "info" | "finish";
+  /** English text (kept for history saved before translations existed) */
   text: string;
+  /** translatable form, rendered in the current UI language */
+  msg?: Msg;
   agentId?: string;
 };
 
@@ -78,26 +83,26 @@ async function readStream(res: Response, onText: (chunk: string) => void) {
   return total;
 }
 
-function cloudBackend(code: string): Backend {
+function cloudBackend(code: string, lang: Lang): Backend {
   return {
     async plan(task, agents, signal) {
       const res = await post(
         "/api/plan",
-        { task, agents: agents.map(({ id, name, role }) => ({ id, name, role })) },
+        { task, lang, agents: agents.map(({ id, name, role }) => ({ id, name, role })) },
         code,
         signal,
       );
       return ((await res.json()) as { subtasks: PlannedSubtask[] }).subtasks;
     },
     async work(task, agent, sub, signal, onText) {
-      const res = await post("/api/work", { task, agent, subtask: { title: sub.title, brief: sub.brief } }, code, signal);
+      const res = await post("/api/work", { task, lang, agent, subtask: { title: sub.title, brief: sub.brief } }, code, signal);
       const text = await readStream(res, onText);
       // A failed cloud stream ends empty (the server hides provider errors mid-stream).
       if (!text.trim()) throw new CloudUnavailableError("Cloud agent returned nothing");
       return text;
     },
     async synthesize(task, results, signal, onText) {
-      const res = await post("/api/synthesize", { task, results }, code, signal);
+      const res = await post("/api/synthesize", { task, lang, results }, code, signal);
       const text = await readStream(res, onText);
       if (!text.trim()) throw new CloudUnavailableError("Cloud manager returned nothing");
       return text;
@@ -140,7 +145,9 @@ function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
   });
 }
 
-const browserBackend: Backend = {
+const LANG_RULE: Record<Lang, string> = { en: "", th: " Write everything in Thai (ภาษาไทย)." };
+
+const makeBrowserBackend = (lang: Lang): Backend => ({
   async plan(task, agents, signal) {
     const schema = JSON.stringify({
       type: "object",
@@ -172,7 +179,7 @@ const browserBackend: Backend = {
             content:
               "You are an office manager. Split the user's task into 1-3 subtasks for different agents. " +
               "Simple tasks get 1 subtask. For each, give a short reason why that agent fits. " +
-              `Reply in JSON.\nAgents:\n${roster}`,
+              `Reply in JSON.${LANG_RULE[lang]}\nAgents:\n${roster}`,
           },
           { role: "user", content: task },
         ],
@@ -190,7 +197,7 @@ const browserBackend: Backend = {
       [
         {
           role: "system",
-          content: `You are ${agent.name}, the ${agent.role}. ${agent.instructions} Do only your assigned part. Use Markdown. Be concise.`,
+          content: `You are ${agent.name}, the ${agent.role}. ${agent.instructions} Do only your assigned part. Use Markdown. Be concise.${LANG_RULE[lang]}`,
         },
         { role: "user", content: `Overall task: ${task}\n\nYour part: ${sub.title}\n${sub.brief}` },
       ],
@@ -202,13 +209,13 @@ const browserBackend: Backend = {
     const work = results.map((r) => `## ${r.title} (${r.agentName})\n${r.output.slice(0, 1500)}`).join("\n\n");
     return chat(
       [
-        { role: "system", content: "Combine the team's work into one clear final answer. Use Markdown." },
+        { role: "system", content: `Combine the team's work into one clear final answer. Use Markdown.${LANG_RULE[lang]}` },
         { role: "user", content: `Task: ${task}\n\n${work}` },
       ],
       { signal, maxTokens: 700, onText },
     );
   },
-};
+});
 
 // ---------- Orchestration ----------
 
@@ -221,10 +228,15 @@ export async function runTask(
   signal: AbortSignal,
   update: Update,
   onCloudUnavailable?: (reason: "access" | "unavailable") => void,
+  lang: Lang = "en",
 ) {
-  let backend = engine === "cloud" ? cloudBackend(code) : browserBackend;
-  const log = (kind: TaskEvent["kind"], text: string, agentId?: string) =>
-    update((t) => ({ ...t, events: [...(t.events ?? []), { at: Date.now(), kind, text, agentId }] }));
+  const browserBackend = makeBrowserBackend(lang);
+  let backend = engine === "cloud" ? cloudBackend(code, lang) : browserBackend;
+  const log = (kind: TaskEvent["kind"], key: Key, params?: Msg["params"], agentId?: string) =>
+    update((t) => ({
+      ...t,
+      events: [...(t.events ?? []), { at: Date.now(), kind, text: translate("en", key, params), msg: { key, params }, agentId }],
+    }));
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
   // Switch this task (and, via the callback, later tasks) to the in-browser AI.
   const fallBack = (reason: "access" | "unavailable") => {
@@ -232,12 +244,7 @@ export async function runTask(
     backend = browserBackend;
     engine = "browser";
     update((t) => ({ ...t, engine: "browser" }));
-    log(
-      "info",
-      reason === "access"
-        ? "No access code, so the team switched to the free in-browser AI."
-        : "The cloud AI is out of quota or unavailable, so the team switched to the free in-browser AI.",
-    );
+    log("info", reason === "access" ? "ev.fallbackAccess" : "ev.fallbackQuota");
     onCloudUnavailable?.(reason);
   };
   const withFallback = async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -252,15 +259,12 @@ export async function runTask(
     }
   };
 
-  log("plan", "Max is reading the task and deciding how to split it up.");
+  log("plan", "ev.planStart");
   const subtasks = await withFallback(() => backend.plan(task.prompt, agents, signal));
-  log(
-    "plan",
-    subtasks.length === 1
-      ? "Max kept it as one job for a single agent."
-      : `Max split it into ${subtasks.length} parts that can run at the same time.`,
-  );
-  for (const s of subtasks) log("assign", `${nameOf(s.agentId)} gets "${s.title}". ${s.reason ?? ""}`.trim(), s.agentId);
+  if (subtasks.length === 1) log("plan", "ev.planOne");
+  else log("plan", "ev.planMany", { n: subtasks.length });
+  for (const s of subtasks)
+    log("assign", "ev.assign", { name: nameOf(s.agentId), title: s.title, reason: s.reason ?? "" }, s.agentId);
   update((t) => ({
     ...t,
     status: "working",
@@ -274,7 +278,7 @@ export async function runTask(
     subtasks.map(async (sub, i): Promise<Result | null> => {
       const agent = agents.find((a) => a.id === sub.agentId) ?? agents[0];
       const begin = () => {
-        log("start", `${agent.name} started "${sub.title}".`, agent.id);
+        log("start", "ev.start", { name: agent.name, title: sub.title }, agent.id);
         setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
       };
       if (engine === "cloud") begin();
@@ -293,13 +297,13 @@ export async function runTask(
         });
         if (!output.trim()) throw new Error("Agent returned no output");
         setSub(i, (s) => ({ ...s, status: "done", finishedAt: Date.now() }));
-        const words = output.trim().split(/\s+/).length;
-        log("done", `${agent.name} finished "${sub.title}" (${words} words).`, agent.id);
+        const words = countWords(output);
+        log("done", "ev.done", { name: agent.name, title: sub.title, words }, agent.id);
         return { agentName: agent.name, role: agent.role, title: sub.title, output: output.slice(0, 20000) };
       } catch (err) {
         if (signal.aborted || err instanceof AccessError) throw err;
         setSub(i, (s) => ({ ...s, status: "error", output: s.output || String((err as Error).message) }));
-        log("error", `${agent.name} hit a problem: ${(err as Error).message}`, agent.id);
+        log("error", "ev.error", { name: agent.name, msg: (err as Error).message }, agent.id);
         return null;
       }
     }),
@@ -308,14 +312,14 @@ export async function runTask(
   const ok = results.filter((r): r is Result => r !== null);
   if (ok.length === 0) throw new Error("Every agent failed on this task.");
 
-  const finish = () => log("finish", `All done in ${Math.round((Date.now() - task.createdAt) / 1000)} s.`);
+  const finish = () => log("finish", "ev.finish", { s: Math.round((Date.now() - task.createdAt) / 1000) });
   if (ok.length === 1 && subtasks.length === 1) {
     update((t) => ({ ...t, status: "done", final: ok[0].output }));
     finish();
     return;
   }
 
-  log("merge", `Max is merging ${ok.length} results into one answer, removing overlap and fixing contradictions.`);
+  log("merge", "ev.merge", { n: ok.length });
   update((t) => ({ ...t, status: "synthesizing" }));
   const final = await withFallback(() => {
     update((t) => ({ ...t, final: "" }));

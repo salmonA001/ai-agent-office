@@ -16,6 +16,7 @@ import {
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
+import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { setAgentActivity } from "./agent-activity";
 import { currentEventKind, tickEvents, useGame } from "./office-events";
 import { type Home, isPresent, type P2, registerWalker, type Spot, type WalkPhase, Wanderer } from "./office-nav";
@@ -523,13 +524,13 @@ export type ScreenMode = "idle" | "planning" | "queued" | "working" | "done" | "
 export type ScreenState = { mode: ScreenMode; title?: string; text?: string; len?: number };
 
 const TERM_FONT = 'ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace';
-const SCREEN_LABEL: Record<ScreenMode, string> = {
-  idle: "idle",
-  planning: "standing by",
-  queued: "queued",
-  working: "working",
-  done: "done",
-  error: "error",
+const SCREEN_LABEL: Record<ScreenMode, Key> = {
+  idle: "screen.idle",
+  planning: "screen.planning",
+  queued: "screen.queued",
+  working: "screen.working",
+  done: "screen.done",
+  error: "screen.error",
 };
 
 /** Plain-text lines for the monitor: Markdown symbols stripped, hard-wrapped to the screen width. */
@@ -546,7 +547,8 @@ function terminalLines(text: string, width: number) {
   return out;
 }
 
-function screenTexture(screen: ScreenState, name: string) {
+function screenTexture(screen: ScreenState, name: string, lang: Lang) {
+  const tr = (k: Key) => translate(lang, k);
   const c = document.createElement("canvas");
   c.width = 512;
   c.height = 320;
@@ -571,7 +573,7 @@ function screenTexture(screen: ScreenState, name: string) {
   });
   g.font = `600 16px ${TERM_FONT}`;
   g.fillStyle = "#a7f3d0";
-  g.fillText(`${name.toLowerCase()}@office: ${SCREEN_LABEL[screen.mode]}`, 80, 23);
+  g.fillText(`${name.toLowerCase()}@office: ${tr(SCREEN_LABEL[screen.mode])}`, 80, 23);
 
   g.textAlign = "center";
   const title = screen.title ? clip(screen.title, 34) : "";
@@ -579,30 +581,30 @@ function screenTexture(screen: ScreenState, name: string) {
     case "idle":
       g.fillStyle = "#34d399";
       g.font = `700 40px ${TERM_FONT}`;
-      g.fillText("READY", 256, 165);
+      g.fillText(tr("screen.ready"), 256, 165);
       g.fillStyle = "#6ee7b7";
       g.font = `500 18px ${TERM_FONT}`;
-      g.fillText("waiting for a task_", 256, 200);
+      g.fillText(tr("screen.waiting"), 256, 200);
       break;
     case "planning":
       g.fillStyle = "#6ee7b7";
       g.font = `600 22px ${TERM_FONT}`;
-      g.fillText("Manager is planning…", 256, 250);
+      g.fillText(tr("screen.planningBig"), 256, 250);
       g.font = `500 16px ${TERM_FONT}`;
       g.fillStyle = "#a7f3d0";
-      g.fillText("listening for my assignment", 256, 280);
+      g.fillText(tr("screen.listening"), 256, 280);
       break;
     case "queued":
       g.fillStyle = "#6ee7b7";
       g.font = `600 20px ${TERM_FONT}`;
-      g.fillText("Up next:", 256, 240);
+      g.fillText(tr("screen.upNext"), 256, 240);
       g.fillStyle = "#ecfdf5";
       g.fillText(title, 256, 270);
       break;
     case "done":
       g.fillStyle = "#34d399";
       g.font = `800 52px ${TERM_FONT}`;
-      g.fillText("✓ DONE", 256, 160);
+      g.fillText(tr("screen.doneBig"), 256, 160);
       g.fillStyle = "#a7f3d0";
       g.font = `500 18px ${TERM_FONT}`;
       g.fillText(title, 256, 200);
@@ -610,7 +612,7 @@ function screenTexture(screen: ScreenState, name: string) {
     case "error":
       g.fillStyle = "#fca5a5";
       g.font = `800 46px ${TERM_FONT}`;
-      g.fillText("✗ ERROR", 256, 160);
+      g.fillText(tr("screen.errorBig"), 256, 160);
       g.font = `500 18px ${TERM_FONT}`;
       g.fillText(title, 256, 200);
       break;
@@ -623,7 +625,7 @@ function screenTexture(screen: ScreenState, name: string) {
       g.font = `500 16px ${TERM_FONT}`;
       if (lines.length === 0) {
         g.fillStyle = "#6ee7b7";
-        g.fillText("thinking…▌", 16, 88);
+        g.fillText(`${tr("screen.thinking")}▌`, 16, 88);
       }
       lines.forEach((l, i) => {
         const last = i === lines.length - 1;
@@ -639,10 +641,10 @@ function screenTexture(screen: ScreenState, name: string) {
   return tex;
 }
 
-function Workstation({ screen, name, seed }: { screen: ScreenState; name: string; seed: number }) {
+function Workstation({ screen, name, seed, lang }: { screen: ScreenState; name: string; seed: number; lang: Lang }) {
   // Redraw the screen texture only every ~30 streamed characters.
-  const key = `${screen.mode}|${screen.title ?? ""}|${Math.floor((screen.len ?? 0) / 30)}|${name}`;
-  const tex = useDisposable(() => screenTexture(screen, name), key);
+  const key = `${screen.mode}|${screen.title ?? ""}|${Math.floor((screen.len ?? 0) / 30)}|${name}|${lang}`;
+  const tex = useDisposable(() => screenTexture(screen, name, lang), key);
   const scan = useRef<Mesh>(null);
   const spinner = useRef<Group>(null);
   const flash = useRef<Mesh>(null);
@@ -781,7 +783,7 @@ function Clock({ position }: { position: [number, number, number] }) {
   );
 }
 
-function managerTexture(state: ManagerState, done: number, total: number) {
+function managerTexture(state: ManagerState, done: number, total: number, lang: Lang) {
   const c = document.createElement("canvas");
   c.width = 512;
   c.height = 300;
@@ -795,13 +797,13 @@ function managerTexture(state: ManagerState, done: number, total: number) {
   g.fillRect(0, 0, 512, 36);
   g.font = `700 18px ${TERM_FONT}`;
   g.fillStyle = "#a7f3d0";
-  g.fillText("MAX // MISSION CONTROL", 16, 24);
+  g.fillText(translate(lang, "mon.title"), 16, 24);
   g.textAlign = "center";
   const title = {
-    idle: "Ready for a task",
-    planning: "Planning the work",
-    watching: `Team progress ${done}/${total}`,
-    merging: "Merging results",
+    idle: translate(lang, "mon.idle"),
+    planning: translate(lang, "mon.planning"),
+    watching: translate(lang, "mon.watching", { done, total }),
+    merging: translate(lang, "mon.merging"),
   }[state];
   g.fillStyle = "#34d399";
   g.font = `800 34px ${TERM_FONT}`;
@@ -809,10 +811,10 @@ function managerTexture(state: ManagerState, done: number, total: number) {
   g.font = `500 17px ${TERM_FONT}`;
   g.fillStyle = "#6ee7b7";
   const sub = {
-    idle: "assign one from the panel below",
-    planning: "splitting into subtasks…",
-    watching: "agents are working in parallel",
-    merging: "writing the final answer…",
+    idle: translate(lang, "mon.idleSub"),
+    planning: translate(lang, "mon.planningSub"),
+    watching: translate(lang, "mon.watchingSub"),
+    merging: translate(lang, "mon.mergingSub"),
   }[state];
   g.fillText(sub, 256, 155);
   // progress track (the moving bar is a separate mesh)
@@ -829,8 +831,8 @@ function managerTexture(state: ManagerState, done: number, total: number) {
 }
 
 /** Big monitor on the teacher's desk facing the class, with a sweeping bar while the manager thinks. */
-function ManagerMonitor({ state, done, total }: { state: ManagerState; done: number; total: number }) {
-  const tex = useDisposable(() => managerTexture(state, done, total), `${state}|${done}|${total}`);
+function ManagerMonitor({ state, done, total, lang }: { state: ManagerState; done: number; total: number; lang: Lang }) {
+  const tex = useDisposable(() => managerTexture(state, done, total, lang), `${state}|${done}|${total}|${lang}`);
   const bar = useRef<Mesh>(null);
   const [still] = useState(reducedMotion);
   const busy = state === "planning" || state === "merging";
@@ -908,9 +910,10 @@ type DeskProps = {
   state: DeskState;
   seed: number;
   position: V3;
+  lang: Lang;
 };
 
-function AgentDeskImpl({ agent, look, state, seed, position }: DeskProps) {
+function AgentDeskImpl({ agent, look, state, seed, position, lang }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
       {/* desk with a fabric privacy screen at the back */}
@@ -931,7 +934,7 @@ function AgentDeskImpl({ agent, look, state, seed, position }: DeskProps) {
         <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
         <meshStandardMaterial color={look.inner} />
       </mesh>
-      <Workstation screen={state.screen} name={agent.name} seed={seed} />
+      <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
       <OfficeChair p={[0, 0, 0.62]} />
     </group>
   );
@@ -945,6 +948,7 @@ const AgentDesk = memo(
     a.look === b.look &&
     a.seed === b.seed &&
     a.position.join() === b.position.join() &&
+    a.lang === b.lang &&
     a.state.screen.mode === b.state.screen.mode &&
     a.state.screen.title === b.state.screen.title &&
     Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
@@ -966,6 +970,7 @@ type AvatarProps = {
   lift: number;
   canWander: boolean;
   level: number;
+  lang: Lang;
   selected: boolean;
   onSelect?: (id: string) => void;
 };
@@ -1032,14 +1037,14 @@ function Emote({ pool, seed, y = 1.25 }: { pool: string[]; seed: number; y?: num
   );
 }
 
-function describe(phase: WalkPhase, working: boolean, attentive: boolean, task?: string) {
+function describe(lang: Lang, phase: WalkPhase, working: boolean, attentive: boolean, task?: string) {
   if (phase.kind === "seated") {
-    if (working) return `Typing at their desk${task ? `: "${task}"` : ""}`;
-    if (attentive) return "Watching Max present the plan";
-    return "Sitting at their desk, free for work";
+    if (working) return task ? translate(lang, "act.typingOn", { title: task }) : translate(lang, "act.typing");
+    if (attentive) return translate(lang, "act.watching");
+    return translate(lang, "act.free");
   }
-  if (phase.kind === "walking") return phase.rushing ? "Rushing back to the desk: work just arrived" : "Strolling around the office";
-  return `${phase.spot.say} ${phase.spot.where}`;
+  if (phase.kind === "walking") return translate(lang, phase.rushing ? "act.rushing" : "act.strolling");
+  return `${phrase(lang, phase.spot.say)} ${phrase(lang, phase.spot.where)}`;
 }
 
 function emotePool(phase: WalkPhase, working: boolean, attentive: boolean) {
@@ -1090,13 +1095,13 @@ function AgentAvatarImpl(props: AvatarProps) {
       : undefined
     : phase.kind === "walking"
       ? phase.rushing
-        ? "On my way!"
+        ? translate(props.lang, "bubble.onMyWay")
         : undefined
-      : phase.spot.say;
+      : phrase(props.lang, phase.spot.say);
 
   useEffect(() => {
-    setAgentActivity(agent.id, describe(phase, working, attentive, bubble));
-  }, [agent.id, phase, working, attentive, bubble]);
+    setAgentActivity(agent.id, describe(props.lang, phase, working, attentive, bubble));
+  }, [agent.id, phase, working, attentive, bubble, props.lang]);
 
   return (
     <group
@@ -1152,6 +1157,7 @@ const AgentAvatar = memo(
     a.lift === b.lift &&
     a.canWander === b.canWander &&
     a.level === b.level &&
+    a.lang === b.lang &&
     a.selected === b.selected &&
     a.onSelect === b.onSelect,
 );
@@ -1185,18 +1191,13 @@ const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
 const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
 
 /** Max presents at the projector in the meeting room. */
-function Presenter({ state, board }: { state: ManagerState; board: BoardLine[] }) {
-  const label = {
-    idle: "Waiting for tasks",
-    planning: "Planning the work…",
-    watching: "Watching the team…",
-    merging: "Merging results…",
-  }[state];
+function Presenter({ state, board, lang }: { state: ManagerState; board: BoardLine[]; lang: Lang }) {
+  const label = translate(lang, `max.${state}` as Key);
   const done = board.filter((l) => l.status === "done").length;
   return (
     <group>
       <group position={[MANAGER_TV.x, -0.03, MANAGER_TV.z]} rotation-y={Math.PI / 2}>
-        <ManagerMonitor state={state} done={done} total={board.length} />
+        <ManagerMonitor state={state} done={done} total={board.length} lang={lang} />
       </group>
       <Pacer pacing={state === "watching"}>
         <Mochi
@@ -1213,7 +1214,7 @@ function Presenter({ state, board }: { state: ManagerState; board: BoardLine[] }
           seed={9}
           y={1.9}
         />
-        <Label name="Max · Manager" bubble={label} position={[0, 2.75, 0]} scale={LABEL_SCALE * 1.3} />
+        <Label name={translate(lang, "max.label")} bubble={label} position={[0, 2.75, 0]} scale={LABEL_SCALE * 1.3} />
       </Pacer>
     </group>
   );
@@ -1281,6 +1282,7 @@ export default function OfficeScene({
   selectedId,
   onSelectAgent,
   levels = {},
+  lang = "en",
 }: {
   agents: Agent[];
   desks: Record<string, DeskState>;
@@ -1289,6 +1291,7 @@ export default function OfficeScene({
   selectedId?: string | null;
   onSelectAgent?: (id: string) => void;
   levels?: Record<string, number>;
+  lang?: Lang;
 }) {
   // One row of desks for up to 4 agents, otherwise two rows facing the meeting rooms.
   const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
@@ -1307,11 +1310,10 @@ export default function OfficeScene({
       shadows
       orthographic
       dpr={[1, 1.5]}
-      gl={{ powerPreference: "high-performance" }}
+      gl={{ powerPreference: "high-performance", alpha: true }}
       camera={{ position: [17, 17, 15], zoom: 30, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
-      <color attach="background" args={["#030504"]} />
       <ambientLight intensity={0.85} />
       <hemisphereLight args={["#ffffff", "#c9c2b8", 1.0]} />
       {/* sun from the camera side so the workers' faces are lit */}
@@ -1328,11 +1330,11 @@ export default function OfficeScene({
       />
       <OfficeFloor />
       <EventDirector />
-      <Projector lines={board} merging={manager === "merging"} />
+      <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
         <Clock position={[0, 0, 0]} />
       </group>
-      <Presenter state={manager} board={board} />
+      <Presenter state={manager} board={board} lang={lang} />
       <PingPongBall />
       {rowZ.slice(0, rows).map((z) => (
         <group key={z}>
@@ -1351,7 +1353,7 @@ export default function OfficeScene({
         const seat: P2 = [x, z + CHAIR_Z];
         return (
           <group key={a.id}>
-            <AgentDesk agent={a} look={LOOKS[i % LOOKS.length]} state={state} seed={i * 1.7} position={[x, 0, z]} />
+            <AgentDesk agent={a} look={LOOKS[i % LOOKS.length]} state={state} seed={i * 1.7} position={[x, 0, z]} lang={lang} />
             <AgentAvatar
               agent={a}
               look={LOOKS[i % LOOKS.length]}
@@ -1364,6 +1366,7 @@ export default function OfficeScene({
               seed={i * 1.7}
               lift={col % 2 ? 0.45 : 0}
               level={levels[a.id] ?? 1}
+              lang={lang}
               canWander={canWander}
               selected={selectedId === a.id}
               onSelect={onSelectAgent}

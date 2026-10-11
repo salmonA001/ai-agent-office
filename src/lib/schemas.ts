@@ -13,9 +13,14 @@ const agentFull = agentRef.extend({
 });
 
 const task = z.string().trim().min(3).max(4000);
+const lang = z.enum(["en", "th"]).optional();
+
+/** Appended to every system prompt so plans and answers come back in the user's language. */
+export const langRule = (l?: "en" | "th") => (l === "th" ? " Write all of your output in Thai (ภาษาไทย)." : "");
 
 export const planRequest = z.object({
   task,
+  lang,
   agents: z.array(agentRef).min(1).max(16),
 });
 
@@ -37,6 +42,7 @@ export type PlannedSubtask = z.infer<typeof planOutput>["subtasks"][number];
 
 export const workRequest = z.object({
   task,
+  lang,
   agent: agentFull,
   subtask: z.object({
     title: z.string().max(200),
@@ -46,6 +52,7 @@ export const workRequest = z.object({
 
 export const synthesizeRequest = z.object({
   task,
+  lang,
   results: z
     .array(
       z.object({
