@@ -1,9 +1,34 @@
 import "server-only";
 import type { z } from "zod";
 
-// Models are reached through the Vercel AI Gateway with "provider/model" strings.
-export const MANAGER_MODEL = process.env.MANAGER_MODEL ?? "anthropic/claude-sonnet-5.5";
-export const WORKER_MODEL = process.env.WORKER_MODEL ?? "anthropic/claude-haiku-5.5";
+import { anthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
+import { openai } from "@ai-sdk/openai";
+import type { LanguageModel } from "ai";
+
+/**
+ * Picks the first provider with a key set, so the app runs without the Vercel AI Gateway.
+ * With no provider key, models go through the AI Gateway ("provider/model" strings).
+ * MANAGER_MODEL / WORKER_MODEL override the model id for whichever provider is active.
+ */
+function pickModels(): { manager: LanguageModel; worker: LanguageModel } {
+  const m = process.env.MANAGER_MODEL;
+  const w = process.env.WORKER_MODEL;
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    return { manager: google(m ?? "gemini-flash-latest"), worker: google(w ?? "gemini-flash-latest") };
+  }
+  if (process.env.OPENAI_API_KEY) {
+    return { manager: openai(m ?? "gpt-5.5"), worker: openai(w ?? "gpt-5.4-mini") };
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { manager: anthropic(m ?? "claude-sonnet-5-5"), worker: anthropic(w ?? "claude-haiku-5-5") };
+  }
+  return { manager: m ?? "anthropic/claude-sonnet-5.5", worker: w ?? "anthropic/claude-haiku-5.5" };
+}
+
+const models = pickModels();
+export const MANAGER_MODEL = models.manager;
+export const WORKER_MODEL = models.worker;
 
 /**
  * Optional shared access code. When OFFICE_ACCESS_CODE is set, every API call

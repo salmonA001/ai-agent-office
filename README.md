@@ -6,7 +6,7 @@ Hand any job to a team of AI agents. The **manager** splits your task into paral
 - Hire your own agents (name, role, instructions) for custom work.
 - Cancel, re-run, copy results. Task history and agents are kept in your browser.
 
-Built with Next.js 16, React 19, Tailwind CSS 4 and AI SDK 7 through the Vercel AI Gateway.
+Built with Next.js 16, React 19, Tailwind CSS 4 and AI SDK 7. Works with a Google Gemini, OpenAI or Anthropic key, or the Vercel AI Gateway.
 
 ## How it works
 
@@ -20,7 +20,7 @@ Built with Next.js 16, React 19, Tailwind CSS 4 and AI SDK 7 through the Vercel 
 
 ```bash
 npm install
-vercel link && vercel env pull   # or put AI_GATEWAY_API_KEY in .env.local
+cp .env.example .env.local      # add GOOGLE_GENERATIVE_AI_API_KEY (free tier)
 npm run dev
 ```
 
