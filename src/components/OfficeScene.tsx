@@ -1,12 +1,12 @@
 "use client";
 
-import { Billboard, ContactShadows, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
+import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CanvasTexture, type Group, RepeatWrapping, SRGBColorSpace } from "three";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { CanvasTexture, type Group, type Mesh, RepeatWrapping, SRGBColorSpace } from "three";
 import type { Agent } from "@/lib/agents";
 
-export type DeskState = { working: string[]; lastDoneAt?: number };
+export type DeskState = { working: string[]; lastDoneAt?: number; screen: ScreenState };
 export type ManagerState = "idle" | "planning" | "watching" | "merging";
 export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
 
@@ -560,40 +560,256 @@ function Legs({ w, d, h }: { w: number; d: number; h: number }) {
   );
 }
 
-function SchoolDesk({
-  agent,
-  look,
-  state,
-  seed,
-  position,
-}: {
+// ---------- Workstations (3D PCs with live screens) ----------
+
+export type ScreenMode = "idle" | "planning" | "queued" | "working" | "done" | "error";
+export type ScreenState = { mode: ScreenMode; title?: string; text?: string; len?: number };
+
+const TERM_FONT = 'ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace';
+const SCREEN_LABEL: Record<ScreenMode, string> = {
+  idle: "idle",
+  planning: "standing by",
+  queued: "queued",
+  working: "working",
+  done: "done",
+  error: "error",
+};
+
+/** Plain-text lines for the monitor: Markdown symbols stripped, hard-wrapped to the screen width. */
+function terminalLines(text: string, width: number) {
+  const out: string[] = [];
+  for (const raw of text.replace(/\r/g, "").split("\n")) {
+    const line = raw.replace(/[#*`_>|]/g, "").trimEnd();
+    if (!line) {
+      if (out.at(-1) !== "") out.push("");
+      continue;
+    }
+    for (let i = 0; i < line.length; i += width) out.push(line.slice(i, i + width));
+  }
+  return out;
+}
+
+function screenTexture(screen: ScreenState, name: string) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 320;
+  const g = c.getContext("2d")!;
+  const bg = g.createLinearGradient(0, 0, 0, 320);
+  bg.addColorStop(0, "#071a11");
+  bg.addColorStop(1, "#020805");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 512, 320);
+  g.strokeStyle = "rgba(52,211,153,0.07)";
+  for (let x = 0; x <= 512; x += 32) g.strokeRect(x, 0, 0, 320);
+  for (let y = 0; y <= 320; y += 32) g.strokeRect(0, y, 512, 0);
+
+  // window title bar
+  g.fillStyle = "rgba(16,185,129,0.2)";
+  g.fillRect(0, 0, 512, 34);
+  ["#f87171", "#fbbf24", "#34d399"].forEach((col, i) => {
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(18 + i * 18, 17, 6, 0, Math.PI * 2);
+    g.fill();
+  });
+  g.font = `600 16px ${TERM_FONT}`;
+  g.fillStyle = "#a7f3d0";
+  g.fillText(`${name.toLowerCase()}@office: ${SCREEN_LABEL[screen.mode]}`, 80, 23);
+
+  g.textAlign = "center";
+  const title = screen.title ? clip(screen.title, 34) : "";
+  switch (screen.mode) {
+    case "idle":
+      g.fillStyle = "#34d399";
+      g.font = `700 40px ${TERM_FONT}`;
+      g.fillText("READY", 256, 165);
+      g.fillStyle = "#6ee7b7";
+      g.font = `500 18px ${TERM_FONT}`;
+      g.fillText("waiting for a task_", 256, 200);
+      break;
+    case "planning":
+      g.fillStyle = "#6ee7b7";
+      g.font = `600 22px ${TERM_FONT}`;
+      g.fillText("Manager is planning…", 256, 250);
+      g.font = `500 16px ${TERM_FONT}`;
+      g.fillStyle = "#a7f3d0";
+      g.fillText("listening for my assignment", 256, 280);
+      break;
+    case "queued":
+      g.fillStyle = "#6ee7b7";
+      g.font = `600 20px ${TERM_FONT}`;
+      g.fillText("Up next:", 256, 240);
+      g.fillStyle = "#ecfdf5";
+      g.fillText(title, 256, 270);
+      break;
+    case "done":
+      g.fillStyle = "#34d399";
+      g.font = `800 52px ${TERM_FONT}`;
+      g.fillText("✓ DONE", 256, 160);
+      g.fillStyle = "#a7f3d0";
+      g.font = `500 18px ${TERM_FONT}`;
+      g.fillText(title, 256, 200);
+      break;
+    case "error":
+      g.fillStyle = "#fca5a5";
+      g.font = `800 46px ${TERM_FONT}`;
+      g.fillText("✗ ERROR", 256, 160);
+      g.font = `500 18px ${TERM_FONT}`;
+      g.fillText(title, 256, 200);
+      break;
+    case "working": {
+      g.textAlign = "left";
+      g.fillStyle = "#34d399";
+      g.font = `700 17px ${TERM_FONT}`;
+      g.fillText(`> ${title}`, 16, 60);
+      const lines = terminalLines(screen.text ?? "", 44).slice(-10);
+      g.font = `500 16px ${TERM_FONT}`;
+      if (lines.length === 0) {
+        g.fillStyle = "#6ee7b7";
+        g.fillText("thinking…▌", 16, 88);
+      }
+      lines.forEach((l, i) => {
+        const last = i === lines.length - 1;
+        g.fillStyle = last ? "#ecfdf5" : "#6ee7b7";
+        g.fillText(last ? `${l}▌` : l, 16, 88 + i * 22);
+      });
+      break;
+    }
+  }
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** Stable pseudo-random value in [0, 1) for a step number, used to pick which key lights up. */
+function hash(n: number) {
+  const h = Math.sin(n * 12.9898) * 43758.5453;
+  return h - Math.floor(h);
+}
+
+function Workstation({ screen, name, seed }: { screen: ScreenState; name: string; seed: number }) {
+  // Redraw the screen texture only every ~30 streamed characters.
+  const key = `${screen.mode}|${screen.title ?? ""}|${Math.floor((screen.len ?? 0) / 30)}|${name}`;
+  const tex = useDisposable(() => screenTexture(screen, name), key);
+  const scan = useRef<Mesh>(null);
+  const spinner = useRef<Group>(null);
+  const flash = useRef<Mesh>(null);
+  const led = useRef<Mesh>(null);
+  const [still] = useState(reducedMotion);
+  const working = screen.mode === "working";
+  const waiting = screen.mode === "planning" || screen.mode === "queued";
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime + seed;
+    if (scan.current) {
+      scan.current.visible = working && !still;
+      scan.current.position.y = 0.155 - ((t * 0.35) % 1) * 0.31;
+    }
+    if (spinner.current) {
+      spinner.current.visible = waiting;
+      if (!still) spinner.current.rotation.z = -t * 4;
+    }
+    if (flash.current) {
+      flash.current.visible = working && !still;
+      const step = Math.floor(t * 14) + seed * 1000;
+      flash.current.position.set(-0.17 + hash(step) * 0.34, 0.012, -0.045 + hash(step + 0.5) * 0.09);
+    }
+    if (led.current) led.current.visible = !working || Math.floor(t * 6) % 2 === 0;
+  });
+
+  return (
+    <group>
+      {/* monitor, angled toward the chair so the camera can see it past the worker */}
+      <group position={[0.48, 0.76, -0.12]} rotation-y={-0.32} scale={1.3}>
+        <mesh position={[0, 0.008, 0]} castShadow>
+          <cylinderGeometry args={[0.09, 0.1, 0.016, 24]} />
+          <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 0.1, -0.02]} castShadow>
+          <boxGeometry args={[0.035, 0.18, 0.03]} />
+          <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <group position={[0, 0.36, 0]}>
+          <RoundedBox args={[0.6, 0.39, 0.035]} radius={0.015} castShadow>
+            <meshStandardMaterial color="#0b0f0d" roughness={0.35} />
+          </RoundedBox>
+          <mesh position={[0, 0.005, 0.0185]}>
+            <planeGeometry args={[0.56, 0.35]} />
+            <meshBasicMaterial map={tex} toneMapped={false} />
+          </mesh>
+          {/* scanline sweeping down while typing */}
+          <mesh ref={scan} position={[0, 0, 0.02]} visible={false}>
+            <planeGeometry args={[0.56, 0.012]} />
+            <meshBasicMaterial color="#34d399" transparent opacity={0.35} toneMapped={false} />
+          </mesh>
+          {/* loading spinner while planning / queued */}
+          <group ref={spinner} position={[0, 0.04, 0.021]} visible={false}>
+            <mesh>
+              <torusGeometry args={[0.055, 0.008, 8, 32, Math.PI * 1.4]} />
+              <meshBasicMaterial color="#34d399" toneMapped={false} />
+            </mesh>
+          </group>
+          <mesh ref={led} position={[0.26, -0.18, 0.019]}>
+            <circleGeometry args={[0.006, 8]} />
+            <meshBasicMaterial color="#34d399" toneMapped={false} />
+          </mesh>
+        </group>
+      </group>
+      {/* keyboard + mouse in front of the worker */}
+      <group position={[0.02, 0.76, 0.12]} rotation-y={-0.08}>
+        <RoundedBox args={[0.42, 0.018, 0.13]} radius={0.006} position={[0, 0.009, 0]} castShadow>
+          <meshStandardMaterial color="#111827" roughness={0.5} />
+        </RoundedBox>
+        {[-0.035, 0, 0.035].map((z) => (
+          <mesh key={z} position={[0, 0.0185, z]} rotation-x={-Math.PI / 2}>
+            <planeGeometry args={[0.38, 0.026]} />
+            <meshStandardMaterial color="#374151" roughness={0.7} />
+          </mesh>
+        ))}
+        <mesh ref={flash} rotation-x={-Math.PI / 2} visible={false}>
+          <planeGeometry args={[0.03, 0.026]} />
+          <meshBasicMaterial color="#6ee7b7" toneMapped={false} />
+        </mesh>
+        <mesh position={[0.29, 0.012, 0.01]} scale={[1, 0.5, 1.4]} castShadow>
+          <sphereGeometry args={[0.03, 12, 12]} />
+          <meshStandardMaterial color="#e5e7eb" />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+type DeskProps = {
   agent: Agent;
   look: Look;
   state: DeskState;
+  attentive: boolean;
   seed: number;
   position: [number, number, number];
-}) {
+};
+
+function SchoolDeskImpl({ agent, look, state, attentive, seed, position }: DeskProps) {
   const working = state.working.length > 0;
   return (
     <group position={position}>
       {/* desk */}
-      <RoundedBox args={[1.0, 0.04, 0.55]} radius={0.015} position={[0, 0.74, 0]} castShadow receiveShadow>
+      <RoundedBox args={[1.25, 0.04, 0.6]} radius={0.015} position={[0.08, 0.74, 0]} castShadow receiveShadow>
         <meshStandardMaterial color={DESK_WOOD} roughness={0.55} />
       </RoundedBox>
-      <mesh position={[0, 0.63, -0.02]} castShadow>
-        <boxGeometry args={[0.9, 0.12, 0.45]} />
+      <mesh position={[0.08, 0.63, -0.02]} castShadow>
+        <boxGeometry args={[1.12, 0.12, 0.48]} />
         <meshStandardMaterial color="#8e959b" metalness={0.4} roughness={0.5} />
       </mesh>
-      <Legs w={0.9} d={0.45} h={0.72} />
-      {/* notebook + pencil case */}
-      <mesh position={[-0.12, 0.765, 0.05]} rotation-y={0.15} receiveShadow>
-        <boxGeometry args={[0.3, 0.01, 0.22]} />
-        <meshStandardMaterial color={working ? "#ffffff" : "#f3eee2"} />
+      <group position={[0.08, 0, 0]}>
+        <Legs w={1.12} d={0.48} h={0.72} />
+      </group>
+      {/* notebook */}
+      <mesh position={[-0.36, 0.765, 0.02]} rotation-y={0.2} receiveShadow>
+        <boxGeometry args={[0.22, 0.01, 0.28]} />
+        <meshStandardMaterial color="#f3eee2" />
       </mesh>
-      <mesh position={[0.3, 0.79, -0.12]} rotation-z={Math.PI / 2} castShadow>
-        <capsuleGeometry args={[0.035, 0.18, 4, 8]} />
-        <meshStandardMaterial color={look.inner} />
-      </mesh>
+      <Workstation screen={state.screen} name={agent.name} seed={seed} />
       {/* chair, on the camera side of the desk */}
       <group position={[0, 0, 0.62]}>
         <RoundedBox args={[0.46, 0.035, 0.42]} radius={0.012} position={[0, 0.44, 0]} castShadow receiveShadow>
@@ -613,7 +829,7 @@ function SchoolDesk({
           <Mochi
             look={look}
             accessory={ACCESSORY[agent.id] ?? null}
-            facing={working ? "back" : "front"}
+            facing={working || attentive ? "back" : "front"}
             action={working ? "write" : "idle"}
             lastDoneAt={state.lastDoneAt}
             seed={seed}
@@ -628,6 +844,22 @@ function SchoolDesk({
     </group>
   );
 }
+
+/** Re-render a desk only when what it shows changes (streamed text is bucketed like the screen). */
+const SchoolDesk = memo(
+  SchoolDeskImpl,
+  (a, b) =>
+    a.agent === b.agent &&
+    a.look === b.look &&
+    a.seed === b.seed &&
+    a.attentive === b.attentive &&
+    a.position.join() === b.position.join() &&
+    a.state.working.join("|") === b.state.working.join("|") &&
+    a.state.lastDoneAt === b.state.lastDoneAt &&
+    a.state.screen.mode === b.state.screen.mode &&
+    a.state.screen.title === b.state.screen.title &&
+    Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
+);
 
 function ClockHand({ len, w, color, z, unit }: { len: number; w: number; color: string; z: number; unit: "h" | "m" | "s" }) {
   const ref = useRef<Group>(null);
@@ -935,19 +1167,133 @@ function Classroom({ width, back, front }: { width: number; back: number; front:
   );
 }
 
+const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
+
 const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
 
-function Teacher({ state, x, z }: { state: ManagerState; x: number; z: number }) {
+function managerTexture(state: ManagerState, done: number, total: number) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 300;
+  const g = c.getContext("2d")!;
+  const bg = g.createLinearGradient(0, 0, 0, 300);
+  bg.addColorStop(0, "#071a11");
+  bg.addColorStop(1, "#020805");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 512, 300);
+  g.fillStyle = "rgba(16,185,129,0.2)";
+  g.fillRect(0, 0, 512, 36);
+  g.font = `700 18px ${TERM_FONT}`;
+  g.fillStyle = "#a7f3d0";
+  g.fillText("MAX // MISSION CONTROL", 16, 24);
+  g.textAlign = "center";
+  const title = {
+    idle: "Ready for a task",
+    planning: "Planning the work",
+    watching: `Team progress ${done}/${total}`,
+    merging: "Merging results",
+  }[state];
+  g.fillStyle = "#34d399";
+  g.font = `800 34px ${TERM_FONT}`;
+  g.fillText(title, 256, 120);
+  g.font = `500 17px ${TERM_FONT}`;
+  g.fillStyle = "#6ee7b7";
+  const sub = {
+    idle: "assign one from the panel below",
+    planning: "splitting into subtasks…",
+    watching: "agents are working in parallel",
+    merging: "writing the final answer…",
+  }[state];
+  g.fillText(sub, 256, 155);
+  // progress track (the moving bar is a separate mesh)
+  g.fillStyle = "rgba(52,211,153,0.15)";
+  g.fillRect(56, 210, 400, 18);
+  if (state === "watching" && total > 0) {
+    g.fillStyle = "#34d399";
+    g.fillRect(56, 210, (400 * done) / total, 18);
+  }
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** Big monitor on the teacher's desk facing the class, with a sweeping bar while the manager thinks. */
+function ManagerMonitor({ state, done, total }: { state: ManagerState; done: number; total: number }) {
+  const tex = useDisposable(() => managerTexture(state, done, total), `${state}|${done}|${total}`);
+  const bar = useRef<Mesh>(null);
+  const [still] = useState(reducedMotion);
+  const busy = state === "planning" || state === "merging";
+  useFrame(({ clock }) => {
+    if (!bar.current) return;
+    bar.current.visible = busy;
+    const p = still ? 0.5 : (clock.elapsedTime * 0.6) % 1;
+    // The texture's 400px track spans 0.797 world units starting at x = -0.398.
+    bar.current.position.x = -0.398 + 0.12 + p * (0.797 - 0.24);
+  });
+  return (
+    <group position={[0.05, 0.805, -0.05]}>
+      <mesh position={[0, 0.01, 0]} castShadow>
+        <boxGeometry args={[0.3, 0.02, 0.18]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.15, -0.03]} castShadow>
+        <boxGeometry args={[0.05, 0.28, 0.04]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <group position={[0, 0.5, 0]}>
+        <RoundedBox args={[1.08, 0.66, 0.04]} radius={0.02} castShadow>
+          <meshStandardMaterial color="#0b0f0d" roughness={0.35} />
+        </RoundedBox>
+        <mesh position={[0, 0, 0.021]}>
+          <planeGeometry args={[1.02, 0.6]} />
+          <meshBasicMaterial map={tex} toneMapped={false} />
+        </mesh>
+        <mesh ref={bar} position={[0, -0.6 * (219 / 300) + 0.3, 0.024]} visible={false}>
+          <planeGeometry args={[0.24, 0.036]} />
+          <meshBasicMaterial color="#34d399" toneMapped={false} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/** Little glowing orbs circling the manager's head while it thinks. */
+function ThinkingOrbs({ active }: { active: boolean }) {
+  const ref = useRef<Group>(null);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.visible = active;
+    if (!still) {
+      ref.current.rotation.y = clock.elapsedTime * 2.2;
+      ref.current.position.y = 2.0 + Math.sin(clock.elapsedTime * 3) * 0.04;
+    }
+  });
+  return (
+    <group ref={ref} position={[0, 2.0, 0]} visible={false}>
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} position={[Math.cos((i / 4) * Math.PI * 2) * 0.55, 0, Math.sin((i / 4) * Math.PI * 2) * 0.55]}>
+          <sphereGeometry args={[0.05, 12, 12]} />
+          <meshBasicMaterial color={i % 2 ? "#34d399" : "#a7f3d0"} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Teacher({ state, x, z, board }: { state: ManagerState; x: number; z: number; board: BoardLine[] }) {
   const label = {
     idle: "Waiting for tasks",
     planning: "Planning the work…",
     watching: "Watching the class…",
     merging: "Merging results…",
   }[state];
+  const done = board.filter((l) => l.status === "done").length;
   return (
     <group>
       {/* teacher's desk */}
-      <group position={[-0.5, 0, z + 0.2]}>
+      <group position={[-1.5, 0, z + 0.25]} rotation-y={0.25}>
         <RoundedBox args={[1.5, 0.05, 0.7]} radius={0.015} position={[0, 0.78, 0]} castShadow receiveShadow>
           <meshStandardMaterial color="#c58a50" />
         </RoundedBox>
@@ -955,14 +1301,11 @@ function Teacher({ state, x, z }: { state: ManagerState; x: number; z: number })
           <boxGeometry args={[1.4, 0.76, 0.45]} />
           <meshStandardMaterial color="#b07a45" />
         </mesh>
-        <mesh position={[0.45, 0.86, 0]}>
-          <boxGeometry args={[0.32, 0.1, 0.24]} />
-          <meshStandardMaterial color="#e3dccf" />
-        </mesh>
-        <mesh position={[-0.4, 0.88, 0.05]} castShadow>
+        <mesh position={[-0.55, 0.88, 0.1]} castShadow>
           <cylinderGeometry args={[0.07, 0.06, 0.14, 16]} />
           <meshToonMaterial color="#9fd8ff" />
         </mesh>
+        <ManagerMonitor state={state} done={done} total={board.length} />
       </group>
       <group position={[x, 0, z]}>
         <Mochi
@@ -973,6 +1316,7 @@ function Teacher({ state, x, z }: { state: ManagerState; x: number; z: number })
           seed={42}
           scale={1.3}
         />
+        <ThinkingOrbs active={state === "planning" || state === "merging"} />
       </group>
       <Label name="Max · Manager" bubble={label} position={[x, 2.3, z]} />
     </group>
@@ -1002,11 +1346,12 @@ export default function OfficeScene({
   return (
     <Canvas
       shadows
-      dpr={[1, 2]}
+      dpr={[1, 1.5]}
+      gl={{ powerPreference: "high-performance" }}
       camera={{ position: [0.5, 3.4, front + 1.6], fov: 50 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
-      <color attach="background" args={["#2b1718"]} />
+      <color attach="background" args={["#030504"]} />
       <ambientLight intensity={0.55} color="#fff2e0" />
       <hemisphereLight args={["#fff6e5", "#c9955c", 0.8]} />
       {/* warm afternoon sun through the left windows */}
@@ -1015,7 +1360,7 @@ export default function OfficeScene({
         intensity={2.3}
         color="#ffd29a"
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[1024, 1024]}
         shadow-camera-left={-9}
         shadow-camera-right={9}
         shadow-camera-top={9}
@@ -1040,7 +1385,7 @@ export default function OfficeScene({
         </group>
       ))}
       <Cabinet position={[width / 2 - 0.6, 0, back + 0.35]} />
-      <Teacher state={manager} x={1.3} z={back + 1.1} />
+      <Teacher state={manager} x={1.3} z={back + 1.1} board={board} />
       {agents.map((a, i) => {
         const row = Math.floor(i / cols);
         const inRow = Math.min(cols, agents.length - row * cols);
@@ -1051,13 +1396,13 @@ export default function OfficeScene({
             key={a.id}
             agent={a}
             look={LOOKS[i % LOOKS.length]}
-            state={desks[a.id] ?? { working: [] }}
+            state={desks[a.id] ?? IDLE_DESK}
+            attentive={manager === "planning"}
             seed={i * 1.7}
             position={[x, 0, z]}
           />
         );
       })}
-      <ContactShadows position={[0, 0.005, (back + front) / 2]} opacity={0.3} scale={22} blur={2.4} far={3} />
       <OrbitControls
         target={[0, 1.3, back + 2.2]}
         enablePan={false}

@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import { type Agent, DEFAULT_AGENTS } from "@/lib/agents";
 import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
-import type { BoardLine, DeskState, ManagerState } from "./OfficeScene";
+import type { BoardLine, DeskState, ManagerState, ScreenState } from "./OfficeScene";
 
 const OfficeScene = dynamic(() => import("./OfficeScene"), {
   ssr: false,
@@ -50,7 +50,7 @@ function StatusPill({ status }: { status: TaskStatus | "queued" }) {
   const active = status !== "done" && status !== "error" && status !== "cancelled" && status !== "queued";
   const tone =
     status === "done"
-      ? "bg-primary text-ink"
+      ? "bg-primary text-black"
       : status === "error"
         ? "bg-danger text-ink"
         : active
@@ -182,20 +182,38 @@ export function Office() {
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
   const running = tasks.filter((t) => ACTIVE.includes(t.status));
 
-  // What each agent is doing right now, across every running task.
+  // What each agent is doing right now, across every running task, and what its PC screen shows.
   const busy = new Map<string, string[]>();
   const desks: Record<string, DeskState> = {};
-  for (const t of tasks) {
+  const planningNow = running.some((t) => t.status === "planning");
+  const SCREEN_RANK: Record<ScreenState["mode"], number> = { idle: 0, planning: 0, done: 1, error: 1, queued: 2, working: 3 };
+  for (const t of [...tasks].reverse()) {
+    const active = ACTIVE.includes(t.status);
     for (const s of t.subtasks) {
-      const desk = (desks[s.agentId] ??= { working: [] });
-      if (ACTIVE.includes(t.status) && s.status === "working") {
+      const desk = (desks[s.agentId] ??= { working: [], screen: { mode: "idle" } });
+      if (active && s.status === "working") {
         desk.working.push(s.title);
         busy.set(s.agentId, desk.working);
       }
       if (s.finishedAt && s.finishedAt > (desk.lastDoneAt ?? 0)) desk.lastDoneAt = s.finishedAt;
+      const mode: ScreenState["mode"] | null =
+        active && (s.status === "working" || s.status === "queued") ? s.status : s.status === "done" || s.status === "error" ? s.status : null;
+      // Newer tasks win ties; busier states win over finished ones.
+      if (mode && SCREEN_RANK[mode] >= SCREEN_RANK[desk.screen.mode]) {
+        desk.screen =
+          mode === "working"
+            ? { mode, title: s.title, text: s.output.slice(-800), len: s.output.length }
+            : { mode, title: s.title };
+      }
     }
   }
-  const manager: ManagerState = running.some((t) => t.status === "planning")
+  if (planningNow) {
+    for (const a of agents) {
+      const desk = (desks[a.id] ??= { working: [], screen: { mode: "idle" } });
+      if (SCREEN_RANK[desk.screen.mode] < 2) desk.screen = { mode: "planning" };
+    }
+  }
+  const manager: ManagerState = planningNow
     ? "planning"
     : running.some((t) => t.status === "synthesizing")
       ? "merging"
@@ -209,25 +227,42 @@ export function Office() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            AI Agent <span className="text-accent">Office</span>
-          </h1>
-          <p className="text-sm text-muted">
-            Describe any job. The manager splits it up, the team works in parallel, and you get one result.
-          </p>
+      <header className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className="glow grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-accent to-primary text-sm font-black text-black"
+          >
+            AI
+          </span>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+              AI Agent <span className="text-accent">Office</span>
+            </h1>
+            <p className="text-sm text-muted">
+              Describe any job. The manager splits it up, the team works in parallel, and you get one result.
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-muted" aria-live="polite">
-          {running.length === 0 ? "Office is idle" : `${running.length} task${running.length > 1 ? "s" : ""} in progress`}
-        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-primary/10 px-3 py-1 text-accent">
+            <span
+              aria-hidden
+              className={`size-2 rounded-full ${engine ? "bg-accent" : "bg-muted"} ${engine === "cloud" ? "" : "animate-pulse"}`}
+            />
+            {engine === "cloud" ? "Cloud AI" : engine === "browser" ? "In-browser AI (free)" : "Detecting AI…"}
+          </span>
+          <span className="rounded-full border border-white/10 bg-well px-3 py-1 text-muted" aria-live="polite">
+            {running.length === 0 ? "Office is idle" : `${running.length} task${running.length > 1 ? "s" : ""} running`}
+          </span>
+        </div>
       </header>
 
       <EngineBanner engine={engine} state={engineState} />
 
       {needCode && (
         <form
-          className="flex flex-wrap items-end gap-3 rounded-xl border border-white/20 bg-panel p-4"
+          className="flex flex-wrap items-end gap-3 rounded-xl border border-white/20 glass p-4"
           onSubmit={(e) => {
             e.preventDefault();
             save(STORE.code, code);
@@ -245,7 +280,7 @@ export function Office() {
               autoComplete="off"
             />
           </label>
-          <button className="min-h-10 rounded-lg bg-primary px-4 font-semibold text-ink">Use cloud AI</button>
+          <button className="min-h-10 rounded-lg bg-primary transition hover:brightness-110 px-4 font-semibold text-black">Use cloud AI</button>
           <button
             type="button"
             onClick={() => setNeedCode(false)}
@@ -257,7 +292,7 @@ export function Office() {
       )}
 
       {/* Office floor */}
-      <section aria-labelledby="floor-heading" className="rounded-2xl bg-panel p-4">
+      <section aria-labelledby="floor-heading" className="rounded-2xl glass p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 id="floor-heading" className="font-semibold">
             Office floor
@@ -266,7 +301,7 @@ export function Office() {
             type="button"
             onClick={() => setShowHire((v) => !v)}
             aria-expanded={showHire}
-            className="min-h-9 rounded-lg bg-accent px-3 text-sm font-semibold text-black"
+            className="min-h-9 rounded-lg bg-accent transition hover:brightness-110 px-3 text-sm font-semibold text-black"
           >
             {showHire ? "Close" : "+ Hire agent"}
           </button>
@@ -281,7 +316,7 @@ export function Office() {
           />
         )}
 
-        <div className="mb-4 h-[360px] overflow-hidden rounded-xl sm:h-[520px]">
+        <div className="mb-4 h-[360px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[520px]">
           <OfficeScene agents={agents} desks={desks} manager={manager} board={board} />
         </div>
 
@@ -292,14 +327,14 @@ export function Office() {
               <li
                 key={a.id}
                 className={`relative flex flex-col gap-2 rounded-xl border p-3 ${
-                  doing ? "border-accent bg-surface" : "border-white/10 bg-well"
+                  doing ? "glow border-accent bg-primary/10" : "border-white/10 bg-well"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span
                     aria-hidden
                     className={`grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold ${
-                      doing ? "bg-accent text-black" : "bg-primary text-ink"
+                      doing ? "bg-accent text-black" : "bg-primary text-black"
                     }`}
                   >
                     {initials(a.name)}
@@ -332,7 +367,7 @@ export function Office() {
         {/* Composer + task list */}
         <aside className="flex flex-col gap-4">
           <form
-            className="flex flex-col gap-2 rounded-2xl bg-panel p-4"
+            className="flex flex-col gap-2 rounded-2xl glass p-4"
             onSubmit={(e) => {
               e.preventDefault();
               submit();
@@ -361,14 +396,14 @@ export function Office() {
               <button
                 type="submit"
                 disabled={prompt.trim().length < 3}
-                className="min-h-10 rounded-lg bg-primary px-4 font-semibold text-ink disabled:opacity-50"
+                className="min-h-10 rounded-lg bg-primary transition hover:brightness-110 px-4 font-semibold text-black disabled:opacity-50"
               >
                 Assign
               </button>
             </div>
           </form>
 
-          <section aria-labelledby="tasks-heading" className="rounded-2xl bg-panel p-4">
+          <section aria-labelledby="tasks-heading" className="rounded-2xl glass p-4">
             <h2 id="tasks-heading" className="mb-2 font-semibold">
               Tasks
             </h2>
@@ -383,7 +418,7 @@ export function Office() {
                       onClick={() => setSelectedId(t.id)}
                       aria-current={t.id === selectedId}
                       className={`flex w-full flex-col gap-1 rounded-lg border p-2.5 text-left ${
-                        t.id === selectedId ? "border-accent bg-surface" : "border-white/10 bg-well hover:border-white/30"
+                        t.id === selectedId ? "border-accent bg-primary/10" : "border-white/10 bg-well hover:border-accent/50"
                       }`}
                     >
                       <span className="line-clamp-2 text-sm">{t.prompt}</span>
@@ -440,7 +475,7 @@ function TaskView({
 
   return (
     <article className="flex flex-col gap-4" aria-labelledby="task-title">
-      <div className="rounded-2xl bg-panel p-4">
+      <div className="rounded-2xl glass p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2 id="task-title" className="min-w-0 flex-1 whitespace-pre-wrap break-words font-semibold">
             {task.prompt}
@@ -448,15 +483,15 @@ function TaskView({
           <div className="flex items-center gap-2">
             <StatusPill status={task.status} />
             {active ? (
-              <button type="button" onClick={onCancel} className="min-h-9 rounded-lg bg-danger px-3 text-sm font-semibold text-ink">
+              <button type="button" onClick={onCancel} className="min-h-9 rounded-lg bg-danger transition hover:brightness-110 px-3 text-sm font-semibold text-ink">
                 Cancel
               </button>
             ) : (
               <>
-                <button type="button" onClick={onRetry} className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-ink">
+                <button type="button" onClick={onRetry} className="min-h-9 rounded-lg bg-primary transition hover:brightness-110 px-3 text-sm font-semibold text-black">
                   Run again
                 </button>
-                <button type="button" onClick={onDelete} className="min-h-9 rounded-lg bg-danger px-3 text-sm font-semibold text-ink">
+                <button type="button" onClick={onDelete} className="min-h-9 rounded-lg bg-danger transition hover:brightness-110 px-3 text-sm font-semibold text-ink">
                   Delete
                 </button>
               </>
@@ -476,7 +511,7 @@ function TaskView({
           {task.subtasks.map((s) => {
             const agent = agents.find((a) => a.id === s.agentId);
             return (
-              <div key={s.id} className="flex min-w-0 flex-col gap-2 rounded-2xl bg-panel p-4">
+              <div key={s.id} className="flex min-w-0 flex-col gap-2 rounded-2xl glass p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs text-muted">
@@ -504,7 +539,7 @@ function TaskView({
       )}
 
       {(task.final || task.status === "synthesizing") && (
-        <section aria-labelledby="final-heading" className="rounded-2xl border-2 border-accent bg-panel p-4">
+        <section aria-labelledby="final-heading" className="glass glow rounded-2xl border-accent/60 p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 id="final-heading" className="font-semibold text-accent">
               Final result
@@ -521,7 +556,7 @@ function TaskView({
                     // Clipboard blocked; nothing else to do.
                   }
                 }}
-                className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-ink"
+                className="min-h-9 rounded-lg bg-primary transition hover:brightness-110 px-3 text-sm font-semibold text-black"
               >
                 {copied ? "Copied" : "Copy"}
               </button>
@@ -562,7 +597,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           onChange={(e) => setName(e.target.value)}
           maxLength={40}
           required
-          className="min-h-10 rounded-lg border border-muted/40 bg-surface px-3 text-ink"
+          className="min-h-10 rounded-lg border border-muted/40 bg-well px-3 text-ink"
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
@@ -573,7 +608,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           maxLength={60}
           required
           placeholder="e.g. SEO Specialist"
-          className="min-h-10 rounded-lg border border-muted/40 bg-surface px-3 text-ink placeholder:text-muted/80"
+          className="min-h-10 rounded-lg border border-muted/40 bg-well px-3 text-ink placeholder:text-muted/80"
         />
       </label>
       <label className="flex flex-col gap-1 text-sm sm:col-span-2">
@@ -584,13 +619,13 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           maxLength={2000}
           rows={3}
           required
-          className="rounded-lg border border-muted/40 bg-surface p-3 text-ink"
+          className="rounded-lg border border-muted/40 bg-well p-3 text-ink"
         />
       </label>
       <button
         type="submit"
         disabled={!valid}
-        className="min-h-10 rounded-lg bg-primary px-4 font-semibold text-ink disabled:opacity-50 sm:col-span-2 sm:justify-self-start"
+        className="min-h-10 rounded-lg bg-primary transition hover:brightness-110 px-4 font-semibold text-black disabled:opacity-50 sm:col-span-2 sm:justify-self-start"
       >
         Hire
       </button>
@@ -602,7 +637,7 @@ function EngineBanner({ engine, state }: { engine: Engine | null; state: EngineS
   if (engine !== "browser") return null;
   if (state.status === "loading") {
     return (
-      <div className="rounded-xl border border-accent bg-panel p-4" role="status">
+      <div className="rounded-xl border border-accent glass p-4" role="status">
         <p className="text-sm font-semibold">Waking up the office AI (one-time download, cached afterwards)…</p>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-well">
           <div className="h-full bg-accent transition-[width]" style={{ width: `${Math.round(state.progress * 100)}%` }} />
@@ -613,14 +648,14 @@ function EngineBanner({ engine, state }: { engine: Engine | null; state: EngineS
   }
   if (state.status === "error") {
     return (
-      <p role="alert" className="rounded-xl border border-danger bg-panel p-4 text-sm text-error">
+      <p role="alert" className="rounded-xl border border-danger glass p-4 text-sm text-error">
         {state.message}
       </p>
     );
   }
   if (state.status === "ready") return null;
   return (
-    <p className="rounded-xl bg-panel p-3 text-sm text-muted">
+    <p className="rounded-xl glass p-3 text-sm text-muted">
       {webGpuSupported()
         ? "Free mode: agents run on a small AI model inside your browser, no key needed. The first task downloads it (~1 GB) once."
         : "Free mode needs WebGPU (recent Chrome or Edge). Add an AI provider key on the server for other browsers."}
