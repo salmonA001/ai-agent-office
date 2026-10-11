@@ -16,7 +16,7 @@ const task = z.string().trim().min(3).max(4000);
 
 export const planRequest = z.object({
   task,
-  agents: z.array(agentRef).min(1).max(12),
+  agents: z.array(agentRef).min(1).max(16),
 });
 
 export const planOutput = z.object({

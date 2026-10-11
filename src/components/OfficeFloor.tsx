@@ -2,7 +2,8 @@
 
 import { useFrame } from "@react-three/fiber";
 import { memo, useRef, useState } from "react";
-import { CanvasTexture, type Group, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import { CanvasTexture, type Group, type Mesh, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import { currentEventKind } from "./office-events";
 import { clip, reducedMotion, seeded, useDisposable } from "./scene-utils";
 
 export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
@@ -11,11 +12,13 @@ type V3 = [number, number, number];
 // ---------- Floor plan (metres, y up). The camera looks from +x/+z, so the north (-z) and
 // west (-x) walls are full height and the south/east walls are cut away like a dollhouse. ----------
 
-export const FLOOR = { x0: -8, x1: 8, z0: -6, z1: 6 };
+export const FLOOR = { x0: -8, x1: 16, z0: -6, z1: 6 };
 export const CORRIDOR = { z0: -0.3, z1: 0.9 };
 const MEETING = { x0: -8, x1: -2.6 };
 const KITCHEN = { x0: -2.6, x1: 3 };
 const LOUNGE = { x0: 3, x1: 8 };
+const GAME = { x0: 8, x1: 12.2 };
+const SERVER = { x0: 12.2, x1: 16 };
 export const WORKSPACE = { z0: CORRIDOR.z1, z1: FLOOR.z1 };
 export const PROJECTOR = { x: -5.6, z: FLOOR.z0 };
 export const PRESENTER = { x: -3.9, z: -4.9 };
@@ -416,9 +419,11 @@ function Steam({ p }: { p: V3 }) {
       if (!g) return;
       const k = (clock.elapsedTime * 0.5 + i / 3) % 1;
       g.position.set(Math.sin(k * 6 + i) * 0.04, k * 0.45, 0);
-      g.scale.setScalar(0.5 + k);
-      const m = (g.children[0] as unknown as { material: { opacity: number } }).material;
-      m.opacity = 0.45 * (1 - k);
+      const broken = currentEventKind() === "coffee";
+      g.scale.setScalar((0.5 + k) * (broken ? 1.8 : 1));
+      const m = (g.children[0] as Mesh).material as MeshBasicMaterial;
+      m.opacity = (broken ? 0.75 : 0.45) * (1 - k);
+      m.color.set(broken ? "#3f3f46" : "#ffffff");
     });
   });
   return (
@@ -629,7 +634,7 @@ function Workspace({ sky }: { sky: Texture }) {
         ))}
       </group>
       {/* breakout corner on the right: round table and beanbags */}
-      <group position={[5.9, 0, 3.6]}>
+      <group position={[14.3, 0, 3.6]}>
         <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[0.6, 0.6, 0.05, 32]} />
           <meshStandardMaterial color="#f5f5f4" />
@@ -659,6 +664,135 @@ function Workspace({ sky }: { sky: Texture }) {
   );
 }
 
+function neonTexture() {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.font = '800 84px system-ui, "Segoe UI", sans-serif';
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.shadowColor = "#f0abfc";
+  g.shadowBlur = 24;
+  g.fillStyle = "#fdf4ff";
+  g.fillText("GAME ON", 256, 68);
+  return finish(c, [1, 1]);
+}
+
+/** Arcade cabinet whose screen flickers through colours. */
+function Arcade({ p, hue }: { p: V3; hue: number }) {
+  const screen = useRef<MeshBasicMaterial>(null);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    if (!screen.current || still) return;
+    const t = clock.elapsedTime * (currentEventKind() === "arcade" ? 4 : 1.2) + hue;
+    screen.current.color.setHSL((hue + Math.sin(t) * 0.08 + 1) % 1, 0.8, 0.45 + Math.sin(t * 3) * 0.1);
+  });
+  return (
+    <group position={p}>
+      <B s={[0.7, 1.7, 0.7]} p={[0, 0.85, 0]} c="#1e1b4b" />
+      <B s={[0.72, 0.08, 0.4]} p={[0, 0.95, 0.3]} c="#312e81" />
+      <mesh position={[0, 1.3, 0.355]} rotation-x={-0.15}>
+        <planeGeometry args={[0.5, 0.42]} />
+        <meshBasicMaterial ref={screen} color="#a855f7" toneMapped={false} />
+      </mesh>
+      <B s={[0.7, 0.18, 0.72]} p={[0, 1.62, 0]} c="#7c3aed" />
+    </group>
+  );
+}
+
+function GameRoom() {
+  const tiles = useDisposable(() => tileTexture("#2a2340", "#3b3157", [4, 5]), "game-floor");
+  const neon = useDisposable(neonTexture, "neon");
+  const { x0, x1 } = GAME;
+  return (
+    <group>
+      <Floor x0={x0} x1={x1} z0={FLOOR.z0} z1={CORRIDOR.z0} map={tiles} />
+      <Floor x0={8.6} x1={11.6} z0={-4.3} z1={-2.1} color="#4c1d95" y={0.006} />
+      <mesh position={[(x0 + x1) / 2, 1.95, FLOOR.z0 + 0.09]}>
+        <planeGeometry args={[2.2, 0.55]} />
+        <meshBasicMaterial map={neon} transparent toneMapped={false} />
+      </mesh>
+      <Arcade p={[9.0, 0, -5.55]} hue={0.78} />
+      <Arcade p={[10.05, 0, -5.55]} hue={0.52} />
+      {/* foosball table */}
+      <group position={[10.1, 0, -3.2]}>
+        <B s={[1.3, 0.25, 0.75]} p={[0, 0.72, 0]} c="#0f766e" />
+        <B s={[1.2, 0.02, 0.65]} p={[0, 0.85, 0]} c="#22c55e" />
+        {[-0.45, -0.15, 0.15, 0.45].map((x) => (
+          <mesh key={x} position={[x, 0.92, 0]} rotation-x={Math.PI / 2}>
+            <cylinderGeometry args={[0.015, 0.015, 1.1, 6]} />
+            <meshStandardMaterial color="#d1d5db" metalness={0.7} />
+          </mesh>
+        ))}
+        {[
+          [-0.55, -0.3],
+          [0.55, -0.3],
+          [-0.55, 0.3],
+          [0.55, 0.3],
+        ].map(([x, z]) => (
+          <B key={`${x}${z}`} s={[0.08, 0.6, 0.08]} p={[x, 0.3, z]} c="#134e4a" />
+        ))}
+      </group>
+      {/* beanbag */}
+      <mesh position={[11.5, 0.22, -1.4]} scale={[1, 0.6, 1]} castShadow>
+        <sphereGeometry args={[0.42, 20, 16]} />
+        <meshStandardMaterial color="#ec4899" roughness={0.9} />
+      </mesh>
+      <PalmPlant p={[11.75, 0, -5.5]} s={0.9} />
+    </group>
+  );
+}
+
+/** Server racks with blinking LEDs; they flash red during a server alarm. */
+function ServerRack({ p, seed }: { p: V3; seed: number }) {
+  const leds = useRef<(MeshBasicMaterial | null)[]>([]);
+  const [still] = useState(reducedMotion);
+  useFrame(({ clock }) => {
+    const alarm = currentEventKind() === "server";
+    const t = clock.elapsedTime;
+    leds.current.forEach((m, i) => {
+      if (!m) return;
+      const on = still ? true : Math.sin(t * (alarm ? 12 : 3 + (i % 4)) + i * 1.7 + seed) > (alarm ? -0.2 : 0.1);
+      m.color.set(alarm ? (on ? "#ef4444" : "#450a0a") : on ? (i % 3 ? "#34d399" : "#60a5fa") : "#052e16");
+    });
+  });
+  return (
+    <group position={p}>
+      <B s={[0.7, 2.0, 0.9]} p={[0, 1.0, 0]} c="#111827" rough={0.4} metal={0.3} />
+      {Array.from({ length: 12 }, (_, i) => (
+        <mesh key={i} position={[-0.22 + (i % 3) * 0.22, 0.4 + Math.floor(i / 3) * 0.4, 0.455]}>
+          <planeGeometry args={[0.12, 0.04]} />
+          <meshBasicMaterial
+            ref={(m) => {
+              leds.current[i] = m;
+            }}
+            color="#34d399"
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function ServerRoom() {
+  const tiles = useDisposable(() => tileTexture("#d6dbe1", "#b8c0c9", [4, 5]), "server-floor");
+  const { x0, x1 } = SERVER;
+  return (
+    <group>
+      <Floor x0={x0} x1={x1} z0={FLOOR.z0} z1={CORRIDOR.z0} map={tiles} />
+      <ServerRack p={[13.0, 0, -5.45]} seed={1} />
+      <ServerRack p={[14.0, 0, -5.45]} seed={2} />
+      <ServerRack p={[15.0, 0, -5.45]} seed={3} />
+      {/* cooling unit */}
+      <B s={[0.5, 1.6, 0.6]} p={[15.6, 0.8, -2.0]} c="#e5e7eb" />
+      <B s={[0.02, 1.2, 0.45]} p={[15.34, 0.9, -2.0]} c="#9ca3af" />
+      <Art p={[x0 + 0.09, 1.45, -2.4]} r={Math.PI / 2} seed={5} w={0.6} h={0.45} />
+    </group>
+  );
+}
+
 /** Everything that never changes: slab, floors, walls, rooms and furniture. */
 export const OfficeFloor = memo(function OfficeFloor() {
   const sky = useDisposable(skyTexture, "sky");
@@ -666,12 +800,14 @@ export const OfficeFloor = memo(function OfficeFloor() {
   return (
     <group>
       {/* building slab with a white edge, like a cut-away model */}
-      <B s={[x1 - x0 + 0.3, 0.3, z1 - z0 + 0.3]} p={[0, -0.15, 0]} c="#f5f5f4" />
+      <B s={[x1 - x0 + 0.3, 0.3, z1 - z0 + 0.3]} p={[(x0 + x1) / 2, -0.15, (z0 + z1) / 2]} c="#f5f5f4" />
       <Floor x0={x0} x1={x1} z0={CORRIDOR.z0} z1={CORRIDOR.z1} color={YELLOW} />
 
       <MeetingRoom sky={sky} />
       <Kitchen />
       <Lounge sky={sky} />
+      <GameRoom />
+      <ServerRoom />
       <Workspace sky={sky} />
 
       {/* exterior walls: full height at the back, cut low at the front */}
@@ -682,6 +818,8 @@ export const OfficeFloor = memo(function OfficeFloor() {
       {/* room dividers */}
       <Wall a={[MEETING.x1, z0]} b={[MEETING.x1, CORRIDOR.z0]} h={INT_H} />
       <Wall a={[LOUNGE.x0, z0]} b={[LOUNGE.x0, CORRIDOR.z0]} h={INT_H} color="#e7e3ee" />
+      <Wall a={[LOUNGE.x1, z0]} b={[LOUNGE.x1, CORRIDOR.z0]} h={INT_H} color="#e7e3ee" />
+      <Wall a={[GAME.x1, z0]} b={[GAME.x1, CORRIDOR.z0]} h={INT_H} />
       {/* glass fronts on the meeting room and lounge, the kitchen opens onto the corridor */}
       <GlassWall x0={MEETING.x0} x1={-3.9} z={CORRIDOR.z0} />
       <Door x0={-3.9} x1={-3.0} z={CORRIDOR.z0} />
@@ -689,10 +827,15 @@ export const OfficeFloor = memo(function OfficeFloor() {
       <GlassWall x0={LOUNGE.x0} x1={3.4} z={CORRIDOR.z0} />
       <Door x0={3.4} x1={4.3} z={CORRIDOR.z0} />
       <GlassWall x0={4.3} x1={LOUNGE.x1} z={CORRIDOR.z0} />
+      {/* the game room opens onto the corridor; the server room is behind glass */}
+      <GlassWall x0={SERVER.x0} x1={13.4} z={CORRIDOR.z0} />
+      <Door x0={13.4} x1={14.3} z={CORRIDOR.z0} />
+      <GlassWall x0={14.3} x1={SERVER.x1} z={CORRIDOR.z0} />
       {/* low partition between the corridor and the open workspace */}
       <Wall a={[x0, CORRIDOR.z1]} b={[-5.6, CORRIDOR.z1]} h={1.0} />
       <Wall a={[-4.6, CORRIDOR.z1]} b={[4.6, CORRIDOR.z1]} h={1.0} />
-      <Wall a={[5.6, CORRIDOR.z1]} b={[x1, CORRIDOR.z1]} h={1.0} />
+      <Wall a={[5.6, CORRIDOR.z1]} b={[13.4, CORRIDOR.z1]} h={1.0} />
+      <Wall a={[14.4, CORRIDOR.z1]} b={[x1, CORRIDOR.z1]} h={1.0} />
     </group>
   );
 });
@@ -707,4 +850,129 @@ export function Projector({ lines, merging }: { lines: BoardLine[]; merging: boo
       <meshBasicMaterial map={tex} toneMapped={false} />
     </mesh>
   );
+}
+
+function Pizza({ p }: { p: V3 }) {
+  return (
+    <group position={p}>
+      <B s={[0.42, 0.04, 0.42]} p={[0, 0.02, 0]} c="#d6b483" />
+      <mesh position={[0, 0.05, 0]}>
+        <cylinderGeometry args={[0.18, 0.18, 0.02, 20]} />
+        <meshStandardMaterial color="#f59e0b" />
+      </mesh>
+      {[
+        [0.07, 0.04],
+        [-0.06, 0.07],
+        [-0.04, -0.08],
+        [0.08, -0.06],
+      ].map(([x, z]) => (
+        <mesh key={`${x}${z}`} position={[x, 0.065, z]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.01, 10]} />
+          <meshStandardMaterial color="#b91c1c" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Cake({ p }: { p: V3 }) {
+  const flames = useRef<Group>(null);
+  useFrame(({ clock }) => {
+    if (flames.current) flames.current.scale.y = 1 + Math.sin(clock.elapsedTime * 20) * 0.25;
+  });
+  return (
+    <group position={p}>
+      <mesh position={[0, 0.08, 0]} castShadow>
+        <cylinderGeometry args={[0.22, 0.22, 0.16, 24]} />
+        <meshStandardMaterial color="#fbcfe8" />
+      </mesh>
+      <mesh position={[0, 0.2, 0]} castShadow>
+        <cylinderGeometry args={[0.15, 0.15, 0.1, 24]} />
+        <meshStandardMaterial color="#ffffff" />
+      </mesh>
+      <group ref={flames}>
+        {[-0.06, 0, 0.06].map((x) => (
+          <group key={x} position={[x, 0.25, 0]}>
+            <mesh position={[0, 0.04, 0]}>
+              <cylinderGeometry args={[0.008, 0.008, 0.08, 6]} />
+              <meshStandardMaterial color="#60a5fa" />
+            </mesh>
+            <mesh position={[0, 0.1, 0]}>
+              <sphereGeometry args={[0.015, 8, 8]} />
+              <meshBasicMaterial color="#fde047" toneMapped={false} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+/** Red beacons flashing on the walls during the fire drill. */
+function Beacons() {
+  const lamps = useRef<(Mesh | null)[]>([]);
+  useFrame(({ clock }) => {
+    const on = Math.sin(clock.elapsedTime * 12) > 0;
+    lamps.current.forEach((m, i) => {
+      if (m) m.visible = i % 2 ? on : !on;
+    });
+  });
+  const spots: V3[] = [
+    [-7.9, 2.2, -1.5],
+    [-7.9, 2.2, 3.5],
+    [0, 2.5, FLOOR.z0 + 0.1],
+    [7, 2.5, FLOOR.z0 + 0.1],
+    [14, 2.5, FLOOR.z0 + 0.1],
+  ];
+  return (
+    <group>
+      {spots.map((pos, i) => (
+        <mesh
+          key={i}
+          position={pos}
+          ref={(m) => {
+            lamps.current[i] = m;
+          }}
+        >
+          <sphereGeometry args={[0.16, 12, 12]} />
+          <meshBasicMaterial color="#ef4444" toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** Blinking warning light on the jammed printer. */
+function PrinterWarning() {
+  const lamp = useRef<Mesh>(null);
+  useFrame(({ clock }) => {
+    if (lamp.current) lamp.current.visible = Math.sin(clock.elapsedTime * 10) > 0;
+  });
+  return (
+    <group position={[FLOOR.x0 + 0.5, 0, 1.6]}>
+      <mesh ref={lamp} position={[0.15, 0.82, 0.2]}>
+        <sphereGeometry args={[0.05, 10, 10]} />
+        <meshBasicMaterial color="#ef4444" toneMapped={false} />
+      </mesh>
+      <B s={[0.3, 0.01, 0.38]} p={[0, 0.77, 0.12]} c="#ffffff" r={0.3} />
+    </group>
+  );
+}
+
+/** Props that appear while an office event is running. */
+export function EventProps({ kind }: { kind: string | null }) {
+  if (kind === "pizza") {
+    return (
+      <group>
+        <Pizza p={[-1.1, 0.93, -3.4]} />
+        <Pizza p={[-0.1, 0.93, -3.4]} />
+        <Pizza p={[-1.6, 0.78, -1.35]} />
+        <Pizza p={[1.8, 0.78, -1.35]} />
+      </group>
+    );
+  }
+  if (kind === "birthday") return <Cake p={[5.5, 0.39, -3.0]} />;
+  if (kind === "drill") return <Beacons />;
+  if (kind === "printer") return <PrinterWarning />;
+  return null;
 }

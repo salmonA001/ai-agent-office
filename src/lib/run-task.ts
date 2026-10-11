@@ -108,6 +108,11 @@ function cloudBackend(code: string): Backend {
 // ---------- Browser: small local model via WebGPU, no key needed ----------
 
 const KEYWORDS: [RegExp, string][] = [
+  [/\b(design|ui|ux|logo|layout|colou?rs?|mockup|wireframe)\b/i, "designer"],
+  [/\b(marketing|campaign|social|ads?|seo|tagline|launch|brand)\b/i, "marketer"],
+  [/\b(data|sql|statistics?|metrics?|chart|dataset|spreadsheet)\b/i, "data"],
+  [/\b(test|tests|testing|qa|edge cases?|bugs)\b/i, "qa"],
+  [/\b(translate|translation|thai|spanish|french|japanese|chinese|language)\b/i, "translator"],
   [/\b(code|bug|api|script|function|program|sql|python|javascript|app)\b/i, "coder"],
   [/\b(plan|schedule|timeline|roadmap|steps|itinerary)\b/i, "planner"],
   [/\b(research|find|compare|competitor|market|facts?)\b/i, "researcher"],

@@ -4,6 +4,7 @@ import type { Agent } from "@/lib/agents";
 import type { Task, TaskEvent } from "@/lib/run-task";
 import { useAgentActivity } from "./agent-activity";
 import type { ManagerState } from "./OfficeScene";
+import { XpBadge } from "./OfficeGame";
 
 const STEPS = [
   { label: "Assign", text: "Describe any job in the box below. The whole team is waiting for it." },
@@ -118,8 +119,8 @@ export function Ticker({ events }: { events: TaskEvent[] }) {
   if (!events.length) return null;
   return (
     <ul className="glass-strong w-[min(26rem,100%)] rounded-xl px-3 py-2 text-xs" aria-label="Latest office activity">
-      {events.slice(-3).map((e) => (
-        <li key={`${e.at}${e.text}`} className="flex gap-2 py-0.5">
+      {events.slice(-3).map((e, i) => (
+        <li key={`${e.at}-${i}-${e.kind}`} className="flex gap-2 py-0.5">
           <span aria-hidden>{EVENT_ICON[e.kind]}</span>
           <span className="line-clamp-2 text-ink/90">{e.text}</span>
         </li>
@@ -138,8 +139,8 @@ export function Timeline({ events, start }: { events?: TaskEvent[]; start: numbe
       </h3>
       <p className="mb-3 text-xs text-muted">Every step the office took, in order, with the manager&apos;s reasoning.</p>
       <ol className="relative flex flex-col gap-2 border-l border-accent/30 pl-4">
-        {events.map((e) => (
-          <li key={`${e.at}${e.text}`} className="relative text-sm">
+        {events.map((e, i) => (
+          <li key={`${e.at}-${i}`} className="relative text-sm">
             <span
               aria-hidden
               className="absolute -left-[1.42rem] top-0.5 grid size-5 place-items-center rounded-full bg-well text-[11px] ring-1 ring-accent/40"
@@ -212,6 +213,7 @@ export function AgentPanel({ agent, tasks, onClose }: { agent: Agent; tasks: Tas
           ✕
         </button>
       </div>
+      <XpBadge id={agent.id} />
       <div>
         <p className="text-xs font-semibold text-accent">Right now</p>
         <p className="text-ink/90">{activity ?? "At their desk"}</p>

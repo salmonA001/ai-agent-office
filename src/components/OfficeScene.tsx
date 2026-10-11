@@ -10,13 +10,15 @@ import {
   FLOOR,
   MANAGER_TV,
   OfficeChair,
+  EventProps,
   OfficeFloor,
   Planter,
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
 import { setAgentActivity } from "./agent-activity";
-import { type Home, isPresent, type P2, type Spot, type WalkPhase, Wanderer } from "./office-nav";
+import { currentEventKind, tickEvents, useGame } from "./office-events";
+import { type Home, isPresent, type P2, registerWalker, type Spot, type WalkPhase, Wanderer } from "./office-nav";
 import { clip, hash, reducedMotion, useDisposable } from "./scene-utils";
 
 export type { BoardLine } from "./OfficeFloor";
@@ -74,7 +76,7 @@ function Label({
 // ---------- Kawaii workers ----------
 
 export type Species = "bear" | "bunny" | "cat" | "hamster" | "puppy" | "chick";
-type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | null;
+type Accessory = "glasses" | "bow" | "headphones" | "flower" | "tie" | "beret" | "cap" | null;
 type Action = "idle" | "write" | "chalk" | "wave" | "walk" | "sip" | "play";
 type Look = { species: Species; color: string; inner: string };
 
@@ -85,6 +87,11 @@ const LOOKS: Look[] = [
   { species: "hamster", color: "#ffdcb8", inner: "#ffb39a" },
   { species: "puppy", color: "#d6f3e6", inner: "#a8dcc5" },
   { species: "chick", color: "#fff1a6", inner: "#ffb347" },
+  { species: "bear", color: "#f6d8bf", inner: "#ffb6a3" },
+  { species: "bunny", color: "#e3dcff", inner: "#c4b5fd" },
+  { species: "cat", color: "#d8f1ff", inner: "#a5d8ff" },
+  { species: "hamster", color: "#fff0d6", inner: "#ffc078" },
+  { species: "puppy", color: "#ffe3e3", inner: "#ffa8a8" },
 ];
 
 const ACCESSORY: Record<string, Accessory> = {
@@ -92,6 +99,11 @@ const ACCESSORY: Record<string, Accessory> = {
   writer: "bow",
   coder: "headphones",
   planner: "flower",
+  designer: "beret",
+  marketer: "cap",
+  data: "glasses",
+  qa: "headphones",
+  translator: "bow",
 };
 
 function Toon({ color }: { color: string }) {
@@ -232,6 +244,36 @@ function AccessoryMesh({ kind }: { kind: Accessory }) {
             <Ink t={0.008} />
           </mesh>
         ))}
+      </group>
+    );
+  }
+  if (kind === "beret") {
+    return (
+      <group position={[0.05, 0.36, -0.02]} rotation-z={-0.25}>
+        <mesh scale={[1, 0.35, 1]}>
+          <sphereGeometry args={[0.3, 20, 12]} />
+          <Toon color="#be123c" />
+          <Ink t={0.008} />
+        </mesh>
+        <mesh position={[0, 0.1, 0]}>
+          <cylinderGeometry args={[0.015, 0.015, 0.06, 6]} />
+          <Toon color="#be123c" />
+        </mesh>
+      </group>
+    );
+  }
+  if (kind === "cap") {
+    return (
+      <group position={[0, 0.3, 0]}>
+        <mesh scale={[1, 0.55, 1]}>
+          <sphereGeometry args={[0.36, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <Toon color="#10b981" />
+          <Ink t={0.008} />
+        </mesh>
+        <mesh position={[0, 0.01, 0.34]} rotation-x={0.12} scale={[1, 0.15, 1]}>
+          <cylinderGeometry args={[0.24, 0.24, 0.12, 20, 1, false, -Math.PI / 2, Math.PI]} />
+          <Toon color="#059669" />
+        </mesh>
       </group>
     );
   }
@@ -923,6 +965,7 @@ type AvatarProps = {
   seed: number;
   lift: number;
   canWander: boolean;
+  level: number;
   selected: boolean;
   onSelect?: (id: string) => void;
 };
@@ -1015,9 +1058,12 @@ function AgentAvatarImpl(props: AvatarProps) {
   useEffect(() => {
     live.current = props;
   });
-  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 4 + ((seed * 7) % 8)));
+  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5)));
   const [phase, setPhase] = useState<WalkPhase>(walker.phase);
-  useEffect(() => () => walker.dispose(), [walker]);
+  useEffect(() => {
+    registerWalker(walker);
+    return () => walker.dispose();
+  }, [walker]);
 
   useFrame((_, delta) => {
     const g = group.current;
@@ -1084,7 +1130,7 @@ function AgentAvatarImpl(props: AvatarProps) {
         lastDoneAt={lastDoneAt}
         seed={seed}
       />
-      <Label name={agent.name} bubble={say} position={[0, 1.55, 0]} scale={LABEL_SCALE} lift={lift} />
+      <Label name={`${agent.name} · Lv${props.level}`} bubble={say} position={[0, 1.55, 0]} scale={LABEL_SCALE} lift={lift} />
     </group>
   );
 }
@@ -1105,6 +1151,7 @@ const AgentAvatar = memo(
     a.seed === b.seed &&
     a.lift === b.lift &&
     a.canWander === b.canWander &&
+    a.level === b.level &&
     a.selected === b.selected &&
     a.onSelect === b.onSelect,
 );
@@ -1194,6 +1241,16 @@ function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNod
   );
 }
 
+/** Centre of the desk block in the open workspace. */
+const DESKS_X = 4.25;
+
+/** Runs the office-event clock with the scene and shows each event's props. */
+function EventDirector() {
+  const game = useGame();
+  useFrame(({ clock }) => tickEvents(clock.elapsedTime));
+  return <EventProps kind={game.event?.kind ?? currentEventKind()} />;
+}
+
 /** Fit the orthographic camera to the floor whenever the canvas is resized. */
 function CameraFit() {
   const get = useThree((s) => s.get);
@@ -1204,7 +1261,7 @@ function CameraFit() {
   useEffect(() => {
     const { camera, controls } = get();
     // Narrow screens crop the side walls a little so the desks stay readable.
-    const zoom = Math.min(width / (width < 500 ? 16 : 20), height / 13);
+    const zoom = Math.min(width / (width < 500 ? 19 : 27), height / 18);
     camera.zoom = zoom;
     camera.updateProjectionMatrix();
     const orbit = controls as unknown as { minZoom: number; maxZoom: number } | null;
@@ -1223,6 +1280,7 @@ export default function OfficeScene({
   board,
   selectedId,
   onSelectAgent,
+  levels = {},
 }: {
   agents: Agent[];
   desks: Record<string, DeskState>;
@@ -1230,17 +1288,19 @@ export default function OfficeScene({
   board: BoardLine[];
   selectedId?: string | null;
   onSelectAgent?: (id: string) => void;
+  levels?: Record<string, number>;
 }) {
   // One row of desks for up to 4 agents, otherwise two rows facing the meeting rooms.
   const perRow = agents.length <= 4 ? Math.max(1, agents.length) : Math.ceil(agents.length / 2);
   const rows = Math.ceil(agents.length / perRow);
-  const spacing = Math.min(2.4, 14 / perRow);
+  const spacing = Math.min(2.4, 15.5 / perRow);
   const rowZ = rows === 1 ? [3.0] : [2.0, 4.2];
   const rowHalf = (perRow * spacing) / 2;
   // Agents walk out along the aisle behind their row to a side column, then into the office.
   const sideX = Math.max(4.6, rowHalf + 0.95);
+  // desks sit in the middle of the open workspace, between the ping-pong table and the breakout corner
   const [still] = useState(reducedMotion);
-  const canWander = !still && sideX <= 7.2;
+  const canWander = !still && sideX <= 8.6;
 
   return (
     <Canvas
@@ -1248,7 +1308,7 @@ export default function OfficeScene({
       orthographic
       dpr={[1, 1.5]}
       gl={{ powerPreference: "high-performance" }}
-      camera={{ position: [13, 17, 15], zoom: 30, near: -100, far: 200 }}
+      camera={{ position: [17, 17, 15], zoom: 30, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
       <color attach="background" args={["#030504"]} />
@@ -1267,6 +1327,7 @@ export default function OfficeScene({
         shadow-bias={-0.0005}
       />
       <OfficeFloor />
+      <EventDirector />
       <Projector lines={board} merging={manager === "merging"} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
         <Clock position={[0, 0, 0]} />
@@ -1275,15 +1336,15 @@ export default function OfficeScene({
       <PingPongBall />
       {rowZ.slice(0, rows).map((z) => (
         <group key={z}>
-          <Planter p={[-rowHalf - 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
-          <Planter p={[rowHalf + 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
+          <Planter p={[DESKS_X - rowHalf - 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
+          <Planter p={[DESKS_X + rowHalf + 0.45, 0, z + 0.1]} len={0.9} r={Math.PI / 2} />
         </group>
       ))}
       {agents.map((a, i) => {
         const row = Math.floor(i / perRow);
         const inRow = Math.min(perRow, agents.length - row * perRow);
         const col = i % perRow;
-        const x = (col - (inRow - 1) / 2) * spacing;
+        const x = DESKS_X + (col - (inRow - 1) / 2) * spacing;
         const z = rowZ[row] ?? FLOOR.z1 - 1;
         const state = desks[a.id] ?? IDLE_DESK;
         const attentive = manager === "planning";
@@ -1294,7 +1355,7 @@ export default function OfficeScene({
             <AgentAvatar
               agent={a}
               look={LOOKS[i % LOOKS.length]}
-              home={{ seat, aisleZ: seat[1] + 0.62, sideX: x <= 0 ? -sideX : sideX }}
+              home={{ seat, aisleZ: seat[1] + 0.62, sideX: x <= DESKS_X ? DESKS_X - sideX : DESKS_X + sideX }}
               busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
               working={state.working.length > 0}
               attentive={attentive}
@@ -1302,6 +1363,7 @@ export default function OfficeScene({
               lastDoneAt={state.lastDoneAt}
               seed={i * 1.7}
               lift={col % 2 ? 0.45 : 0}
+              level={levels[a.id] ?? 1}
               canWander={canWander}
               selected={selectedId === a.id}
               onSelect={onSelectAgent}
@@ -1311,7 +1373,7 @@ export default function OfficeScene({
       })}
       <OrbitControls
         makeDefault
-        target={[0, 0.6, -0.9]}
+        target={[4, 0.6, -0.9]}
         enablePan
         screenSpacePanning
         minPolarAngle={0.35}

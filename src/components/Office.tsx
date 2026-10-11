@@ -4,10 +4,12 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { type Agent, DEFAULT_AGENTS } from "@/lib/agents";
+import { type Agent, DEFAULT_AGENTS, withDefaultAgents } from "@/lib/agents";
 import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { levelOf, rewardOnce, setNames, useGame } from "./office-events";
 import { AgentPanel, AgentStatusText, HowItWorks, Stepper, stepIndex, Ticker, Timeline } from "./OfficeExplain";
+import { DrillOverlay, EventBanner, EventsPanel, LevelToast, TeamStats, XpBadge } from "./OfficeGame";
 import type { BoardLine, DeskState, ManagerState, ScreenState } from "./OfficeScene";
 
 const OfficeScene = dynamic(() => import("./OfficeScene"), {
@@ -109,7 +111,7 @@ export function Office() {
       ACTIVE.includes(t.status) ? { ...t, status: "cancelled" as const } : t,
     );
     /* eslint-disable react-hooks/set-state-in-effect */
-    setAgents(load(STORE.agents, DEFAULT_AGENTS));
+    setAgents(withDefaultAgents(load(STORE.agents, DEFAULT_AGENTS)));
     setTasks(storedTasks);
     setSelectedId(storedTasks[0]?.id ?? null);
     setCode(load(STORE.code, ""));
@@ -190,6 +192,23 @@ export function Office() {
 
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
   const focusAgent = agents.find((a) => a.id === focusId) ?? null;
+
+  // game layer: XP for finished work, levels shown on the 3D name tags
+  const game = useGame();
+  useEffect(() => {
+    setNames(agents.map((a) => [a.id, a.name]));
+  }, [agents]);
+  useEffect(() => {
+    for (const t of tasks) {
+      for (const s of t.subtasks) {
+        if (s.status !== "done") continue;
+        const words = s.output.trim().split(/\s+/).length;
+        rewardOnce(`sub:${s.id}`, s.agentId, 30 + Math.min(30, Math.round(words / 25)), `finished "${s.title}"`);
+      }
+      if (t.status === "done") rewardOnce(`task:${t.id}`, "max", 25, "delivered a finished task");
+    }
+  }, [tasks]);
+  const levels = Object.fromEntries(agents.map((a) => [a.id, levelOf(game.xp[a.id] ?? 0)]));
   const running = tasks.filter((t) => ACTIVE.includes(t.status));
 
   // What each agent is doing right now, across every running task, and what its PC screen shows.
@@ -262,6 +281,7 @@ export function Office() {
             />
             {engine === "cloud" ? "Cloud AI" : engine === "browser" ? "In-browser AI (free)" : "Detecting AI…"}
           </span>
+          <TeamStats ids={agents.map((a) => a.id)} />
           <span className="rounded-full border border-white/10 bg-well px-3 py-1 text-muted" aria-live="polite">
             {running.length === 0 ? "Office is idle" : `${running.length} task${running.length > 1 ? "s" : ""} running`}
           </span>
@@ -327,7 +347,7 @@ export function Office() {
         )}
 
         <div className="relative mb-4">
-        <div className="relative h-[340px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[580px]">
+        <div className="relative h-[340px] overflow-hidden rounded-xl ring-1 ring-accent/20 sm:h-[640px]">
           <OfficeScene
             agents={agents}
             desks={desks}
@@ -335,7 +355,9 @@ export function Office() {
             board={board}
             selectedId={focusId}
             onSelectAgent={selectAgent}
+            levels={levels}
           />
+          <DrillOverlay />
           {/* explanations layered over the 3D office */}
           <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-between gap-2">
             <div className="pointer-events-auto">
@@ -354,6 +376,13 @@ export function Office() {
           <div className="pointer-events-none absolute bottom-2 left-2 hidden md:block">
             <Ticker events={(running[0] ?? selected)?.events ?? []} />
           </div>
+          {/* game events: banner under the stepper, level-ups near the bottom */}
+          <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center px-2 sm:top-20">
+            <EventBanner />
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+            <LevelToast />
+          </div>
         </div>
           {focusAgent && (
             <div className="mt-3 flex justify-center sm:absolute sm:bottom-2 sm:right-2 sm:mt-0 sm:max-h-[calc(100%-6rem)] sm:justify-end">
@@ -362,7 +391,7 @@ export function Office() {
           )}
         </div>
 
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="Agents">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Agents">
           {agents.map((a) => {
             const doing = busy.get(a.id);
             return (
@@ -392,6 +421,7 @@ export function Office() {
                     <p className="truncate text-xs text-muted">{a.role}</p>
                   </div>
                 </div>
+                <XpBadge id={a.id} />
                 <p className="line-clamp-2 text-xs text-muted">
                   {doing ? `Working on: ${doing.join(", ")}` : <AgentStatusText id={a.id} fallback="Available" />}
                 </p>
@@ -483,6 +513,8 @@ export function Office() {
               </ul>
             )}
           </section>
+
+          <EventsPanel />
         </aside>
 
         {/* Task detail */}
