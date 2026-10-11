@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import { type Agent, DEFAULT_AGENTS } from "@/lib/agents";
 import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
 import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
-import type { DeskState, ManagerState } from "./OfficeScene";
+import type { BoardLine, DeskState, ManagerState } from "./OfficeScene";
 
 const OfficeScene = dynamic(() => import("./OfficeScene"), {
   ssr: false,
@@ -199,8 +199,13 @@ export function Office() {
     ? "planning"
     : running.some((t) => t.status === "synthesizing")
       ? "merging"
-      : "idle";
-  const notes = running.reduce((n, t) => n + t.subtasks.filter((s) => s.status !== "done").length, 0);
+      : running.length
+        ? "watching"
+        : "idle";
+  // The chalkboard shows live subtasks, or the selected task's when nothing is running.
+  const board: BoardLine[] = (running.length ? running : selected ? [selected] : [])
+    .flatMap((t) => t.subtasks)
+    .map((s) => ({ text: s.title, status: s.status }));
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6">
@@ -276,8 +281,8 @@ export function Office() {
           />
         )}
 
-        <div className="mb-4 h-[340px] overflow-hidden rounded-xl sm:h-[460px]">
-          <OfficeScene agents={agents} desks={desks} manager={manager} notes={notes} />
+        <div className="mb-4 h-[360px] overflow-hidden rounded-xl sm:h-[520px]">
+          <OfficeScene agents={agents} desks={desks} manager={manager} board={board} />
         </div>
 
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="Agents">
