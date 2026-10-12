@@ -256,11 +256,14 @@ export type Activity =
   | "draw"
   | "lift"
   | "meditate"
-  | "game";
+  | "game"
+  | "guitar"
+  | "piano"
+  | "pet";
 
 /** What kind of break a spot is; the user can switch whole categories off. */
-export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas" | "focus";
-export const SPOT_CATS: SpotCat[] = ["food", "chat", "games", "rest", "reading", "exercise", "focus", "calls", "nature", "ideas"];
+export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas" | "focus" | "music" | "pets";
+export const SPOT_CATS: SpotCat[] = ["food", "chat", "games", "rest", "reading", "exercise", "focus", "calls", "nature", "ideas", "music", "pets"];
 
 export type Spot = {
   id: string;
@@ -498,6 +501,15 @@ export const SPOTS: Spot[] = [
   spot({ id: "idea-bag", at: [15.4, 22.4], node: "FC2", approach: [[14.6, 22.4]], face: -PI / 2, seat: 0.32, activity: "rest", cat: "ideas", say: "Thinking big", where: "in the creative labs", emoji: ["💭", "🌈"] }),
   spot({ id: "pinball", at: [10.0, 22.55], node: "FC2", approach: [[13.6, 22.55]], face: 0, activity: "play", cat: "games", say: "Multiball!", where: "at the pinball machine", emoji: ["🎰", "😆"] }),
 
+  // ----- music corner and easel in the creative labs -----
+  spot({ id: "easel", at: [14.6, 19.95], node: "FC1", approach: [[13.6, 19.95]], face: PI, activity: "draw", cat: "ideas", say: "Painting a sunset", where: "at the easel", emoji: ["🎨", "🖌️"] }),
+  spot({ id: "piano", at: [15.6, 20.65], node: "FC1", approach: [[13.6, 20.65]], face: PI, seat: 0.45, activity: "piano", cat: "music", say: "Playing a little tune", where: "at the piano", emoji: ["🎹", "🎶"] }),
+  spot({ id: "guitar", at: [14.3, 21.4], node: "FC2", approach: [[13.6, 21.4]], face: 0, seat: 0.45, activity: "guitar", cat: "music", say: "Jamming on guitar", where: "in the music corner", emoji: ["🎸", "🎵"] }),
+
+  // ----- Biscuit the office dog -----
+  spot({ id: "pet-bed", at: [16.6, 12.15], node: "GE", face: PI, activity: "pet", cat: "pets", say: "Belly rubs for Biscuit!", where: "by Biscuit's kennel", emoji: ["🐶", "💕"] }),
+  spot({ id: "fetch", at: [18.3, 11.4], node: "GD0", face: PI / 2, activity: "play", cat: "pets", say: "Fetch, Biscuit!", where: "playing fetch in the garden", emoji: ["🎾", "🐕"] }),
+
   // ----- zone 6: strategy hub (a few seats used day to day) -----
   ...HUB_SEATS.slice(1, 3),
 
@@ -673,6 +685,12 @@ const zoneOf = (s: Spot) => {
 };
 
 let favourite = new Map<string, ZoneId>();
+let hobbies = new Map<string, Set<SpotCat>>();
+
+/** Agent id -> the kinds of break they like most. */
+export function setAgentHobbies(map: Record<string, SpotCat[] | undefined>) {
+  hobbies = new Map(Object.entries(map).map(([id, cats]) => [id, new Set(cats ?? [])]));
+}
 
 /**
  * Where an agent can take real work in their favourite zone: a focus pod, a seat at the strategy
@@ -712,8 +730,14 @@ export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
   const fav = favourite.get(agentId);
   while (free.length) {
     // join a colleague who is already waiting at a table; prefer the agent's favourite zone
+    const likes = hobbies.get(agentId);
     const weights = free.map(
-      (s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1) * (fav && zoneOf(s) === fav ? 4 : 1) * (s.roof ? roofPull(hour) : 1),
+      (s) =>
+        rhythm(s.cat, hour) *
+        (s.pair && present.has(s.pair) ? 5 : 1) *
+        (fav && zoneOf(s) === fav ? 4 : 1) *
+        (likes?.has(s.cat) ? 3 : 1) *
+        (s.roof ? roofPull(hour) : 1),
     );
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     let s = free[free.length - 1];
@@ -1312,6 +1336,122 @@ export class ManagerWalker {
     this.phase = { kind: "walking", rushing: false };
   }
 }
+
+// ---------- Biscuit the office dog ----------
+
+/** Biscuit's own places: his kennel in the garden, the water bowl in the kitchen, a sunny patch by the picnic table. */
+export const DOG_SPOTS: Spot[] = [
+  spot({ id: "dog-bed", at: [16.6, 11.3], node: "GE", approach: [[16.6, 12.4]], face: 0, activity: "nap", cat: "pets", say: "", where: "", emoji: [] }),
+  spot({ id: "dog-bowl", at: [2.4, -2.75], node: "K1", face: PI, activity: "look", cat: "pets", say: "", where: "", emoji: [] }),
+  spot({ id: "dog-sun", at: [18.6, 12.6], node: "GE", face: PI / 2, activity: "nap", cat: "pets", say: "", where: "", emoji: [] }),
+];
+
+export type DogPhase = { kind: "rest" | "walk" | "visit" };
+
+/**
+ * Biscuit trots between his bed, his bowl and the garden, and goes to see colleagues on their
+ * breaks (most of all whoever is waiting by his bed or with a ball): he sits beside them for a pat.
+ */
+export class PetWalker {
+  x: number;
+  z: number;
+  yaw = 0;
+  phase: DogPhase = { kind: "rest" };
+  /** the agent Biscuit is visiting, if any */
+  visiting: string | null = null;
+  private visitSpot: Spot | null = null;
+  private anchor: Spot = DOG_SPOTS[0];
+  private path: P2[] = [];
+  private seg = 0;
+  private timer = 6;
+  private mode: "rest" | "walk" | "visit" = "rest";
+
+  constructor() {
+    [this.x, this.z] = DOG_SPOTS[0].at;
+  }
+
+  update(dt: number, canWander: boolean): boolean {
+    const before = this.phase;
+    dt = Math.min(dt, 0.1);
+    let targetYaw = this.yaw;
+    if (this.mode === "rest" || this.mode === "visit") {
+      this.timer -= dt;
+      // the colleague walked off: no point waiting
+      if (this.mode === "visit" && this.visiting) {
+        const w = walkers.get(this.visiting);
+        if (!w || w.phase.kind !== "spot" || w.phase.spot !== this.visitSpot) this.timer = Math.min(this.timer, 0);
+        else targetYaw = Math.atan2(w.x - this.x, w.z - this.z);
+      }
+      if (this.timer <= 0 && canWander) this.next();
+    } else {
+      const target = this.path[this.seg + 1];
+      if (target) {
+        const dx = target[0] - this.x;
+        const dz = target[1] - this.z;
+        const d = Math.hypot(dx, dz);
+        const step = 1.15 * dt;
+        if (d > 0.001) targetYaw = Math.atan2(dx, dz);
+        if (d <= step) {
+          [this.x, this.z] = target;
+          this.seg++;
+        } else {
+          this.x += (dx / d) * step;
+          this.z += (dz / d) * step;
+        }
+      }
+      if (this.seg >= this.path.length - 1) {
+        if (this.visiting) {
+          this.mode = "visit";
+          this.timer = 7 + Math.random() * 5;
+          this.phase = { kind: "visit" };
+        } else {
+          this.mode = "rest";
+          this.timer = 10 + Math.random() * 12;
+          this.phase = { kind: "rest" };
+        }
+      }
+    }
+    this.yaw += Math.atan2(Math.sin(targetYaw - this.yaw), Math.cos(targetYaw - this.yaw)) * Math.min(1, dt * 8);
+    return this.phase !== before;
+  }
+
+  private next() {
+    const from = this.anchor;
+    // a colleague on a break downstairs: those by the dog bed or playing fetch first
+    const friends = [...walkers.values()].filter(
+      (w) => w.level === 0 && !w.hidden && w.phase.kind === "spot" && !w.phase.spot.roof && w.isIdle() && w.phase.spot.cat !== "exercise",
+    );
+    const keen = friends.filter((w) => w.phase.kind === "spot" && w.phase.spot.cat === "pets");
+    const pick = keen.length ? keen : Math.random() < 0.6 ? friends : [];
+    if (pick.length) {
+      const w = pick[Math.floor(Math.random() * pick.length)];
+      const target = (w.phase as { spot: Spot }).spot;
+      const pts = route({ spot: from }, { spot: target });
+      // stop a little short, beside them
+      const end = pts[pts.length - 1];
+      const prev = pts[pts.length - 2] ?? end;
+      const len = dist(prev, end);
+      if (len > 0.8) pts[pts.length - 1] = [end[0] + ((prev[0] - end[0]) * 0.7) / len, end[1] + ((prev[1] - end[1]) * 0.7) / len];
+      this.path = [[this.x, this.z], ...pts.slice(1)];
+      this.visiting = w.id;
+      this.visitSpot = target;
+      this.anchor = target;
+    } else {
+      const options = DOG_SPOTS.filter((s) => s !== from);
+      const s = options[Math.floor(Math.random() * options.length)];
+      this.path = [[this.x, this.z], ...route({ spot: from }, { spot: s }).slice(1)];
+      this.visiting = null;
+      this.visitSpot = null;
+      this.anchor = s;
+    }
+    this.seg = 0;
+    this.mode = "walk";
+    this.phase = { kind: "walk" };
+  }
+}
+
+/** The dog's walker, for the scene. */
+export const pet = { walker: null as PetWalker | null };
 
 /** The manager's walker, so the camera can follow him too. */
 export const manager = { walker: null as ManagerWalker | null };

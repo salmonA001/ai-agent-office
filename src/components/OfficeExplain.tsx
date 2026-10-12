@@ -1,11 +1,12 @@
 "use client";
 
-import { MapPinIcon, XIcon } from "@phosphor-icons/react";
+import { MapPinIcon, SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/agents";
 import { agentInstructions, type Key, phrase, renderMsg, useI18n } from "@/lib/i18n";
 import type { Task, TaskEvent } from "@/lib/run-task";
 import { useAgentActivity } from "./agent-activity";
-import { focusZone, type ZoneId } from "./camera-focus";
+import { focusZone, ZONE_IDS, type ZoneId } from "./camera-focus";
+import { SPOT_CATS, type SpotCat } from "./office-nav";
 import { XpBadge } from "./OfficeGame";
 
 const EVENT_ICON: Record<TaskEvent["kind"], string> = {
@@ -102,7 +103,66 @@ function ZoneLine({ zone }: { zone: ZoneId }) {
   );
 }
 
-export function AgentPanel({ agent, tasks, onClose }: { agent: Agent; tasks: Task[]; onClose: () => void }) {
+/** Pick where an agent likes to be and what they like doing on their breaks. */
+function AgentPrefs({ agent, onChange }: { agent: Agent; onChange: (patch: Partial<Agent>) => void }) {
+  const { t } = useI18n();
+  const hobbies = agent.hobbies ?? [];
+  const chip = (on: boolean) =>
+    `press inline-flex min-h-8 items-center rounded-full border px-2.5 text-xs font-semibold transition-colors duration-200 ${
+      on ? "border-accent bg-accent/15 text-ink" : "border-line text-muted hover:text-ink"
+    }`;
+  return (
+    <details className="group rounded-lg border border-line bg-well/60 p-2">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-accent">
+        <SlidersHorizontalIcon size={14} weight="bold" aria-hidden />
+        {t("panel.customize", { name: agent.name })}
+      </summary>
+      <div className="mt-2 flex flex-col gap-2">
+        <div>
+          <p className="mb-1 text-xs text-muted">{t("panel.zone")}</p>
+          <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={t("panel.zone")}>
+            {ZONE_IDS.map((id) => (
+              <button key={id} type="button" role="radio" aria-checked={agent.zone === id} onClick={() => onChange({ zone: id })} className={chip(agent.zone === id)}>
+                {t(`zone.${id}` as Key)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-muted">{t("panel.hobbies")}</p>
+          <div className="flex flex-wrap gap-1" role="group" aria-label={t("panel.hobbies")}>
+            {SPOT_CATS.map((c: SpotCat) => {
+              const on = hobbies.includes(c);
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onChange({ hobbies: on ? hobbies.filter((h) => h !== c) : [...hobbies, c] })}
+                  className={chip(on)}
+                >
+                  {t(`cat.${c}` as Key)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+export function AgentPanel({
+  agent,
+  tasks,
+  onClose,
+  onChange,
+}: {
+  agent: Agent;
+  tasks: Task[];
+  onClose: () => void;
+  onChange?: (patch: Partial<Agent>) => void;
+}) {
   const activity = useAgentActivity(agent.id);
   const { lang, t } = useI18n();
   // newest assignment first (tasks are stored newest-first)
@@ -153,6 +213,13 @@ export function AgentPanel({ agent, tasks, onClose }: { agent: Agent; tasks: Tas
         <p className="text-xs text-ink/80">{agentInstructions(lang, agent.id, agent.instructions)}</p>
       </div>
       {agent.zone && <ZoneLine zone={agent.zone} />}
+      {agent.hobbies && agent.hobbies.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-accent">{t("panel.hobbies")}</p>
+          <p className="text-ink/90">{agent.hobbies.map((h) => t(`cat.${h}` as Key)).join(" · ")}</p>
+        </div>
+      )}
+      {onChange && agent.id !== "max" && <AgentPrefs agent={agent} onChange={onChange} />}
       {agent.id === "max" ? null : latest ? (
         <div className="flex flex-col gap-1">
           <p className="text-xs font-semibold text-accent">{t("panel.latest", { status: t(statusKey[latest.sub.status]) })}</p>

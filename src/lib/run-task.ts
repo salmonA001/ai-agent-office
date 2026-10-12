@@ -81,6 +81,13 @@ function filesBlock(files: Attachment[], budget: number) {
 
 const KEYWORDS: [RegExp, string][] = [
   [/\b(health|fitness|workout|exercise|sleep|stress|diet|habits?)\b/i, "coach"],
+  [/\b(budget|pricing|price|forecast|revenue|profit|finance|financial|invoice|cash)\b/i, "finance"],
+  [/\b(contract|legal|law|terms|privacy|gdpr|compliance|policy)\b/i, "legal"],
+  [/\b(hiring|hire|interview|onboarding|team culture|feedback|hr|employee)\b/i, "people"],
+  [/\b(customer|support|reply|complaint|faq|help article|refund)\b/i, "support"],
+  [/\b(product|feature|user stor(y|ies)|requirements?|roadmap|prd)\b/i, "product"],
+  [/\b(security|secure|vulnerab\w*|threat|password|attack|encrypt\w*)\b/i, "security"],
+  [/\b(teach|explain|learn|lesson|tutor|quiz|homework|study)\b/i, "tutor"],
   [/\b(strategy|strategic|priorit(y|ies|ise|ize)|goals?|okrs?|vision)\b/i, "strategist"],
   [/\b(ideas?|brainstorm|invent|creative|concepts?|innovat\w*)\b/i, "innovator"],
   [/\b(design|ui|ux|logo|layout|colou?rs?|mockup|wireframe)\b/i, "designer"],

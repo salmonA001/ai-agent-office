@@ -10,6 +10,7 @@ import {
   ClockIcon,
   CoffeeIcon,
   CubeIcon,
+  DogIcon,
   FastForwardIcon,
   FishIcon,
   FrameCornersIcon,
@@ -19,6 +20,7 @@ import {
   LampIcon,
   LightbulbIcon,
   MoonIcon,
+  MusicNotesIcon,
   PhoneIcon,
   PlantIcon,
   RugIcon,
@@ -71,6 +73,8 @@ const CAT_ICON: Record<SpotCat, Icon> = {
   nature: TreeIcon,
   ideas: LightbulbIcon,
   focus: HeadphonesIcon,
+  music: MusicNotesIcon,
+  pets: DogIcon,
 };
 
 const LIGHT_ICON: Record<Lighting, Icon> = { auto: ClockIcon, fast: FastForwardIcon, day: SunIcon, sunset: SunHorizonIcon, night: MoonIcon };

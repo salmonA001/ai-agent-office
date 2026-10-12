@@ -1,4 +1,5 @@
 import { ZONE_IDS, type ZoneId } from "@/components/camera-focus";
+import { SPOT_CATS, type SpotCat } from "@/components/office-nav";
 
 export type Agent = {
   id: string;
@@ -7,6 +8,8 @@ export type Agent = {
   instructions: string;
   /** the working zone the agent likes best: most of their breaks are spent there */
   zone?: ZoneId;
+  /** the kinds of break they like most (picked more often) */
+  hobbies?: SpotCat[];
   custom?: boolean;
 };
 
@@ -26,6 +29,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Researcher",
     instructions:
       "Gather the relevant facts, background and options. Cite what you know vs. what is assumed. Flag uncertainty clearly.",
+    hobbies: ["reading", "nature"],
     zone: "pods",
   },
   {
@@ -34,6 +38,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Writer",
     instructions:
       "Produce clear, well-structured prose: emails, posts, docs, summaries. Match the tone the user asks for.",
+    hobbies: ["reading", "food"],
     zone: "pods",
   },
   {
@@ -42,6 +47,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Analyst",
     instructions:
       "Break problems down, compare options with pros and cons, estimate numbers and give a reasoned recommendation.",
+    hobbies: ["games", "ideas"],
     zone: "hub",
   },
   {
@@ -50,6 +56,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Engineer",
     instructions:
       "Write correct, minimal, well-commented code and technical explanations. State language and assumptions.",
+    hobbies: ["games", "music"],
     zone: "engine",
   },
   {
@@ -58,6 +65,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Planner",
     instructions:
       "Turn goals into concrete step-by-step plans with owners, order, timelines and risks.",
+    hobbies: ["exercise", "nature"],
     zone: "hub",
   },
   {
@@ -66,6 +74,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Designer",
     instructions:
       "Create visual and UX concepts: layouts, colour palettes, typography and user flows, described clearly in words and lists.",
+    hobbies: ["ideas", "music"],
     zone: "labs",
   },
   {
@@ -74,6 +83,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Marketer",
     instructions:
       "Craft positioning, campaigns, social posts, ads and taglines aimed at a clearly defined audience.",
+    hobbies: ["chat", "food"],
     zone: "social",
   },
   {
@@ -82,6 +92,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Data Scientist",
     instructions:
       "Work with data: metrics, formulas, SQL, simple statistics and charts described as tables. Show your working.",
+    hobbies: ["games", "ideas"],
     zone: "engine",
   },
   {
@@ -89,6 +100,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     name: "Quinn",
     role: "QA Tester",
     instructions: "Find bugs, edge cases and risks. Write test cases, acceptance criteria and checklists.",
+    hobbies: ["exercise", "games"],
     zone: "fitness",
   },
   {
@@ -96,6 +108,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     name: "Lin",
     role: "Translator",
     instructions: "Translate and localize text naturally between languages, keeping tone, meaning and cultural fit.",
+    hobbies: ["chat", "reading"],
     zone: "social",
   },
   {
@@ -104,6 +117,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Strategist",
     instructions:
       "Set direction: goals, priorities, trade-offs and risks, ending with a clear recommendation and the reasoning behind it.",
+    hobbies: ["ideas", "nature"],
     zone: "hub",
   },
   {
@@ -112,6 +126,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Innovator",
     instructions:
       "Brainstorm bold, original ideas and concepts, then pick the most promising ones and sketch how each would work.",
+    hobbies: ["music", "ideas"],
     zone: "labs",
   },
   {
@@ -120,7 +135,71 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Wellness Coach",
     instructions:
       "Give practical, safe advice on health, habits, workouts, focus and stress, adapted to the person's situation.",
+    hobbies: ["exercise", "rest"],
     zone: "fitness",
+  },
+  {
+    id: "finance",
+    name: "Finn",
+    role: "Finance Analyst",
+    instructions:
+      "Handle money questions: budgets, pricing, forecasts, unit economics and cash flow, with tables and clearly stated assumptions.",
+    hobbies: ["games", "food"],
+    zone: "hub",
+  },
+  {
+    id: "legal",
+    name: "Lex",
+    role: "Legal Advisor",
+    instructions:
+      "Explain contracts, terms, privacy and compliance in plain language, flag risks, and note that this is general information, not legal advice.",
+    hobbies: ["reading", "rest"],
+    zone: "pods",
+  },
+  {
+    id: "people",
+    name: "Hana",
+    role: "People Partner",
+    instructions:
+      "Help with hiring, onboarding, feedback, team culture and difficult conversations, with kind, practical wording and templates.",
+    hobbies: ["chat", "pets"],
+    zone: "social",
+  },
+  {
+    id: "support",
+    name: "Sunny",
+    role: "Customer Support",
+    instructions:
+      "Write friendly, clear replies to customers, FAQs and help articles; solve the problem step by step and keep the tone warm.",
+    hobbies: ["chat", "food"],
+    zone: "social",
+  },
+  {
+    id: "product",
+    name: "Paige",
+    role: "Product Manager",
+    instructions:
+      "Define the problem, users and goals, then write user stories, requirements, priorities and success metrics for the product.",
+    hobbies: ["ideas", "nature"],
+    zone: "labs",
+  },
+  {
+    id: "security",
+    name: "Ozzy",
+    role: "Security Engineer",
+    instructions:
+      "Review designs and code for security risks, explain threats and give concrete fixes, checklists and safe defaults.",
+    hobbies: ["games", "ideas"],
+    zone: "engine",
+  },
+  {
+    id: "tutor",
+    name: "Theo",
+    role: "Tutor",
+    instructions:
+      "Teach any topic step by step: simple explanations, examples, analogies and a few practice questions with answers.",
+    hobbies: ["reading", "music"],
+    zone: "pods",
   },
 ];
 
@@ -132,15 +211,19 @@ export function withDefaultAgents(stored: Agent[]): Agent[] {
   const kept = stored
     .filter((a) => a.custom || !RETIRED.has(a.id))
     // drop fields from older versions (e.g. the shift)
-    .map(({ id, name, role, instructions, zone, custom }) => ({
-      id,
-      name,
-      role,
-      instructions,
-      // built-in agents keep the zone they ship with; custom ones keep the one picked when hiring
-      ...(custom ? { custom } : {}),
-      zone: custom ? (zone && ZONE_IDS.includes(zone) ? zone : undefined) : DEFAULT_AGENTS.find((d) => d.id === id)?.zone,
-    }));
+    .map(({ id, name, role, instructions, zone, hobbies, custom }) => {
+      const builtIn = DEFAULT_AGENTS.find((d) => d.id === id);
+      return {
+        id,
+        name,
+        role,
+        instructions,
+        ...(custom ? { custom } : {}),
+        // the zone and hobbies picked in the agent panel (or when hiring), else the built-in ones
+        zone: zone && ZONE_IDS.includes(zone) ? zone : builtIn?.zone,
+        hobbies: Array.isArray(hobbies) ? hobbies.filter((h) => SPOT_CATS.includes(h)) : builtIn?.hobbies,
+      };
+    });
   const have = new Set(kept.map((a) => a.id));
   const missing = DEFAULT_AGENTS.filter((a) => !have.has(a.id));
   return [...kept.filter((a) => !a.custom), ...missing, ...kept.filter((a) => a.custom)];

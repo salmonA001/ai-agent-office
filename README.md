@@ -31,7 +31,7 @@
 | 🧑‍💼 **A real team** | Max the manager splits each task, picks the right agent for each part and explains why, then merges the results and double-checks the answer. |
 | 🧠 **Think mode** | Agents write reasoning notes before answering, streamed live onto their desk PCs. |
 | 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
-| 🏙️ **A living office** | 13 animal agents work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
+| 🏙️ **A living office** | 20 animal agents (and Biscuit the office dog) work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
 | 🌤️ **Rooftop** | A second level: switch the view to the roof, where agents ride the elevator up for fresh air, a sky deck, a fire pit and a roof garden. |
 | ☕ **Tap for coffee** | Click the café counter (or Robo the barista) to buy the whole team a round. |
 | 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
@@ -89,11 +89,12 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 - **Breaks follow the clock**: coffee in the morning, a lunch rush at noon, games after five. Each agent spends most breaks in their favourite zone.
 - **Work happens in the zones too.** When Max hands an agent a job, agents whose favourite zone has a workplace often take it there: researchers and writers to a focus pod, analysts, planners and strategists to the strategy-hub table, designers and innovators to the touch table or whiteboards, marketers and translators to a café table. They read up while their part waits its turn, work there while it streams, then wind down and wander off.
 - **The rooms react to people**: a pod's busy light turns red and its screen wakes up with scrolling work when someone's inside; whiteboards fill with a fresh sketch, left to right, while someone draws; the touch table glows and projects floating ideas; the 3D printer's head sweeps as the print grows; the hub's screen goes live (with a blinking REC dot) when people meet; the pinball playfield flashes while someone plays.
+- **More to do**: a music corner in the creative labs (an upright piano and a guitar), a painting easel that fills with a sunset while someone paints, and **Biscuit the office dog**, who sits by colleagues for a pat ("Who's a good boy?"), naps by his kennel, drinks from his bowl in the kitchen and plays fetch in the garden.
 - **Little routines**: agents queue at the café, order from Robo, collect a cup and carry it around; stop to say hello when they pass a colleague; and stretch, sip from a mug, read or check their phone at their desk between jobs.
 - **Two-person activities need two people.** Ping-pong, foosball, the touch-table brainstorm and café chats start with an invitation: the agent asks the nearest free colleague, both hurry over and play the same game. If nobody's free they pick something else, and if a partner gets called away the other wraps up.
 - **Max makes his rounds.** Between tasks he checks on the desks, reviews the roadmap in the hub, rehearses on the town-hall stage, visits the labs, grabs a coffee and says hi to Robo. He hurries back to the projector when work arrives.
 - **21 office events**, timed to the hour: rooftop hangout, coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
-- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 43,000+ routes (both floors and the elevator trips between them) and a 3-hour simulation with zero collisions.
+- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 45,000+ routes (including Biscuit's) (both floors and the elevator trips between them) and a 3-hour simulation with zero collisions.
 - **Smooth**: static furniture is merged into a few big meshes after each render, so the whole office draws in about 2,000 calls a frame, and all PCs share one set of RGB materials.
 
 ## 🤖 The team
@@ -114,8 +115,18 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 | Lin | Translator | ☕ Social & Wellness Core |
 | Quinn | QA Tester | 🧘 Fitness & Meditation |
 | Kai | Wellness Coach | 🧘 Fitness & Meditation |
+| Finn | Finance Analyst | 📊 Strategy Hub |
+| Lex | Legal Advisor | 🎧 Focus Pods |
+| Hana | People Partner | ☕ Social & Wellness Core |
+| Sunny | Customer Support | ☕ Social & Wellness Core |
+| Paige | Product Manager | 🎨 Creative Labs |
+| Ozzy | Security Engineer | ⚙️ Engine Room |
+| Theo | Tutor | 🎧 Focus Pods |
+| 🐶 **Biscuit** | Office dog: trots between his kennel, his bowl and the garden, and visits colleagues on their breaks for a pat | The garden |
 
 Hire your own (name, role, instructions and favourite zone), up to one per desk (24).
+
+**Customize any agent** from their panel (click them in the office or in the team list): pick their **favourite zone** and their **favourite breaks** (coffee, chatting, games, rest, reading, exercise, focus, calls, nature, ideas, music, the office dog). They spend more of their breaks doing what they like, and Max still picks who works on what.
 
 ## 🧠 How it works
 

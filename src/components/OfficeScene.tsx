@@ -31,6 +31,9 @@ import {
   type Home,
   isPresent,
   manager as managerRef,
+  pet as petWalker,
+  PetWalker,
+  setAgentHobbies,
   type ManagerPhase,
   ManagerWalker,
   MAX_DESKS,
@@ -124,7 +127,9 @@ type Action =
   | "lift"
   | "meditate"
   | "game"
-  | "stretch";
+  | "stretch"
+  | "guitar"
+  | "pet";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -164,6 +169,13 @@ const ACCESSORY: Record<string, Accessory> = {
   strategist: "tie",
   innovator: "beret",
   coach: "cap",
+  finance: "glasses",
+  legal: "tie",
+  people: "flower",
+  support: "headphones",
+  product: "beret",
+  security: "beanie",
+  tutor: "glasses",
 };
 
 function Toon({ color }: { color: string }) {
@@ -550,6 +562,14 @@ function Mochi({
     } else if (action === "carry") {
       L.set(-1.35, 0, 0.3);
       R.set(-1.35, 0, -0.3);
+    } else if (action === "guitar") {
+      // left hand on the neck, right hand strumming
+      L.set(-1.2, 0, 0.55);
+      R.set(-0.6 + Math.sin(t * 9) * 0.3, 0, -0.35);
+    } else if (action === "pet") {
+      // reaching down to pat the dog
+      L.set(-0.2, 0, -0.3);
+      R.set(-0.9 + Math.sin(t * 5) * 0.25, 0, 0.15);
     } else if (action === "game") {
       // fingers flying over keyboard and mouse
       L.set(-1.0 + Math.sin(t * 17) * 0.08, 0, 0.14);
@@ -579,6 +599,11 @@ function Mochi({
       head.current.rotation.x = -0.25;
     } else root.current.rotation.x = 0;
     if (action === "game" && !cheering) head.current.rotation.x = 0.12 + Math.sin(t * 9) * 0.03;
+    if (action === "guitar" && !cheering) head.current.rotation.z = Math.sin(t * 2.2) * 0.12;
+    if (action === "pet" && !cheering) {
+      root.current.rotation.x = 0.28;
+      head.current.rotation.x = 0.3;
+    }
     eyes.current.scale.y = (action === "nap" || action === "meditate") && !cheering ? 0.12 : t % 3.7 < 0.13 ? 0.12 : 1;
   });
 
@@ -629,6 +654,18 @@ function Mochi({
             <Ink />
           </mesh>
           <PomPom color="#ffb3d1" />
+          {action === "guitar" && (
+            <group position={[-0.18, -0.12, 0.2]} rotation={[0, 0, 0.9]}>
+              <mesh scale={[1, 1.25, 0.35]}>
+                <sphereGeometry args={[0.13, 12, 10]} />
+                <meshToonMaterial color="#c2410c" />
+              </mesh>
+              <mesh position={[0, 0.3, 0]}>
+                <boxGeometry args={[0.04, 0.38, 0.025]} />
+                <meshToonMaterial color="#451a03" />
+              </mesh>
+            </group>
+          )}
           {(action === "sip" || cup) && (
             <mesh position={[0, -0.22, 0.06]}>
               <cylinderGeometry args={[0.055, 0.045, 0.11, 12]} />
@@ -1344,6 +1381,9 @@ const ACTIVITY_ACTION: Record<Activity, Action> = {
   lift: "lift",
   meditate: "meditate",
   game: "game",
+  guitar: "guitar",
+  piano: "game",
+  pet: "pet",
 };
 
 // ---------- Floating emoji emotes ----------
@@ -1440,6 +1480,8 @@ function AgentAvatarImpl(props: AvatarProps) {
   const [greeting, setGreeting] = useState(false);
   // in the elevator between the floors
   const [riding, setRiding] = useState(false);
+  // Biscuit the dog has come over for a pat
+  const [petted, setPetted] = useState(false);
   // something to do while sitting at the desk with nothing to work on
   const [fidget, setFidget] = useState<Action>("idle");
   useEffect(() => {
@@ -1463,6 +1505,9 @@ function AgentAvatarImpl(props: AvatarProps) {
     const hello = walker.greetT > 0;
     if (hello !== greeting) setGreeting(hello);
     if (walker.hidden !== riding) setRiding(walker.hidden);
+    const dog = petWalker.walker;
+    const pat = !!dog && dog.phase.kind === "visit" && dog.visiting === walker.id;
+    if (pat !== petted) setPetted(pat);
     // every few seconds pick a new little thing to do at the desk
     const slot = Math.floor(clock.elapsedTime / 7 + seed * 0.37);
     const next = FIDGETS[Math.floor(hash(slot * 1.31 + seed) * FIDGETS.length)];
@@ -1481,7 +1526,9 @@ function AgentAvatarImpl(props: AvatarProps) {
   // (while it waits its turn, the agent reads up on it there)
   const workingAway = props.assigned && phase.kind === "spot" && phase.spot === walker.workAt;
   const headingToWork = props.assigned && phase.kind === "walking" && walker.workAt !== null;
-  const action: Action = workingAway
+  const action: Action = petted && phase.kind === "spot"
+    ? "pet"
+    : workingAway
     ? !working
       ? "read"
       : phase.spot.activity === "draw"
@@ -1505,7 +1552,8 @@ function AgentAvatarImpl(props: AvatarProps) {
           : "idle"
         : ACTIVITY_ACTION[phase.spot.activity];
   let say: string | undefined;
-  if (workingAway) say = working ? bubble : translate(props.lang, "bubble.readingUp");
+  if (petted && phase.kind === "spot") say = translate(props.lang, `dog.pat${Math.floor(hash(seed * 1.9) * 3)}` as Key);
+  else if (workingAway) say = working ? bubble : translate(props.lang, "bubble.readingUp");
   else if (headingToWork) say = translate(props.lang, "bubble.toWork");
   else if (seated) say = working ? bubble : undefined;
   else if (phase.kind === "walking")
@@ -1988,6 +2036,109 @@ function Barista({ lang }: { lang: Lang }) {
   );
 }
 
+/** Biscuit, the office corgi: trots around, naps in his bed, and sits by colleagues for a pat. */
+function Dog({ lang }: { lang: Lang }) {
+  const [walker] = useState(() => new PetWalker());
+  const body = useRef<Group>(null);
+  const tail = useRef<Group>(null);
+  const legs = useRef<(Group | null)[]>([]);
+  const torso = useRef<Group>(null);
+  const still = useStill();
+  useEffect(() => {
+    petWalker.walker = walker;
+    return () => {
+      petWalker.walker = null;
+    };
+  }, [walker]);
+  useFrame(({ clock }, dt) => {
+    const g = body.current;
+    if (!g) return;
+    walker.update(dt, !still);
+    g.position.set(walker.x, 0, walker.z);
+    g.rotation.y = walker.yaw;
+    g.visible = getLevel() === 0;
+    const t = clock.elapsedTime;
+    const kind = walker.phase.kind;
+    const walking = kind === "walk" && !still;
+    legs.current.forEach((l, i) => {
+      if (l) l.rotation.x = walking ? Math.sin(t * 14 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI : 0)) * 0.6 : 0;
+    });
+    if (tail.current) tail.current.rotation.y = still ? 0 : Math.sin(t * (kind === "visit" ? 18 : kind === "walk" ? 10 : 3)) * 0.6;
+    if (torso.current) {
+      // lying in the bed, sitting up for a pat, or trotting
+      torso.current.position.y = kind === "rest" ? -0.1 : 0;
+      torso.current.rotation.x = kind === "visit" ? -0.35 : 0;
+    }
+  });
+  const fur = "#e08a3c";
+  return (
+    <group ref={body} position={[walker.x, 0, walker.z]} scale={0.85}>
+      <group ref={torso}>
+        <mesh position={[0, 0.26, 0]} rotation-x={Math.PI / 2} castShadow>
+          <capsuleGeometry args={[0.13, 0.32, 6, 12]} />
+          <meshToonMaterial color={fur} />
+        </mesh>
+        <mesh position={[0, 0.2, 0.05]} rotation-x={Math.PI / 2} scale={[0.85, 1, 0.7]}>
+          <capsuleGeometry args={[0.11, 0.26, 6, 12]} />
+          <meshToonMaterial color="#fff7ed" />
+        </mesh>
+        <group position={[0, 0.42, 0.27]}>
+          <mesh>
+            <sphereGeometry args={[0.13, 16, 12]} />
+            <meshToonMaterial color={fur} />
+          </mesh>
+          <mesh position={[0, -0.03, 0.11]} scale={[1, 0.8, 1.2]}>
+            <sphereGeometry args={[0.07, 12, 10]} />
+            <meshToonMaterial color="#fff7ed" />
+          </mesh>
+          <mesh position={[0, -0.01, 0.19]}>
+            <sphereGeometry args={[0.025, 8, 6]} />
+            <meshBasicMaterial color="#1f2937" />
+          </mesh>
+          {[-0.05, 0.05].map((x) => (
+            <mesh key={x} position={[x, 0.03, 0.115]}>
+              <sphereGeometry args={[0.018, 8, 6]} />
+              <meshBasicMaterial color="#1f2937" />
+            </mesh>
+          ))}
+          {[-0.08, 0.08].map((x) => (
+            <mesh key={x} position={[x, 0.14, -0.01]} rotation-z={x > 0 ? -0.25 : 0.25}>
+              <coneGeometry args={[0.05, 0.12, 6]} />
+              <meshToonMaterial color={fur} />
+            </mesh>
+          ))}
+        </group>
+        <group ref={tail} position={[0, 0.3, -0.27]}>
+          <mesh position={[0, 0.04, -0.05]} rotation-x={-0.8}>
+            <capsuleGeometry args={[0.03, 0.08, 4, 8]} />
+            <meshToonMaterial color={fur} />
+          </mesh>
+        </group>
+      </group>
+      {[
+        [-0.08, 0.15],
+        [0.08, 0.15],
+        [-0.08, -0.15],
+        [0.08, -0.15],
+      ].map(([x, z], i) => (
+        <group
+          key={i}
+          position={[x, 0.17, z]}
+          ref={(g) => {
+            legs.current[i] = g;
+          }}
+        >
+          <mesh position={[0, -0.08, 0]}>
+            <cylinderGeometry args={[0.035, 0.035, 0.17, 8]} />
+            <meshToonMaterial color="#fff7ed" />
+          </mesh>
+        </group>
+      ))}
+      <Label name={translate(lang, "dog.label")} position={[0, 0.85, 0]} scale={LABEL_SCALE * 0.8} />
+    </group>
+  );
+}
+
 /** Cycles the RGB lighting of every custom PC in the office. */
 function RgbDriver() {
   const still = useStill();
@@ -2215,6 +2366,7 @@ export default function OfficeScene({
   }, [custom.activities, custom.items, custom.breaks]);
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
   useEffect(() => setAgentZones(Object.fromEntries(agents.map((a) => [a.id, a.zone]))), [agents]);
+  useEffect(() => setAgentHobbies(Object.fromEntries(agents.map((a) => [a.id, a.hobbies]))), [agents]);
   useEffect(() => setFollow(selectedId ?? null), [selectedId]);
   const roofView = useCameraFocus().level === 1;
   // drop the resolution a little on slow devices so the animation stays smooth
@@ -2247,6 +2399,7 @@ export default function OfficeScene({
       <Presenter state={manager} board={board} lang={lang} selected={selectedId === "max"} onSelect={onSelectAgent} />
       <PingPongBall />
       <Barista lang={lang} />
+      <Dog lang={lang} />
       <RgbDriver />
       <TownHallScreen lang={lang} />
       {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {

@@ -669,7 +669,12 @@ export function Office() {
                       : "mt-3 flex justify-center sm:absolute sm:bottom-2 sm:right-2 sm:mt-0 sm:max-h-[calc(100%-6rem)] sm:justify-end"
                   }
                 >
-                  <AgentPanel agent={focusAgent} tasks={tasks} onClose={() => setFocusId(null)} />
+                  <AgentPanel
+                    agent={focusAgent}
+                    tasks={tasks}
+                    onClose={() => setFocusId(null)}
+                    onChange={(patch) => setAgents((all) => all.map((x) => (x.id === focusAgent.id ? { ...x, ...patch } : x)))}
+                  />
                 </div>
               )}
             </div>

@@ -1384,6 +1384,37 @@ function GamingRig({ x, spot, seed, accent }: { x: number; spot: string; seed: n
   );
 }
 
+/** Biscuit's things: a kennel and mat in the garden, a water bowl in the kitchen, and his ball. */
+function DogThings() {
+  return (
+    <group>
+      <group position={[16.55, 0, 10.55]}>
+        <B s={[0.62, 0.42, 0.58]} p={[0, 0.21, 0]} c="#b45309" />
+        <mesh position={[0, 0.52, 0]} rotation-z={Math.PI / 4} scale={[1, 1, 1.05]}>
+          <boxGeometry args={[0.46, 0.46, 0.6]} />
+          <meshStandardMaterial color="#7c2d12" />
+        </mesh>
+        <mesh position={[0, 0.2, 0.295]}>
+          <circleGeometry args={[0.14, 16, 0, Math.PI]} />
+          <meshStandardMaterial color="#1c1917" />
+        </mesh>
+      </group>
+      <mesh position={[16.6, 0.02, 11.3]}>
+        <cylinderGeometry args={[0.36, 0.38, 0.04, 20]} />
+        <meshStandardMaterial color="#fde68a" roughness={1} />
+      </mesh>
+      <mesh position={[2.4, 0.04, -3.15]}>
+        <cylinderGeometry args={[0.12, 0.1, 0.08, 16]} />
+        <meshStandardMaterial color="#3b82f6" />
+      </mesh>
+      <mesh position={[18.9, 0.07, 12.9]}>
+        <sphereGeometry args={[0.07, 12, 10]} />
+        <meshStandardMaterial color="#a3e635" />
+      </mesh>
+    </group>
+  );
+}
+
 function GameRoom() {
   const tiles = useDisposable(() => tileTexture("#2a2340", "#3b3157", [4, 5]), "game-floor");
   const neon = useDisposable(neonTexture, "neon");
@@ -2656,6 +2687,120 @@ function LivePinball({ glow }: { glow: boolean }) {
   );
 }
 
+/** A sunset painting for the easel (revealed brush stroke by brush stroke while someone paints). */
+function paintingTexture() {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 192;
+  const g = c.getContext("2d")!;
+  const sky = g.createLinearGradient(0, 0, 0, 130);
+  sky.addColorStop(0, "#7c3aed");
+  sky.addColorStop(0.6, "#f97316");
+  sky.addColorStop(1, "#fde047");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 256, 130);
+  g.fillStyle = "#fef08a";
+  g.beginPath();
+  g.arc(170, 120, 28, Math.PI, 0);
+  g.fill();
+  g.fillStyle = "#1e3a8a";
+  g.fillRect(0, 128, 256, 64);
+  g.fillStyle = "#14532d";
+  g.beginPath();
+  g.moveTo(0, 140);
+  g.quadraticCurveTo(60, 95, 120, 135);
+  g.quadraticCurveTo(170, 160, 256, 120);
+  g.lineTo(256, 192);
+  g.lineTo(0, 192);
+  g.fill();
+  return finish(c, [1, 1]);
+}
+
+/** Easel with a canvas that fills with a painting while someone stands at it. */
+function Easel() {
+  const tex = useDisposable(paintingTexture, "easel-painting");
+  const wipe = useRef<Group>(null);
+  const mat = useRef<MeshBasicMaterial>(null);
+  const progress = useRef(0.2);
+  useFrame((_, dt) => {
+    const g = wipe.current;
+    const m = mat.current;
+    if (!g || !m?.map) return;
+    const painting = isPresent("easel");
+    progress.current = painting ? Math.min(1, progress.current + dt / 20) : progress.current;
+    if (progress.current >= 1 && !painting) progress.current = 0.05;
+    const k = Math.max(0.001, progress.current);
+    g.scale.x = k;
+    m.map.repeat.x = k;
+  });
+  return (
+    <group position={[14.6, 0, 19.3]}>
+      {[-0.22, 0.22].map((x) => (
+        <mesh key={x} position={[x, 0.8, 0]} rotation-z={x > 0 ? -0.12 : 0.12}>
+          <boxGeometry args={[0.04, 1.6, 0.04]} />
+          <meshStandardMaterial color="#a16207" />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.75, -0.25]} rotation-x={0.35}>
+        <boxGeometry args={[0.04, 1.5, 0.04]} />
+        <meshStandardMaterial color="#a16207" />
+      </mesh>
+      <B s={[0.7, 0.03, 0.08]} p={[0, 0.9, 0.04]} c="#92400e" />
+      <B s={[0.66, 0.5, 0.03]} p={[0, 1.18, 0.06]} c="#f8fafc" />
+      <group ref={wipe} position={[-0.31, 1.18, 0.078]} userData={DYNAMIC}>
+        <mesh position={[0.31, 0, 0]}>
+          <planeGeometry args={[0.62, 0.46]} />
+          <meshBasicMaterial ref={mat} map={tex} toneMapped={false} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/** Upright piano in the labs (keys towards the room), with its bench. */
+function Piano() {
+  return (
+    <group position={[15.6, 0, 20.0]} rotation-y={Math.PI / 2}>
+      <B s={[0.4, 1.2, 1.2]} p={[0, 0.6, 0]} c="#1c1917" rough={0.25} metal={0.2} />
+      <B s={[0.3, 0.05, 1.12]} p={[-0.3, 0.76, 0]} c="#1c1917" rough={0.25} />
+      <B s={[0.12, 0.03, 1.08]} p={[-0.32, 0.79, 0]} c="#f8fafc" />
+      {Array.from({ length: 9 }, (_, i) => (
+        <B key={i} s={[0.07, 0.035, 0.03]} p={[-0.29, 0.81, -0.48 + i * 0.12]} c="#111827" />
+      ))}
+      <B s={[0.38, 0.06, 0.7]} p={[-0.65, 0.45, 0]} c="#1c1917" />
+      {[-0.3, 0.3].map((z) => (
+        <B key={z} s={[0.05, 0.42, 0.05]} p={[-0.65, 0.21, z]} c="#1c1917" />
+      ))}
+    </group>
+  );
+}
+
+/** Stool and a guitar on its stand. */
+function MusicCorner() {
+  return (
+    <group>
+      <group position={[14.3, 0, 21.4]}>
+        <mesh position={[0, 0.43, 0]}>
+          <cylinderGeometry args={[0.18, 0.18, 0.05, 16]} />
+          <meshStandardMaterial color="#b45309" />
+        </mesh>
+        <mesh position={[0, 0.21, 0]}>
+          <cylinderGeometry args={[0.03, 0.05, 0.42, 8]} />
+          <meshStandardMaterial color="#374151" />
+        </mesh>
+      </group>
+      <group position={[14.75, 0, 21.75]} rotation-y={-0.6}>
+        <mesh position={[0, 0.35, 0]} scale={[1, 1.3, 0.35]}>
+          <sphereGeometry args={[0.17, 14, 10]} />
+          <meshStandardMaterial color="#c2410c" />
+        </mesh>
+        <B s={[0.05, 0.55, 0.03]} p={[0, 0.8, 0]} c="#451a03" />
+        <B s={[0.25, 0.04, 0.2]} p={[0, 0.02, 0]} c="#111827" />
+      </group>
+    </group>
+  );
+}
+
 /** Zone 3: digital whiteboards, a touch table, a 3D printer, pinball and an arcade cabinet. */
 function CreativeLabs({ decor }: { decor: FloorDecor }) {
   const { door, z1, pods, labs } = SOUTH;
@@ -2724,7 +2869,10 @@ function CreativeLabs({ decor }: { decor: FloorDecor }) {
         <Arcade p={[0, 0, 0]} hue={0.55} />
       </group>
       {decor.items.plants && <PalmPlant p={[16.5, 0, 23.6]} s={0.9} />}
-      {decor.items.lamps && <FloorLamp p={[16.5, 0, 20.4]} on={glow} />}
+      {decor.items.lamps && <FloorLamp p={[16.5, 0, 19.3]} on={glow} />}
+      <Easel />
+      <Piano />
+      <MusicCorner />
     </group>
   );
 }
@@ -2962,6 +3110,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[5.6, CORRIDOR.z1]} b={[13.4, CORRIDOR.z1]} h={1.0} />
       <Wall a={[14.4, CORRIDOR.z1]} b={[EAST.x0, CORRIDOR.z1]} h={1.0} />
       <EastWing decor={decor} />
+      <DogThings />
       <SouthWing decor={decor} sky={sky} />
     </StaticMerge>
   );
