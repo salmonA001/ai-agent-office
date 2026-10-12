@@ -24,7 +24,19 @@ function emit(next: CameraFocus) {
 }
 
 export function focusZone(id: ZoneId | "all") {
+  follow = null;
   emit({ id, n: focus.n + 1 });
+}
+
+/** The agent the camera keeps in view (the one clicked), or null. Read every frame, so no re-render. */
+let follow: string | null = null;
+
+export function setFollow(id: string | null) {
+  follow = id;
+}
+
+export function getFollow() {
+  return follow;
 }
 
 /** The user took over the camera, so no zone is selected any more. */

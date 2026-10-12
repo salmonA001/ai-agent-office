@@ -3,6 +3,7 @@
 import {
   ArrowCounterClockwiseIcon,
   BarbellIcon,
+  BrainIcon,
   CheckIcon,
   CoffeeIcon,
   CopyIcon,
@@ -10,15 +11,16 @@ import {
   CornersOutIcon,
   CpuIcon,
   FastForwardIcon,
+  FileTextIcon,
   GearIcon,
   HeadphonesIcon,
   type Icon,
+  ImageIcon,
   ListIcon,
   MapTrifoldIcon,
   MoonIcon,
   PaintBrushIcon,
   PaletteIcon,
-  PaperPlaneRightIcon,
   PlusIcon,
   PresentationChartIcon,
   SunHorizonIcon,
@@ -30,14 +32,25 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { type Agent, DEFAULT_AGENTS, withDefaultAgents } from "@/lib/agents";
+import { type Agent, DEFAULT_AGENTS, MAX_AGENT, withDefaultAgents } from "@/lib/agents";
 import { clockText, phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { useOfficeCustom } from "@/lib/office-custom";
-import { type EngineState, getAiSettings, getEngineState, MODELS, subscribeEngine, useAiSettings, wantedTier, webGpuSupported } from "@/lib/browser-ai";
+import {
+  type EngineState,
+  getAiSettings,
+  getEngineState,
+  MODELS,
+  modelInfo,
+  subscribeEngine,
+  useAiSettings,
+  wantedTier,
+  webGpuSupported,
+} from "@/lib/browser-ai";
 import { type Key, phrase, useI18n } from "@/lib/i18n";
 import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
-import { runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { type Attachment, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { TaskComposer } from "./TaskComposer";
 import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
 import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
 import { MAX_DESKS } from "./office-nav";
@@ -291,7 +304,6 @@ export function Office() {
   const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState("");
   const [showHire, setShowHire] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -332,11 +344,13 @@ export function Office() {
   }, []);
 
   const start = useCallback(
-    (text: string) => {
+    (text: string, extra: { attachments?: Attachment[]; images?: Record<string, string>; think?: boolean } = {}) => {
       const team = agents.slice(0, MAX_DESKS);
       const task: Task = {
         id: crypto.randomUUID(),
         prompt: text,
+        ...(extra.attachments?.length ? { attachments: extra.attachments } : {}),
+        mode: extra.think ? "think" : "fast",
         createdAt: Date.now(),
         status: "planning",
         subtasks: [],
@@ -349,7 +363,7 @@ export function Office() {
       setSelectedId(task.id);
       setSideTab("progress");
 
-      runTask(task, team, controller.signal, (fn) => updateTask(task.id, fn), lang, { review: getAiSettings().review })
+      runTask(task, team, controller.signal, (fn) => updateTask(task.id, fn), lang, { review: getAiSettings().review, images: extra.images })
         .catch((err: Error) => {
           if (controller.signal.aborted) {
             updateTask(task.id, (t) => ({ ...t, status: "cancelled" }));
@@ -362,12 +376,6 @@ export function Office() {
     [agents, updateTask, lang],
   );
 
-  const submit = () => {
-    const text = prompt.trim();
-    if (text.length < 3) return;
-    start(text);
-    setPrompt("");
-  };
 
   const cancel = (id: string) => controllers.current.get(id)?.abort();
 
@@ -394,7 +402,7 @@ export function Office() {
   }, []);
 
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
-  const focusAgent = agents.find((a) => a.id === focusId) ?? null;
+  const focusAgent = focusId === "max" ? MAX_AGENT : (agents.find((a) => a.id === focusId) ?? null);
 
   // game layer: XP for finished work, levels shown on the 3D name tags
   const game = useGame();
@@ -433,7 +441,11 @@ export function Office() {
       // Newer tasks win ties; busier states win over finished ones.
       if (mode && SCREEN_RANK[mode] >= SCREEN_RANK[desk.screen.mode]) {
         desk.screen =
-          mode === "working" ? { mode, title: s.title, text: s.output.slice(-800), len: s.output.length } : { mode, title: s.title };
+          mode === "working"
+            ? s.output || !s.thinking
+              ? { mode, title: s.title, text: s.output.slice(-800), len: s.output.length }
+              : { mode, title: s.title, text: `… ${s.thinking.slice(-700)}`, len: s.thinking.length }
+            : { mode, title: s.title };
       }
     }
   }
@@ -687,45 +699,16 @@ export function Office() {
 
           <div className="grid flex-1 gap-5 lg:grid-cols-[340px_1fr]">
             <div className="flex flex-col gap-5">
-              <form
-                className="glass enter flex flex-col gap-2 rounded-2xl p-4"
-                style={{ ["--i" as string]: 1 }}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  submit();
-                }}
-              >
-                <label htmlFor="task" className="font-semibold">
-                  {t("composer.title")}
-                </label>
-                <textarea
-                  id="task"
-                  ref={composer}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                  rows={5}
-                  maxLength={4000}
-                  placeholder={t("composer.placeholder")}
-                  className="resize-y rounded-lg border border-line bg-well p-3 text-sm text-ink transition-colors placeholder:text-muted/80 focus:border-accent/60"
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted">{t("composer.hint")}</span>
-                  <button
-                    type="submit"
-                    disabled={prompt.trim().length < 3}
-                    className="press inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
-                  >
-                    <PaperPlaneRightIcon size={16} weight="bold" aria-hidden />
-                    {t("composer.submit")}
-                  </button>
-                </div>
-              </form>
+              <TaskComposer
+                composerRef={composer}
+                onSubmit={({ text, files, think }) =>
+                  start(text, {
+                    attachments: files.map((f) => ({ name: f.name, kind: f.kind, ...(f.text ? { text: f.text } : {}) })),
+                    images: Object.fromEntries(files.filter((f) => f.dataUrl).map((f) => [f.name, f.dataUrl!])),
+                    think,
+                  })
+                }
+              />
 
               <EventsPanel />
             </div>
@@ -738,7 +721,7 @@ export function Office() {
                   task={selected}
                   agents={agents}
                   onCancel={() => cancel(selected.id)}
-                  onRetry={() => start(selected.prompt)}
+                  onRetry={() => start(selected.prompt, { attachments: selected.attachments, think: selected.mode === "think" })}
                   onDelete={() => remove(selected.id)}
                 />
               ) : (
@@ -812,6 +795,22 @@ function TaskView({
             )}
           </div>
         </div>
+        {(task.mode === "think" || task.attachments?.length) && (
+          <ul className="mt-2 flex flex-wrap gap-1.5 text-xs" aria-label={t("attach.list")}>
+            {task.mode === "think" && (
+              <li className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 font-semibold text-accent">
+                <BrainIcon size={13} weight="fill" aria-hidden />
+                {t("mode.think")}
+              </li>
+            )}
+            {task.attachments?.map((a) => (
+              <li key={a.name} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line px-2.5 py-1 text-muted" title={a.text?.slice(0, 300)}>
+                {a.kind === "image" ? <ImageIcon size={13} weight="duotone" aria-hidden /> : <FileTextIcon size={13} weight="duotone" aria-hidden />}
+                <span className="max-w-48 truncate">{a.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {task.error && (
           <p role="alert" className="mt-2 text-sm text-error">
             {task.error}
@@ -899,6 +898,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [zone, setZone] = useState<ZoneId>("engine");
   const valid = name.trim() && role.trim() && instructions.trim();
   const input = "min-h-10 rounded-lg border border-line bg-surface/40 px-3 text-ink transition-colors focus:border-accent/60";
 
@@ -913,6 +913,7 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           name: name.trim(),
           role: role.trim(),
           instructions: instructions.trim(),
+          zone,
           custom: true,
         });
       }}
@@ -943,6 +944,30 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
           className="rounded-lg border border-line bg-surface/40 p-3 text-ink transition-colors focus:border-accent/60"
         />
       </label>
+      <fieldset className="flex flex-col gap-1 text-sm sm:col-span-2">
+        <legend className="mb-1">{t("hire.zone")}</legend>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("hire.zone")}>
+          {ZONE_IDS.map((id) => {
+            const I = ZONE_ICON[id];
+            const on = zone === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setZone(id)}
+                className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors duration-200 ${
+                  on ? "border-accent bg-accent/15 text-ink" : "border-line text-muted hover:text-ink"
+                }`}
+              >
+                <I size={15} weight={on ? "fill" : "duotone"} aria-hidden className={on ? "text-accent" : ""} />
+                {t(`zone.${id}` as Key)}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
       <button
         type="submit"
         disabled={!valid}
@@ -961,7 +986,7 @@ function ModelName() {
   const ai = useAiSettings();
   const state = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
   const tier = state.status === "ready" || state.status === "loading" ? state.tier : ai.model === "auto" ? null : ai.model;
-  return <>{tier ? t("engine.model", { name: MODELS[tier].name }) : t("engine.browser")}</>;
+  return <>{tier ? t("engine.model", { name: modelInfo(tier).name }) : t("engine.browser")}</>;
 }
 
 const noop = () => () => {};
@@ -972,7 +997,7 @@ function EngineBanner({ state }: { state: EngineState }) {
   const mounted = useSyncExternalStore(noop, () => true, () => false);
   if (!mounted) return null;
   if (state.status === "loading") {
-    const m = MODELS[state.tier];
+    const m = modelInfo(state.tier);
     return (
       <div className="glass enter-drop rounded-xl border-accent p-4" role="status">
         <p className="text-sm font-semibold">{t("engineBanner.loading", { name: m.name, size: m.download })}</p>

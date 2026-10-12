@@ -1,10 +1,11 @@
 "use client";
 
-import { XIcon } from "@phosphor-icons/react";
+import { MapPinIcon, XIcon } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/agents";
 import { agentInstructions, type Key, phrase, renderMsg, useI18n } from "@/lib/i18n";
 import type { Task, TaskEvent } from "@/lib/run-task";
 import { useAgentActivity } from "./agent-activity";
+import { focusZone, type ZoneId } from "./camera-focus";
 import { XpBadge } from "./OfficeGame";
 
 const EVENT_ICON: Record<TaskEvent["kind"], string> = {
@@ -80,6 +81,27 @@ export function initials(name: string) {
 }
 
 /** Who an agent is, what they're doing right now, and why they got their current job. */
+/** The agent's favourite zone, with a button that flies the camera there. */
+function ZoneLine({ zone }: { zone: ZoneId }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-accent">{t("panel.zone")}</p>
+        <p className="text-ink/90">{t(`zone.${zone}` as Key)}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => focusZone(zone)}
+        className="press inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full border border-line px-3 text-xs font-semibold text-accent hover:bg-accent/10"
+      >
+        <MapPinIcon size={14} weight="fill" aria-hidden />
+        {t("panel.showZone")}
+      </button>
+    </div>
+  );
+}
+
 export function AgentPanel({ agent, tasks, onClose }: { agent: Agent; tasks: Task[]; onClose: () => void }) {
   const activity = useAgentActivity(agent.id);
   const { lang, t } = useI18n();
@@ -130,7 +152,8 @@ export function AgentPanel({ agent, tasks, onClose }: { agent: Agent; tasks: Tas
         <p className="text-xs font-semibold text-accent">{t("panel.goodAt")}</p>
         <p className="text-xs text-ink/80">{agentInstructions(lang, agent.id, agent.instructions)}</p>
       </div>
-      {latest ? (
+      {agent.zone && <ZoneLine zone={agent.zone} />}
+      {agent.id === "max" ? null : latest ? (
         <div className="flex flex-col gap-1">
           <p className="text-xs font-semibold text-accent">{t("panel.latest", { status: t(statusKey[latest.sub.status]) })}</p>
           <p className="font-medium">&ldquo;{latest.sub.title}&rdquo;</p>

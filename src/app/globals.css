@@ -329,14 +329,32 @@
   box-shadow: 0 0 24px rgb(var(--glow) / 0.35);
 }
 
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+html[data-motion="reduced"] {
+  scroll-behavior: auto;
+}
+
 body {
   color: var(--ink);
+  background: var(--surface);
+}
+
+/* the glow gradients sit on their own fixed layer, so scrolling never repaints them */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
   background:
     radial-gradient(60rem 40rem at 10% -10%, rgb(var(--bg-1) / 0.22), transparent 60%),
     radial-gradient(50rem 35rem at 100% 25%, rgb(var(--bg-2) / 0.1), transparent 60%),
-    radial-gradient(60rem 40rem at 50% 115%, rgb(var(--bg-3) / 0.35), transparent 60%),
-    var(--surface);
-  background-attachment: fixed;
+    radial-gradient(60rem 40rem at 50% 115%, rgb(var(--bg-3) / 0.35), transparent 60%);
 }
 
 /* faint grid behind everything */

@@ -1,6 +1,6 @@
 "use client";
 
-import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "@react-three/drei";
+import { Billboard, OrbitControls, Outlines, PerformanceMonitor, RoundedBox, Sparkles, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasTexture, type Group, type Mesh, Object3D, type Sprite, type SpriteMaterial, SRGBColorSpace, Vector3 } from "three";
@@ -21,7 +21,7 @@ import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { releaseFocus, useCameraFocus, ZONE_LOOK } from "./camera-focus";
+import { getFollow, releaseFocus, setFollow, useCameraFocus, ZONE_LOOK } from "./camera-focus";
 import { currentEventKind, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
 import {
   type Activity,
@@ -29,13 +29,18 @@ import {
   deskSlot,
   type Home,
   isPresent,
+  manager as managerRef,
+  type ManagerPhase,
+  ManagerWalker,
   MAX_DESKS,
   registerWalker,
+  setAgentZones,
   setBreakRules,
   setOfficeHour,
   SPOT_CATS,
   type WalkPhase,
   Wanderer,
+  walkers,
 } from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, hash, useDisposable } from "./scene-utils";
@@ -149,6 +154,9 @@ const ACCESSORY: Record<string, Accessory> = {
   data: "glasses",
   qa: "headphones",
   translator: "bow",
+  strategist: "tie",
+  innovator: "beret",
+  coach: "cap",
 };
 
 function Toon({ color }: { color: string }) {
@@ -1411,7 +1419,9 @@ function AgentAvatarImpl(props: AvatarProps) {
   const holding = walker.holding;
   const seated = phase.kind === "seated";
   const facing = seated && (working || attentive) ? "back" : "front";
-  const chatAlone = phase.kind === "spot" && phase.spot.activity === "chat" && !partnerHere;
+  // two-person spots: chat or play only once the partner has arrived
+  const alone = phase.kind === "spot" && !!phase.spot.pair && !partnerHere;
+  const chatAlone = alone && phase.kind === "spot" && phase.spot.activity === "chat";
   const action: Action = seated
     ? working
       ? "write"
@@ -1420,8 +1430,10 @@ function AgentAvatarImpl(props: AvatarProps) {
       ? holding
         ? "carry"
         : "walk"
-      : chatAlone
-        ? "sip"
+      : alone
+        ? chatAlone
+          ? "sip"
+          : "idle"
         : ACTIVITY_ACTION[phase.spot.activity];
   const say = seated
     ? working
@@ -1433,8 +1445,8 @@ function AgentAvatarImpl(props: AvatarProps) {
         : holding
           ? translate(props.lang, "bubble.parcel")
           : undefined
-      : chatAlone
-        ? translate(props.lang, "bubble.saving")
+      : alone
+        ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner")
         : phrase(props.lang, phase.spot.say);
 
   const status = describe(props.lang, phase, working, attentive, bubble);
@@ -1507,7 +1519,7 @@ function PingPongBall() {
   useFrame(({ clock }) => {
     const b = ball.current;
     if (!b) return;
-    const playing = isPresent("pong-a") || isPresent("pong-b");
+    const playing = isPresent("pong-a") && isPresent("pong-b");
     if (!playing) {
       b.position.set(14.1, 0.8, 7.2);
       return;
@@ -1530,52 +1542,170 @@ const IDLE_DESK: DeskState = { working: [], screen: { mode: "idle" } };
 const MANAGER_LOOK: Look = { species: "chick", color: "#fff1a6", inner: "#ffb347" };
 
 /** Max presents at the projector in the meeting room. */
-function Presenter({ state, board, lang }: { state: ManagerState; board: BoardLine[]; lang: Lang }) {
-  const label = translate(lang, `max.${state}` as Key);
+function Presenter({
+  state,
+  board,
+  lang,
+  selected,
+  onSelect,
+}: {
+  state: ManagerState;
+  board: BoardLine[];
+  lang: Lang;
+  selected: boolean;
+  onSelect?: (id: string) => void;
+}) {
   const done = board.filter((l) => l.status === "done").length;
+  const still = useStill();
+  const [walker] = useState(() => new ManagerWalker(8));
+  const [phase, setPhase] = useState<ManagerPhase>(walker.phase);
+  useEffect(() => {
+    managerRef.walker = walker;
+    return () => {
+      managerRef.walker = null;
+    };
+  }, [walker]);
+  const onDuty = state !== "idle";
+  const live = useRef({ onDuty, still });
+  useEffect(() => {
+    live.current = { onDuty, still };
+  });
+  const atBase = phase.kind === "base";
+  const action: Action = !atBase
+    ? phase.kind === "walking"
+      ? phase.rushing
+        ? "run"
+        : "walk"
+      : ACTIVITY_ACTION[phase.spot.activity]
+    : state === "planning"
+      ? "chalk"
+      : state === "merging"
+        ? "wave"
+        : state === "watching"
+          ? "walk"
+          : "idle";
+  const bubble = !atBase
+    ? phase.kind === "walking"
+      ? phase.rushing
+        ? translate(lang, "bubble.onMyWay")
+        : undefined
+      : phrase(lang, phase.spot.say)
+    : translate(lang, `max.${state}` as Key);
+  const status = !atBase
+    ? phase.kind === "walking"
+      ? translate(lang, phase.rushing ? "act.maxBack" : "act.maxRounds")
+      : `${phrase(lang, phase.spot.say)} ${phrase(lang, phase.spot.where)}`
+    : translate(lang, `max.${state}` as Key);
+  useEffect(() => {
+    setAgentActivity("max", status);
+  }, [status]);
   return (
     <group>
       <group position={[MANAGER_TV.x, -0.03, MANAGER_TV.z]} rotation-y={Math.PI / 2}>
         <ManagerMonitor state={state} done={done} total={board.length} lang={lang} />
       </group>
-      <Pacer pacing={state === "watching"}>
+      <Pacer
+        pacing={state === "watching"}
+        walker={walker}
+        live={live}
+        onPhase={setPhase}
+        selected={selected}
+        onSelect={onSelect}
+      >
         <Mochi
           look={MANAGER_LOOK}
           accessory="tie"
-          facing={state === "planning" ? "back" : "front"}
-          action={state === "planning" ? "chalk" : state === "merging" ? "wave" : state === "watching" ? "walk" : "idle"}
+          facing={atBase && state === "planning" ? "back" : "front"}
+          action={action}
           seed={42}
           scale={1.7}
         />
-        <ThinkingOrbs active={state === "planning" || state === "merging"} />
+        <ThinkingOrbs active={atBase && (state === "planning" || state === "merging")} />
         <Emote
-          pool={state === "planning" ? ["📋", "🤔", "💡"] : state === "merging" ? ["🧩", "✍️"] : state === "watching" ? ["👀", "👍"] : ["☕", "🙂"]}
+          pool={
+            !atBase
+              ? phase.kind === "visit"
+                ? phase.spot.emoji
+                : ["🚶", "🙂"]
+              : state === "planning"
+                ? ["📋", "🤔", "💡"]
+                : state === "merging"
+                  ? ["🧩", "✍️"]
+                  : state === "watching"
+                    ? ["👀", "👍"]
+                    : ["☕", "🙂"]
+          }
           seed={9}
           y={1.9}
         />
-        <Label name={translate(lang, "max.label")} bubble={label} position={[0, 2.75, 0]} scale={LABEL_SCALE * 1.3} />
+        <Label name={translate(lang, "max.label")} bubble={bubble} position={[0, 2.75, 0]} scale={LABEL_SCALE * 1.3} />
       </Pacer>
     </group>
   );
 }
 
-/** Walks Max back and forth in front of the projector while `pacing`, otherwise stands at his spot. */
-function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNode }) {
+/**
+ * Moves Max: on his rounds he follows the manager walker; at the projector he paces while `pacing`,
+ * otherwise stands at his spot.
+ */
+function Pacer({
+  pacing,
+  walker,
+  live,
+  onPhase,
+  selected,
+  onSelect,
+  children,
+}: {
+  pacing: boolean;
+  walker: ManagerWalker;
+  live: React.RefObject<{ onDuty: boolean; still: boolean }>;
+  onPhase: (p: ManagerPhase) => void;
+  selected: boolean;
+  onSelect?: (id: string) => void;
+  children: React.ReactNode;
+}) {
   const ref = useRef<Group>(null);
-  const still = useStill();
   useFrame(({ clock }, delta) => {
     const g = ref.current;
     if (!g) return;
+    const { onDuty, still } = live.current;
+    if (walker.update(delta, onDuty, !still)) onPhase(walker.phase);
+    if (!walker.atBase()) {
+      g.position.set(walker.x, 0, walker.z);
+      g.rotation.y = walker.yaw;
+      return;
+    }
     const t = clock.elapsedTime * 0.45;
     const targetX = pacing && !still ? PRESENTER.x - 0.9 + Math.sin(t) * 0.9 : PRESENTER.x;
-    const dx = targetX - g.position.x;
-    g.position.x += dx * Math.min(1, delta * 4);
+    g.position.x += (targetX - g.position.x) * Math.min(1, delta * 4);
+    g.position.z = PRESENTER.z;
     const yaw = pacing && !still ? (Math.cos(t) > 0 ? Math.PI / 2 : -Math.PI / 2) : 0;
     const diff = Math.atan2(Math.sin(yaw - g.rotation.y), Math.cos(yaw - g.rotation.y));
     g.rotation.y += diff * Math.min(1, delta * 6);
   });
   return (
-    <group ref={ref} position={[PRESENTER.x, 0, PRESENTER.z]}>
+    <group
+      ref={ref}
+      position={[PRESENTER.x, 0, PRESENTER.z]}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect?.("max");
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        document.body.style.cursor = "";
+      }}
+    >
+      {selected && (
+        <mesh rotation-x={-Math.PI / 2} position={[0, 0.03, 0]}>
+          <ringGeometry args={[0.6, 0.72, 40]} />
+          <meshBasicMaterial color="#34d399" toneMapped={false} />
+        </mesh>
+      )}
       {children}
     </group>
   );
@@ -1780,6 +1910,9 @@ function CameraFly() {
   const focus = useCameraFocus();
   const still = useStill();
   const goal = useRef<{ target: Vector3; zoom: number } | null>(null);
+  const followed = useRef<string | null>(null);
+  const followZoom = useRef<number | null>(null);
+  const [spot] = useState(() => new Vector3());
   useEffect(() => {
     if (!focus.n || focus.id === null) return;
     const look = focus.id === "all" ? null : ZONE_LOOK[focus.id];
@@ -1792,18 +1925,45 @@ function CameraFly() {
     const controls = get().controls as unknown as { addEventListener(e: string, f: () => void): void; removeEventListener(e: string, f: () => void): void } | null;
     if (!controls) return;
     const stop = () => {
+      // dragging or zooming takes over from a zone flight; following an agent carries on
       goal.current = null;
+      followZoom.current = null;
       releaseFocus();
     };
     controls.addEventListener("start", stop);
     return () => controls.removeEventListener("start", stop);
   }, [get, hasControls]);
   useFrame((_, delta) => {
-    const g = goal.current;
-    if (!g) return;
     const { camera, controls } = get();
     const orbit = controls as unknown as { target: Vector3; update(): void } | null;
     if (!orbit) return;
+    const id = getFollow();
+    if (id !== followed.current) {
+      followed.current = id;
+      if (id) {
+        goal.current = null;
+        followZoom.current = Math.max(camera.zoom, fitZoom * 2.6);
+      }
+    }
+    if (id) {
+      const w = id === "max" ? managerRef.walker : walkers.get(id);
+      if (!w) return;
+      const off = w instanceof Wanderer ? [w.offX, w.offZ] : [0, 0];
+      const k = still ? 1 : 1 - Math.exp(-delta * 3);
+      const offset = camera.position.clone().sub(orbit.target);
+      orbit.target.lerp(spot.set(w.x + off[0], TARGET[1], w.z + off[1]), k);
+      camera.position.copy(orbit.target).add(offset);
+      const z = followZoom.current;
+      if (z !== null) {
+        camera.zoom += (z - camera.zoom) * k;
+        camera.updateProjectionMatrix();
+        if (Math.abs(camera.zoom - z) < z * 0.002) followZoom.current = null;
+      }
+      orbit.update();
+      return;
+    }
+    const g = goal.current;
+    if (!g) return;
     const k = still ? 1 : 1 - Math.exp(-delta * 4);
     const offset = camera.position.clone().sub(orbit.target);
     orbit.target.lerp(g.target, k);
@@ -1905,6 +2065,10 @@ export default function OfficeScene({
     });
   }, [custom.activities, custom.items, custom.breaks]);
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
+  useEffect(() => setAgentZones(Object.fromEntries(agents.map((a) => [a.id, a.zone]))), [agents]);
+  useEffect(() => setFollow(selectedId ?? null), [selectedId]);
+  // drop the resolution a little on slow devices so the animation stays smooth
+  const [dpr, setDpr] = useState(1.5);
 
   const still = useStill();
   const seated = agents.slice(0, MAX_DESKS);
@@ -1914,11 +2078,12 @@ export default function OfficeScene({
     <Canvas
       shadows
       orthographic
-      dpr={[1, 1.5]}
+      dpr={dpr}
       gl={{ powerPreference: "high-performance", alpha: true }}
       camera={{ position: [TARGET[0] + 13, 17, TARGET[2] + 15.9], zoom: 20, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
+      <PerformanceMonitor onDecline={() => setDpr(1)} onIncline={() => setDpr(1.5)} flipflops={3} onFallback={() => setDpr(1)} />
       <Lights phase={phase} />
       <OfficeFloor decor={decor} />
       <ZoneSigns lang={lang} accent={decor.accent} />
@@ -1927,7 +2092,7 @@ export default function OfficeScene({
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
         <Clock position={[0, 0, 0]} />
       </group>
-      <Presenter state={manager} board={board} lang={lang} />
+      <Presenter state={manager} board={board} lang={lang} selected={selectedId === "max"} onSelect={onSelectAgent} />
       <PingPongBall />
       <Receptionist lang={lang} />
       <TownHallScreen lang={lang} />
@@ -1966,6 +2131,8 @@ export default function OfficeScene({
       <OrbitControls
         makeDefault
         target={TARGET}
+        enableDamping
+        dampingFactor={0.08}
         enablePan
         screenSpacePanning
         minPolarAngle={0.35}

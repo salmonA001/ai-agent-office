@@ -1,59 +1,203 @@
-# AI Agent Office
+<div align="center">
 
-Hand any job to a team of AI agents. The **manager** splits your task into parallel subtasks, assigns each to the best-suited agent, the agents work at the same time (streamed live to their desks), and the manager merges everything into one final result.
+<img src="docs/screenshots/office-overview.jpg" alt="The whole 3D isometric office: desk hall, kitchen, lounge, game room, lobby, town hall, garden and the south wing with gym, focus pods, creative labs and strategy hub" width="100%" />
 
-- A cute animated **3D isometric office** with a meeting room (live projector), kitchen, lounge, game room and server room along the back, and a big open hall: **24 desks in four rows**, a **library nook**, a **wellness corner** (yoga mats, treadmill, mirror), **phone booths**, a **café strip** with a coffee bar and chat tables, **ping-pong**, an **aquarium** and **nap chairs**. Chubby pastel animal workers (bear, bunny, cat, hamster, puppy, chick) turn and wave when idle, face their PC and type while working, and jump up cheering with pom-poms when they finish. Free desks stay empty with the monitor off until you hire someone. Drag to rotate, scroll or pinch to zoom.
-- **Idle agents live their day**: they get up and walk the aisles to read in the library, do yoga or run on the treadmill, take phone calls in a booth, grab an espresso, chat in pairs at the café tables (they gesture and talk once their colleague arrives), play ping-pong or arcade games, nap in a recliner or watch the fish. Breaks follow the real clock: coffee in the morning, a lunch rush at noon, games after five. Walking agents step around each other. When work arrives (or Max starts planning) they shout "On my way!" and rush back to their desk. Routes follow hand-placed waypoints through aisles and doorways, so nobody walks through walls or furniture.
-- **Six working zones**, each with a name board and a button on the 3D view that flies the camera there:
-  1. **Engine Room**: the open-plan hall of 24 hot-desks.
-  2. **Social & Wellness Core**: the open kitchen, the café's espresso bar and snacks, the wellness corner.
-  3. **Creative Labs**: two digital whiteboards, a touch-screen table, a 3D printer, pinball, an arcade cabinet and a beanbag for big thoughts.
-  4. **Deep Focus Pods**: four sound-proofed glass booths with felt walls and busy lights.
-  5. **Fitness & Meditation Studio**: treadmills, an exercise bike and a dumbbell rack on a rubber floor, a cork yoga floor with a mirror wall, and a tatami meditation corner with cushions and candles.
-  6. **Strategy Hub**: a formal conference room with a table for ten, a walnut wall with a video-call screen, speakers and a pendant light.
-  Agents sketch at the whiteboards, brainstorm in pairs at the touch table, do deep work in the pods, lift weights, meditate and prep the roadmap.
-- **East wing**: a reception **lobby** (company logo, Robo the robot receptionist, lifts, waiting sofa), a **town hall** with a stage, a big screen showing a tech talk and rows of seats, and a **garden** with a koi pond and fountain, a picnic table, sun loungers, a hammock, trees, flowers and butterflies. Agents chat with Robo, take office selfies, watch talks, picnic, feed the fish and nap in the sun.
-- **19 office events**, picked to fit the time of day: pizza party, a **strategy meeting** in the hub, a **hackathon** in the creative labs, fire drill, birthday, printer jam, server alarm, thirsty plants, arcade tournament, broken coffee machine, yoga class, morning stand-up, **all-hands** in the town hall, **garden picnic**, movie night on the town hall screen, karaoke (with a disco ball), ice cream cart, parcel delivery (someone carries a box from the elevator to the supply cabinet), power cut (lights out, red emergency lights) and a welcome party whenever you hire someone.
-- **Customize** (button on the office floor): floor (tiles, wood, carpet, concrete), desk finish, accent colour, your office name on a neon sign, and decorations (plants, rugs, wall art, lamps, desk items, aquarium, string lights, sign). The **Activities** tab picks which breaks agents take, how often, and whether random office events happen; **Time of day** sets the office clock (real time, a 24-minute time-lapse, or a fixed day, sunset or night). Saved in your browser.
-- **3D PCs on every desk** show each agent's real AI output streaming like a terminal (scanline, blinking LED, keys lighting up as they type). While the manager plans, every worker turns to face the meeting room, monitors show spinners, Max presents at the projector and his dashboard sweeps a progress bar.
-- Black + green **glassmorphism** UI.
-- **No API key, no server**: the whole team runs on **Qwen 3.5 inside your browser** via WebGPU (WebLLM). Nothing you type leaves your device. Pick the model in **Account → AI model**:
-  - **Automatic** (default): Smart on computers, Light on phones and low-memory devices, and it steps down a size if your graphics card can't load the bigger one.
-  - **Light**: Qwen 3.5 2B, 1.3 GB download, about 2.5 GB of graphics memory.
-  - **Smart**: Qwen 3.5 4B, 2.6 GB, about 4 GB.
-  - **Max**: Qwen 3.5 9B, 5.5 GB, about 6.5 GB.
+# 🏢 AI Agent Office
 
-  The model downloads once and is cached by the browser. It uses half-precision weights when the GPU supports them.
-- **Smarter in-browser team**: Max plans with the whole team roster and what each agent is good at, writes structured JSON plans, and tells every agent the full plan so their parts don't overlap. He merges the results, then (with **Double-check answers** on) reviews the final answer for mistakes and gaps before handing it over.
-- **Explainable**: Max gives a plain-language reason for every assignment ("Why Wren: emails are writer work"). Each task has a step-by-step timeline (planned, assigned, started, finished, merged, with word counts and timings). A live log on the 3D view shows the latest steps, and clicking any agent shows who they are, what they're doing right now, why they got their job and their live output.
-- **Lively**: emoji emotes float over agents (coffee, ping-pong, naps, ideas), the coffee machine steams, palms sway, a real ping-pong ball rallies when someone's playing, and Max paces in front of the projector while the team works.
-- **Sidebar** with three tabs: **Progress** (live progress bars, stage, timer and each agent's part for every running task), **Recent** (searchable task history) and **Account** (local profile name, stats, language, theme, AI model and answer review, reset). Collapses to an icon rail on desktop, slides in as a drawer on phones.
-- **English / ไทย**: the whole interface, the task timeline, office events, 3D speech bubbles and PC screens switch language, and agents answer in Thai when Thai is selected.
-- **5 themes** (Matrix, Midnight, Sunset, Ocean, Daylight), each checked for WCAG AA contrast; smooth colour cross-fade when switching.
-- **Motion everywhere**: staggered entrances, hover lift, press feedback, sliding tab highlight, pop-in status changes, shimmering progress bars. **Account → Motion** picks *Full* (default), *Follow device* or *Reduced*. Full is the default because Windows turns on "reduce motion" whenever its *Animation effects* setting is off, which used to freeze the agents on many PCs.
-- **Full screen**: the button on the 3D office (or the **F** key) fills the screen with the office; Esc exits. Browsers without element full screen, like iPhone Safari, get a full-window view instead.
-- Run several tasks at once; the office floor shows who is working on what.
-- Hire your own agents (name, role, instructions) for custom work, up to one per desk (24).
-- Cancel, re-run, copy results. Task history and agents are kept in your browser.
+**Hand any job to a team of AI agents and watch them work it out in a cosy 3D office, running entirely in your browser.**
 
-Built with Next.js 16, React 19, Tailwind CSS 4, React Three Fiber and WebLLM.
+[![Live demo](https://img.shields.io/badge/▶_Live_demo-ai--agent--office-34d399?style=for-the-badge)](https://ai-agent-office-one.vercel.app)
 
-## How it works
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
+![Three.js](https://img.shields.io/badge/React_Three_Fiber-9-000000?logo=threedotjs&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06b6d4?logo=tailwindcss&logoColor=white)
+![WebGPU](https://img.shields.io/badge/WebGPU-WebLLM-8b5cf6)
+![Qwen 3.5](https://img.shields.io/badge/Qwen-3.5-ff6a00)
+![No API key](https://img.shields.io/badge/API_key-not_needed-34d399)
 
-All steps run on the in-browser model, one reply at a time on your GPU:
+[Highlights](#-highlights) · [Screenshots](#-screenshots) · [The office](#%EF%B8%8F-the-office) · [The team](#-the-team) · [How it works](#-how-it-works) · [Run locally](#-run-locally)
+
+</div>
+
+---
+
+## ✨ Highlights
+
+| | |
+|---|---|
+| 🔒 **Private and free** | Qwen 3.5 runs on your graphics card through WebGPU. No API key, no server, and nothing you type leaves your device. |
+| 🧑‍💼 **A real team** | Max the manager splits each task, picks the right agent for each part and explains why, then merges the results and double-checks the answer. |
+| 🧠 **Think mode** | Agents write reasoning notes before answering, streamed live onto their desk PCs. |
+| 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
+| 🏙️ **A living office** | 13 animal agents work, take breaks, play ping-pong in pairs, meditate and hold strategy meetings across six working zones. |
+| 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
+| 🌏 **English and ไทย** | The whole app, the 3D speech bubbles and the AI answers switch language. |
+| 🎨 **Make it yours** | 5 themes, floors, desks, decorations, your office name in neon, break rules and time of day. |
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/strategy-meeting.jpg" alt="Agents gathering round the conference table in the Strategy Hub for a strategy meeting" /><br /><sub><b>Strategy meeting</b>: free agents gather in the hub to plan the quarter.</sub></td>
+    <td width="50%"><img src="docs/screenshots/creative-labs.jpg" alt="Creative Labs with digital whiteboards, a touch table, pinball and an arcade, next to the focus pods" /><br /><sub><b>Creative Labs</b>: whiteboards, a touch table, pinball and arcade.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/fitness-and-pods.jpg" alt="Fitness studio with treadmills, bike, weights, yoga mats and meditation cushions, next to four glass focus pods" /><br /><sub><b>Fitness & Meditation</b> and <b>Deep Focus Pods</b>.</sub></td>
+    <td width="50%"><img src="docs/screenshots/follow-agent.jpg" alt="The camera following Kai the wellness coach, with his info panel open" /><br /><sub><b>Follow cam</b>: click an agent to follow them and see what they're up to.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/task-composer.jpg" alt="The new task box with a picture and a text file attached and Think mode selected" width="70%" /><br /><sub><b>New task</b>: attach pictures and files, and choose Fast or Think.</sub></td>
+  </tr>
+</table>
+
+## 🗺️ The office
+
+Six working zones, each with a name board. The toolbar on the 3D view flies the camera to any of them.
+
+| | Zone | What's there |
+|---|---|---|
+| ⚙️ | **Engine Room** | The open-plan hall of 24 hot-desks. Every PC shows its agent's live output like a terminal. |
+| ☕ | **Social & Wellness Core** | Open kitchen, café espresso bar and snacks, bistro tables, the wellness corner and nap chairs. |
+| 🎨 | **Creative Labs** | Two digital whiteboards, a touch-screen table, a 3D printer, pinball, an arcade cabinet and a beanbag for big thoughts. |
+| 🎧 | **Deep Focus Pods** | Four sound-proofed glass booths with felt walls, a desk each and red/green busy lights. |
+| 🧘 | **Fitness & Meditation** | Treadmills, an exercise bike and dumbbells on a rubber floor; yoga mats with a mirror wall; a tatami corner with cushions and candles. |
+| 📊 | **Strategy Hub** | A formal conference room: table for ten, walnut wall, video-call screen, speakers and a pendant light. |
+
+Beyond the zones there's a meeting room with a live projector, a lounge, a game room, a server room, a reception **lobby** with Robo the robot, a **town hall** and a **garden** with a koi pond, picnic table, loungers and a hammock.
+
+### Life in the office
+
+- **Breaks follow the clock**: coffee in the morning, a lunch rush at noon, games after five. Each agent spends most breaks in their favourite zone.
+- **Two-person activities need two people.** Ping-pong, foosball, the touch-table brainstorm and café chats start with an invitation: the agent asks the nearest free colleague, both hurry over and play the same game. If nobody's free they pick something else, and if a partner gets called away the other wraps up.
+- **Max makes his rounds.** Between tasks he checks on the desks, reviews the roadmap in the hub, rehearses on the town-hall stage, visits the labs, grabs a coffee and says hi to Robo. He hurries back to the projector when work arrives.
+- **19 office events**, timed to the hour: strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
+- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 29,000+ routes and a 3-hour simulation with zero collisions.
+
+## 🤖 The team
+
+| Agent | Role | Favourite zone |
+|---|---|---|
+| 🐥 **Max** | Manager: plans, assigns, merges, reviews | Everywhere (he makes the rounds) |
+| Riley | Researcher | 🎧 Focus Pods |
+| Wren | Writer | 🎧 Focus Pods |
+| Ana | Analyst | 📊 Strategy Hub |
+| Pat | Planner | 📊 Strategy Hub |
+| Sage | Strategist | 📊 Strategy Hub |
+| Dee | Designer | 🎨 Creative Labs |
+| Ivy | Innovator | 🎨 Creative Labs |
+| Cody | Engineer | ⚙️ Engine Room |
+| Dax | Data Scientist | ⚙️ Engine Room |
+| Mia | Marketer | ☕ Social & Wellness Core |
+| Lin | Translator | ☕ Social & Wellness Core |
+| Quinn | QA Tester | 🧘 Fitness & Meditation |
+| Kai | Wellness Coach | 🧘 Fitness & Meditation |
+
+Hire your own (name, role, instructions and favourite zone), up to one per desk (24).
+
+## 🧠 How it works
+
+```mermaid
+flowchart LR
+    U([📝 Your task<br/>+ files & pictures]) --> V{Pictures?}
+    V -- yes --> P[👁️ Phi 3.5 Vision<br/>describes each one]
+    V -- no --> M
+    P --> M[🐥 Max plans<br/>JSON: who does what & why]
+    M --> A1[🧑‍💻 Agent 1]
+    M --> A2[✍️ Agent 2]
+    M --> A3[📊 Agent 3]
+    A1 & A2 & A3 --> G[🧩 Max merges]
+    G --> R[🔍 Double-check]
+    R --> F([✅ Final answer])
+```
 
 | Step | What happens |
 |---|---|
-| Plan | Max splits the task into 1-4 parts for the best-suited agents (JSON with a reason for each). |
-| Work | Each agent writes its part, knowing the team's plan, streamed live to its desk PC. |
-| Merge | Max combines the parts into one answer, removing overlap and fixing contradictions. |
-| Review | Optional: Max double-checks the answer and fixes mistakes and gaps. |
+| 👁️ **Look** | Attached pictures are described by Phi 3.5 Vision. Text files are read as-is. |
+| 📋 **Plan** | Max splits the task into 1-4 parts for the best-suited agents (structured JSON, with a reason for each). |
+| ⌨️ **Work** | Each agent writes its part knowing the team's plan, streamed live to its desk PC. In **Think** mode it writes reasoning notes first. |
+| 🧩 **Merge** | Max combines the parts into one answer, removing overlap and fixing contradictions. |
+| 🔍 **Review** | Optional: Max double-checks the answer for mistakes and gaps. |
 
-## Run locally
+Every step lands on the task's timeline with a plain-language reason. Click any agent to see what they're doing right now and their latest output.
+
+### Models
+
+Everything runs on the GPU in your browser via [WebLLM](https://github.com/mlc-ai/web-llm). Models download once and are then cached.
+
+| Choice | Model | Download | Graphics memory |
+|---|---|---|---|
+| **Automatic** (default) | Smart on computers, Light on phones; steps down if the device can't load it | | |
+| Light | Qwen 3.5 2B | 1.3 GB | ~2.5 GB |
+| Smart | Qwen 3.5 4B | 2.6 GB | ~4 GB |
+| Max | Qwen 3.5 9B | 5.5 GB | ~6.5 GB |
+| Pictures only | Phi 3.5 Vision | 2.4 GB | ~4 GB |
+
+Pick one in **Account → AI model**. Bigger models write better answers but need a stronger GPU.
+
+## 🎛️ Make it yours
+
+- **Customize** (on the office floor): floor style, desk finish, accent colour, neon office sign, plants, rugs, art, lamps, desk items, aquarium and string lights.
+- **Activities**: which breaks agents take, how often, and whether random events happen.
+- **Time of day**: real clock, a 24-minute time-lapse, or fixed day, sunset or night lighting.
+- **5 themes** (Matrix, Midnight, Sunset, Ocean, Daylight), each checked for WCAG AA contrast.
+- **Motion**: full, follow device, or reduced. The 3D view lowers its resolution on slow devices to stay smooth.
+- **Full screen** with the button or the **F** key.
+
+## 🚀 Run locally
 
 ```bash
+git clone https://github.com/salmonA001/ai-agent-office.git
+cd ai-agent-office
 npm install
 npm run dev
 ```
 
-No keys or environment variables are needed. Use a browser with WebGPU: recent Chrome or Edge on a computer, or Safari 26+.
+Open http://localhost:3000. No keys or environment variables are needed. You need a browser with **WebGPU**: recent Chrome or Edge on a computer, or Safari 26+.
+
+```bash
+npm run build   # production build (fully static)
+npm run lint
+```
+
+The app is fully static, so any static host works. The live demo deploys to Vercel on every push to `main`.
+
+## 🧱 Tech stack
+
+| Layer | Tools |
+|---|---|
+| App | Next.js 16 (App Router, Cache Components), React 19, TypeScript |
+| 3D | React Three Fiber, drei, three.js: toon-shaded characters, canvas textures, orthographic isometric camera |
+| AI | WebLLM on WebGPU: Qwen 3.5 (2B / 4B / 9B) and Phi 3.5 Vision |
+| UI | Tailwind CSS 4, glassmorphism, Phosphor icons, react-markdown |
+
+<details>
+<summary><b>📁 Project structure</b></summary>
+
+```text
+src/
+├─ app/                    # Next.js app shell, global styles and themes
+├─ components/
+│  ├─ Office.tsx           # page: office floor, task list, task view
+│  ├─ TaskComposer.tsx     # new task: text, attachments, Fast / Think
+│  ├─ OfficeScene.tsx      # 3D scene: agents, Max, camera, lights
+│  ├─ OfficeFloor.tsx      # rooms, zones, furniture, signs
+│  ├─ office-nav.ts        # waypoint graph, break spots, agent & manager walkers
+│  ├─ office-events.ts     # random office events, XP and levels
+│  ├─ camera-focus.ts      # zone flights and the follow cam
+│  └─ Sidebar.tsx, OfficeCustomize.tsx, OfficeExplain.tsx, OfficeGame.tsx
+└─ lib/
+   ├─ browser-ai.ts        # WebLLM engine, model tiers, think mode, vision
+   ├─ run-task.ts          # plan → work → merge → review
+   ├─ agents.ts            # the team
+   └─ i18n.tsx             # English / Thai
+```
+
+</details>
+
+---
+
+<div align="center">
+<sub>Built with ☕ and a lot of tiny animal coworkers.</sub>
+</div>

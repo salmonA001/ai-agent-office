@@ -4,6 +4,8 @@
  * Coordinates are world metres on the floor plane: [x, z]. Must match OfficeFloor.tsx.
  */
 
+import type { ZoneId } from "./camera-focus";
+
 export type P2 = [number, number];
 
 // ---------- Desk grid in the open workspace ----------
@@ -574,6 +576,30 @@ function rhythm(cat: SpotCat, hour: number) {
   return 1;
 }
 
+// ---------- Zones: each agent has a favourite one and spends more of its breaks there ----------
+
+/** Which working zone a point on the floor belongs to (null: rooms outside the six zones). */
+export function zoneAt([x, z]: P2): ZoneId | null {
+  if (z > 17.2) return x < 1 ? "fitness" : x < 8.5 ? "pods" : x < 17 ? "labs" : "hub";
+  if (x >= 16 || z > 16) return null;
+  if (z < -0.3) return x > -2.6 && x < 8 ? "social" : null;
+  if (z > 13.4 || (x < -3.7 && z > 5.9 && z < 10.7)) return "social";
+  return z > 0.9 ? "engine" : null;
+}
+
+const spotZones = new Map<string, ZoneId | null>();
+const zoneOf = (s: Spot) => {
+  if (!spotZones.has(s.id)) spotZones.set(s.id, zoneAt(s.at));
+  return spotZones.get(s.id)!;
+};
+
+let favourite = new Map<string, ZoneId>();
+
+/** Agent id -> favourite zone, from the agent list. */
+export function setAgentZones(zones: Record<string, ZoneId | undefined>) {
+  favourite = new Map(Object.entries(zones).filter((e): e is [string, ZoneId] => Boolean(e[1])));
+}
+
 // ---------- Who is where ----------
 
 /** Spots currently claimed, so two agents don't sit in the same chair. */
@@ -582,22 +608,38 @@ const taken = new Map<string, string>();
 const present = new Map<string, string>();
 
 export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
-  const free = SPOTS.filter((s) => s.id !== avoid && usable(s) && (!taken.has(s.id) || taken.get(s.id) === agentId));
-  if (!free.length) return null;
+  let free = SPOTS.filter((s) => s.id !== avoid && usable(s) && (!taken.has(s.id) || taken.get(s.id) === agentId));
   const hour = officeHour;
-  // join a colleague who is already waiting at a table
-  const weights = free.map((s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1));
-  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
-  let s = free[free.length - 1];
-  for (let i = 0; i < free.length; i++) {
-    r -= weights[i];
-    if (r <= 0) {
-      s = free[i];
-      break;
+  const fav = favourite.get(agentId);
+  while (free.length) {
+    // join a colleague who is already waiting at a table; prefer the agent's favourite zone
+    const weights = free.map((s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1) * (fav && zoneOf(s) === fav ? 4 : 1));
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let s = free[free.length - 1];
+    for (let i = 0; i < free.length; i++) {
+      r -= weights[i];
+      if (r <= 0) {
+        s = free[i];
+        break;
+      }
     }
+    claimSpot(agentId, s);
+    // two-person activities (ping-pong, foosball, a chat at a table) need a partner: invite one, or pick something else
+    if (!s.pair || taken.has(s.pair) || invitePartner(agentId, s)) return s;
+    releaseSpot(agentId);
+    free = free.filter((o) => o !== s && o.id !== s.pair);
   }
-  claimSpot(agentId, s);
-  return s;
+  return null;
+}
+
+/** Ask the nearest free colleague to take the other side of a two-person spot. */
+function invitePartner(agentId: string, s: Spot) {
+  const other = spotById(s.pair!);
+  if (!other || !usable(other)) return false;
+  const near = [...walkers.values()]
+    .filter((w) => w.id !== agentId && w.canJoin())
+    .sort((a, b) => dist([a.x, a.z], other.at) - dist([b.x, b.z], other.at));
+  return near.length > 0 && near[0].invite(other);
 }
 
 function claimSpot(agentId: string, s: Spot) {
@@ -654,6 +696,7 @@ export class Wanderer {
   private dwellEach = 4;
   /** the current/last trip was an order from an office event */
   private onOrder = false;
+  private home: Home;
 
   constructor(id: string, home: Home, seatY: number, firstWait: number) {
     this.id = id;
@@ -661,7 +704,29 @@ export class Wanderer {
     this.timer = firstWait;
     [this.x, this.z] = home.seat;
     this.y = seatY;
+    this.home = home;
     this.origin = { home };
+  }
+
+  /** Free to accept a colleague's invitation: at the desk, or at a hangout spot that isn't itself a two-person one. */
+  canJoin() {
+    if (!this.isIdle() || this.ordered || this.orders.length) return false;
+    return this.mode === "seated" || (this.mode === "spot" && !!this.spot && !this.spot.pair);
+  }
+
+  /** A colleague asked to play or chat: walk over to the other side of their table. */
+  invite(spot: Spot) {
+    if (!this.canJoin()) return false;
+    const from: Anchor = this.mode === "seated" ? { home: this.home } : { spot: this.spot! };
+    claimSpot(this.id, spot);
+    this.spot = spot;
+    this.start(from, { spot }, HURRY, "out");
+    return true;
+  }
+
+  /** Play on for exactly `seconds` (both partners get the same, so they finish together). */
+  stayFor(seconds: number) {
+    if (this.mode === "spot" && !this.ordered) this.timer = seconds;
   }
 
   /** Free to take part in office events. */
@@ -689,6 +754,7 @@ export class Wanderer {
   update(dt: number, home: Home, busy: boolean, canWander: boolean): boolean {
     const before = this.phase;
     dt = Math.min(dt, 0.1);
+    this.home = home;
     this.busy = busy;
     this.canWander = canWander;
     if ((busy || !canWander) && this.mode !== "seated") {
@@ -715,7 +781,8 @@ export class Wanderer {
         const s = claimRandomSpot(this.id);
         if (s) {
           this.spot = s;
-          this.start({ home }, { spot: s }, STROLL, "out");
+          // a colleague is on the way to play: don't keep them waiting
+          this.start({ home }, { spot: s }, s.pair ? HURRY : STROLL, "out");
         } else this.timer = 6;
       }
     } else if (this.mode === "spot" && this.spot) {
@@ -724,6 +791,8 @@ export class Wanderer {
       this.timer -= dt;
       // an office event sent someone else to this spot: move on
       if (!this.ordered && taken.get(this.spot.id) !== this.id) this.timer = Math.min(this.timer, 0);
+      // a two-person spot whose partner isn't coming (or has left): don't play alone for long
+      if (!this.ordered && this.spot.pair && !taken.has(this.spot.pair)) this.timer = Math.min(this.timer, 4);
       if (this.orders.length) {
         // new orders interrupt a normal hangout at once; along an ordered route, wait out each stop
         if (!this.onOrder || this.timer <= 0) this.takeOrder({ spot: this.spot });
@@ -733,7 +802,7 @@ export class Wanderer {
         const next = Math.random() < homeChance ? null : claimRandomSpot(this.id, from.id);
         if (next) {
           this.spot = next;
-          this.start({ spot: from }, { spot: next }, STROLL, "out");
+          this.start({ spot: from }, { spot: next }, next.pair ? HURRY : STROLL, "out");
         } else {
           releaseSpot(this.id);
           this.start({ spot: from }, { home }, STROLL, "home");
@@ -761,6 +830,13 @@ export class Wanderer {
           this.mode = "spot";
           // under orders: short stops along a route, then stay until the event ends
           this.timer = this.ordered ? (this.orders.length ? this.dwellEach : 1e9) : 10 + Math.random() * 14;
+          // the second player has arrived: both play the same length of game
+          const mate = this.spot.pair && !this.ordered ? present.get(this.spot.pair) : undefined;
+          if (mate) {
+            const game = 22 + Math.random() * 14;
+            this.timer = game;
+            walkers.get(mate)?.stayFor(game);
+          }
           this.phase = { kind: "spot", spot: this.spot };
           if (this.spot.gives) this.holding = this.spot.gives;
           if (this.spot.takes) this.holding = null;
@@ -852,6 +928,137 @@ export class Wanderer {
     }
   }
 }
+
+// ---------- Max the manager: rounds of the office while no task is running ----------
+
+/** Where Max presents (in front of the meeting-room projector). */
+export const MAX_BASE: Spot = spot({ id: "max-base", at: [-3.9, -4.9], node: "M0", approach: [[-3.45, -1.6], [-3.45, -4.6]], face: 0, activity: "look", cat: "ideas", say: "", where: "in the meeting room", emoji: [] });
+
+/** Places Max drops by: checking on the desks, the strategy hub, the stage, the labs, coffee, the lobby. */
+export const MAX_ROUNDS: Spot[] = [
+  spot({ id: "max-desks-w", at: [-3.3, R[1]], node: "RW1", approach: [], face: PI / 2, activity: "look", cat: "ideas", say: "Checking in on the team", where: "making the rounds", emoji: ["👀", "📋"] }),
+  spot({ id: "max-desks-e", at: [12.75, R[2]], node: "RE2", approach: [], face: -PI / 2, activity: "talk", cat: "ideas", say: "Great progress, everyone!", where: "making the rounds", emoji: ["👍", "🙌"] }),
+  spot({ id: "max-hub", at: [18.0, 20.6], node: "FD2", approach: [[18.2, 20.6]], face: -PI / 2, activity: "look", cat: "ideas", say: "Reviewing the roadmap", where: "in the strategy hub", emoji: ["📊", "🎯"] }),
+  spot({ id: "max-stage", at: [21.0, 3.05], node: "TH1", approach: [], face: 0, activity: "talk", cat: "ideas", say: "Rehearsing the all-hands", where: "on the town hall stage", emoji: ["🎤", "📣"] }),
+  spot({ id: "max-labs", at: [14.3, 20.2], node: "FC1", approach: [[13.6, 20.2]], face: -PI / 2, activity: "look", cat: "ideas", say: "Love these ideas!", where: "in the creative labs", emoji: ["💡", "👏"] }),
+  spot({ id: "max-coffee", at: [-2.4, 14.6], node: "RW3", approach: [[-2.4, 13.8]], face: 0, activity: "sip", cat: "food", say: "Coffee with the team", where: "at the café bar", emoji: ["☕", "😊"] }),
+  spot({ id: "max-lobby", at: [21.7, -1.7], node: "LO2", approach: [[21.7, 0.3]], face: PI, activity: "talk", cat: "chat", say: "Morning, Robo!", where: "at the reception desk", emoji: ["🤖", "👋"] }),
+];
+
+export type ManagerPhase = { kind: "base" } | { kind: "walking"; rushing: boolean } | { kind: "visit"; spot: Spot };
+
+/**
+ * Max stays at the projector while a task runs. In quiet times he makes the rounds: checks on the
+ * desks, drops by the hub, the labs and the stage, grabs a coffee, and hurries back when work arrives.
+ */
+export class ManagerWalker {
+  x: number;
+  z: number;
+  yaw = 0;
+  phase: ManagerPhase = { kind: "base" };
+  private mode: "base" | "out" | "visit" | "back" = "base";
+  private spot: Spot = MAX_BASE;
+  private origin: Spot = MAX_BASE;
+  private path: P2[] = [];
+  private seg = 0;
+  private speed = STROLL;
+  private timer: number;
+
+  constructor(firstWait = 10) {
+    [this.x, this.z] = MAX_BASE.at;
+    this.timer = firstWait;
+  }
+
+  atBase() {
+    return this.mode === "base";
+  }
+
+  update(dt: number, onDuty: boolean, canWander: boolean): boolean {
+    const before = this.phase;
+    dt = Math.min(dt, 0.1);
+    if ((onDuty || !canWander) && (this.mode === "out" || this.mode === "visit")) this.goBack();
+    if (onDuty && this.mode === "back" && this.speed < RUSH) {
+      this.speed = RUSH;
+      this.phase = { kind: "walking", rushing: true };
+    }
+    let targetYaw = this.yaw;
+    if (this.mode === "base") {
+      [this.x, this.z] = MAX_BASE.at;
+      if (onDuty || !canWander) this.timer = Math.max(this.timer, 6);
+      else if ((this.timer -= dt) <= 0) this.visit(this.pick());
+    } else if (this.mode === "visit") {
+      targetYaw = this.spot.face;
+      if ((this.timer -= dt) <= 0) {
+        if (Math.random() < 0.5) this.visit(this.pick());
+        else this.goBack();
+      }
+    } else {
+      const target = this.path[this.seg + 1];
+      if (target) {
+        const dx = target[0] - this.x;
+        const dz = target[1] - this.z;
+        const d = Math.hypot(dx, dz);
+        const step = this.speed * dt;
+        if (d > 0.001) targetYaw = Math.atan2(dx, dz);
+        if (d <= step) {
+          [this.x, this.z] = target;
+          this.seg++;
+        } else {
+          this.x += (dx / d) * step;
+          this.z += (dz / d) * step;
+        }
+      }
+      if (this.seg >= this.path.length - 1) {
+        if (this.mode === "out") {
+          this.mode = "visit";
+          this.timer = 8 + Math.random() * 7;
+          this.phase = { kind: "visit", spot: this.spot };
+        } else {
+          this.mode = "base";
+          this.spot = MAX_BASE;
+          this.timer = 12 + Math.random() * 14;
+          this.phase = { kind: "base" };
+        }
+      }
+    }
+    this.yaw += Math.atan2(Math.sin(targetYaw - this.yaw), Math.cos(targetYaw - this.yaw)) * Math.min(1, dt * 8);
+    return this.phase !== before;
+  }
+
+  private pick() {
+    const options = MAX_ROUNDS.filter((s) => s.id !== this.spot.id);
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  private visit(next: Spot) {
+    this.origin = this.spot;
+    this.path = route({ spot: this.spot }, { spot: next });
+    this.seg = 0;
+    this.spot = next;
+    this.speed = STROLL * 1.15;
+    this.mode = "out";
+    this.phase = { kind: "walking", rushing: false };
+  }
+
+  private goBack() {
+    if (this.mode === "visit") {
+      this.path = route({ spot: this.spot }, { spot: MAX_BASE });
+    } else {
+      // turn round mid-walk, then continue from wherever the trip started
+      let back: P2[] = [[this.x, this.z], ...this.path.slice(0, this.seg + 1).reverse()];
+      if (this.origin !== MAX_BASE) back = back.concat(route({ spot: this.origin }, { spot: MAX_BASE }).slice(1));
+      this.path = back;
+    }
+    this.seg = 0;
+    this.speed = STROLL * 1.3;
+    this.mode = "back";
+    this.spot = MAX_BASE;
+    this.phase = { kind: "walking", rushing: false };
+  }
+}
+
+/** The manager's walker, so the camera can follow him too. */
+export const manager = { walker: null as ManagerWalker | null };
 
 /** Every agent currently in the office, so office events can give them orders. */
 export const walkers = new Map<string, Wanderer>();

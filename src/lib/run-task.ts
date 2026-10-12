@@ -1,5 +1,5 @@
 import type { Agent } from "./agents";
-import { chat, currentTier, MODELS } from "./browser-ai";
+import { chat, currentTier, describeImage, MODELS } from "./browser-ai";
 import { type Key, type Lang, type Msg, translate } from "./i18n";
 import { countWords } from "./words";
 import { planOutput, type PlannedSubtask } from "./schemas";
@@ -11,6 +11,8 @@ export type Subtask = PlannedSubtask & {
   id: string;
   status: SubtaskStatus;
   output: string;
+  /** the agent's reasoning before the answer, in think mode (last part only) */
+  thinking?: string;
   startedAt?: number;
   finishedAt?: number;
 };
@@ -26,9 +28,16 @@ export type TaskEvent = {
   agentId?: string;
 };
 
+/** A file attached to a task: a text file's contents, or a picture's description once Max has looked at it. */
+export type Attachment = { name: string; kind: "image" | "text"; text?: string };
+
+export type TaskMode = "fast" | "think";
+
 export type Task = {
   id: string;
   prompt: string;
+  attachments?: Attachment[];
+  mode?: TaskMode;
   createdAt: number;
   status: TaskStatus;
   subtasks: Subtask[];
@@ -52,9 +61,28 @@ const LANG_RULE: Record<Lang, string> = {
 
 const firstSentence = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 
+/** Characters of attached files each agent reads (the model sees about 4,000 tokens in all). */
+const FILES_BUDGET = 4500;
+
+/** The attached files as one block for the prompt, each trimmed to a fair share of `budget`. */
+function filesBlock(files: Attachment[], budget: number) {
+  const usable = files.filter((f) => f.text?.trim());
+  if (!usable.length) return "";
+  const share = Math.floor(budget / usable.length);
+  const parts = usable.map((f) => {
+    const body = f.text!.trim();
+    const cut = body.length > share ? `${body.slice(0, share)}\n[…cut…]` : body;
+    return `### ${f.name}${f.kind === "image" ? " (picture, described)" : ""}\n${cut}`;
+  });
+  return `Attached files:\n${parts.join("\n\n")}`;
+}
+
 // ---------- Fallback when the plan can't be parsed: pick agents by keyword ----------
 
 const KEYWORDS: [RegExp, string][] = [
+  [/\b(health|fitness|workout|exercise|sleep|stress|diet|habits?)\b/i, "coach"],
+  [/\b(strategy|strategic|priorit(y|ies|ise|ize)|goals?|okrs?|vision)\b/i, "strategist"],
+  [/\b(ideas?|brainstorm|invent|creative|concepts?|innovat\w*)\b/i, "innovator"],
   [/\b(design|ui|ux|logo|layout|colou?rs?|mockup|wireframe)\b/i, "designer"],
   [/\b(marketing|campaign|social|ads?|seo|tagline|launch|brand)\b/i, "marketer"],
   [/\b(data|sql|statistics?|metrics?|chart|dataset|spreadsheet)\b/i, "data"],
@@ -88,7 +116,7 @@ function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
 
 // ---------- The three (or four) steps, each a call to the in-browser model ----------
 
-async function plan(task: string, agents: Agent[], lang: Lang, signal: AbortSignal): Promise<PlannedSubtask[]> {
+async function plan(task: string, files: string, agents: Agent[], lang: Lang, signal: AbortSignal): Promise<PlannedSubtask[]> {
   const schema = JSON.stringify({
     type: "object",
     properties: {
@@ -125,7 +153,7 @@ async function plan(task: string, agents: Agent[], lang: Lang, signal: AbortSign
             "- title: a few words. reason: one short sentence on why this agent fits.\n" +
             `Reply in JSON only.${LANG_RULE[lang]}\n\nTeam:\n${team}`,
         },
-        { role: "user", content: task },
+        { role: "user", content: files ? `${task}\n\n${files}` : task },
       ],
       { signal, maxTokens: 700, json: schema },
     );
@@ -145,12 +173,15 @@ async function plan(task: string, agents: Agent[], lang: Lang, signal: AbortSign
 
 function work(
   task: string,
+  files: string,
   agent: Agent,
   sub: PlannedSubtask,
   team: { title: string; name: string }[],
   lang: Lang,
+  think: boolean,
   signal: AbortSignal,
   onText: (t: string) => void,
+  onThink: (t: string) => void,
 ) {
   const plan = team.map((p, i) => `${i + 1}. ${p.title} (${p.name}${p.name === agent.name ? ", you" : ""})`).join("\n");
   return chat(
@@ -164,9 +195,9 @@ function work(
           "Structure the answer with Markdown headings and lists. Start directly with the content, no preamble." +
           LANG_RULE[lang],
       },
-      { role: "user", content: `Task: ${task}\n\nYour part: ${sub.title}\n${sub.brief}` },
+      { role: "user", content: `Task: ${task}\n\nYour part: ${sub.title}\n${sub.brief}${files ? `\n\n${files}` : ""}` },
     ],
-    { signal, maxTokens: MODELS[currentTier()].maxTokens, onText },
+    { signal, maxTokens: MODELS[currentTier()].maxTokens, think, onText, onThink },
   );
 }
 
@@ -215,8 +246,9 @@ export async function runTask(
   signal: AbortSignal,
   update: Update,
   lang: Lang = "en",
-  opts: { review: boolean } = { review: true },
+  opts: { review: boolean; images?: Record<string, string> } = { review: true },
 ) {
+  const think = task.mode === "think";
   const log = (kind: TaskEvent["kind"], key: Key, params?: Msg["params"], agentId?: string) =>
     update((t) => ({
       ...t,
@@ -224,8 +256,29 @@ export async function runTask(
     }));
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
 
+  // pictures first: the vision model describes each one, and the team works from the description
+  const files = [...(task.attachments ?? [])];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const url = opts.images?.[f.name];
+    if (f.kind !== "image" || f.text || !url) continue;
+    log("info", "ev.lookImage", { name: f.name });
+    try {
+      const text = await describeImage(url, task.prompt, signal);
+      files[i] = { ...f, text };
+      update((t) => ({ ...t, attachments: [...files] }));
+      log("info", "ev.sawImage", { name: f.name });
+    } catch (err) {
+      if (signal.aborted) throw err;
+      log("error", "ev.imageFail", { name: f.name, msg: (err as Error).message });
+    }
+  }
+  if (files.some((f) => f.text)) log("info", "ev.files", { n: files.filter((f) => f.text).length });
+  const filesForPlan = filesBlock(files, 1500);
+  const filesForWork = filesBlock(files, FILES_BUDGET);
+
   log("plan", "ev.planStart");
-  const subtasks = await plan(task.prompt, agents, lang, signal);
+  const subtasks = await plan(task.prompt, filesForPlan, agents, lang, signal);
   if (subtasks.length === 1) log("plan", "ev.planOne");
   else log("plan", "ev.planMany", { n: subtasks.length });
   for (const s of subtasks)
@@ -244,16 +297,37 @@ export async function runTask(
     subtasks.map(async (sub, i): Promise<Result | null> => {
       const agent = agents.find((a) => a.id === sub.agentId) ?? agents[0];
       let started = false;
+      let thinking = false;
+      // the model answers one agent at a time, so an agent "starts" when its first words (or thoughts) arrive
+      const begin = () => {
+        if (started) return;
+        started = true;
+        log("start", "ev.start", { name: agent.name, title: sub.title }, agent.id);
+        setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
+      };
       try {
-        const output = await work(task.prompt, agent, sub, team, lang, signal, (chunk) => {
-          // the model answers one agent at a time, so an agent "starts" when its first words arrive
-          if (!started) {
-            started = true;
-            log("start", "ev.start", { name: agent.name, title: sub.title }, agent.id);
-            setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
-          }
-          setSub(i, (s) => ({ ...s, output: s.output + chunk }));
-        });
+        const output = await work(
+          task.prompt,
+          filesForWork,
+          agent,
+          sub,
+          team,
+          lang,
+          think,
+          signal,
+          (chunk) => {
+            begin();
+            setSub(i, (s) => ({ ...s, output: s.output + chunk }));
+          },
+          (chunk) => {
+            begin();
+            if (!thinking) {
+              thinking = true;
+              log("info", "ev.thinking", { name: agent.name }, agent.id);
+            }
+            setSub(i, (s) => ({ ...s, thinking: ((s.thinking ?? "") + chunk).slice(-1500) }));
+          },
+        );
         if (!output.trim()) throw new Error("Agent returned no output");
         setSub(i, (s) => ({ ...s, status: "done", finishedAt: Date.now() }));
         log("done", "ev.done", { name: agent.name, title: sub.title, words: countWords(output) }, agent.id);

@@ -17,11 +17,28 @@ export const MODELS: Record<ModelTier, { name: string; base: string; download: s
   max: { name: "Qwen 3.5 9B", base: "Qwen3.5-9B", download: "5.5 GB", vram: "6.5 GB", maxTokens: 1300 },
 };
 
+/** Qwen 3.5 in WebLLM reads text only, so pictures are described first by a vision model. */
+export const VISION_MODEL = { name: "Phi 3.5 Vision", base: "Phi-3.5-vision-instruct", download: "2.4 GB", vram: "4 GB" };
+
+export function modelInfo(tier: ModelTier | "vision") {
+  return tier === "vision" ? VISION_MODEL : MODELS[tier];
+}
+
+/** Every model here sees 4,096 tokens in total (prompt plus reply). */
+const CONTEXT = 4096;
+
+/** Rough token count: about 3.5 characters per token in English, fewer for Thai and other scripts. */
+function estimateTokens(text: string) {
+  let ascii = 0;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) ascii++;
+  return Math.ceil(ascii / 3.5 + (text.length - ascii) / 1.3);
+}
+
 // ---------- Settings (saved in this browser) ----------
 
-export type AiSettings = { model: ModelChoice; review: boolean };
+export type AiSettings = { model: ModelChoice; review: boolean; think: boolean };
 const SETTINGS_KEY = "office.ai";
-const DEFAULT_SETTINGS: AiSettings = { model: "auto", review: true };
+const DEFAULT_SETTINGS: AiSettings = { model: "auto", review: true, think: false };
 let settings: AiSettings = DEFAULT_SETTINGS;
 let settingsLoaded = false;
 const settingsListeners = new Set<() => void>();
@@ -35,6 +52,7 @@ function loadSettings() {
       settings = {
         model: MODEL_CHOICES.includes(raw.model as ModelChoice) ? (raw.model as ModelChoice) : "auto",
         review: typeof raw.review === "boolean" ? raw.review : true,
+        think: raw.think === true,
       };
   } catch {
     // storage unavailable: defaults
@@ -76,7 +94,7 @@ export function useAiSettings() {
 
 export type EngineState =
   | { status: "idle" }
-  | { status: "loading"; progress: number; text: string; tier: ModelTier }
+  | { status: "loading"; progress: number; text: string; tier: ModelTier | "vision" }
   | { status: "ready"; tier: ModelTier }
   | { status: "error"; message: string };
 
@@ -200,21 +218,62 @@ function unloadAfterQueue() {
   queue = queue.then(unload, unload);
 }
 
-export function chat(
-  messages: { role: "system" | "user"; content: string }[],
-  opts: { signal: AbortSignal; maxTokens: number; json?: string; onText?: (chunk: string) => void },
-): Promise<string> {
+type ChatOpts = {
+  signal: AbortSignal;
+  maxTokens: number;
+  json?: string;
+  /** think it through first: write reasoning notes, then answer from them */
+  think?: boolean;
+  onText?: (chunk: string) => void;
+  /** the reasoning notes as they stream, in think mode */
+  onThink?: (chunk: string) => void;
+};
+
+type Message = { role: "system" | "user"; content: string };
+
+const NOTES_PROMPT =
+  "Before answering, think it through. Write brief bullet-point notes only, not the answer: what exactly is asked, " +
+  "the key points, facts and numbers to include, the best structure, and mistakes to avoid.";
+
+/** The same conversation with something added to the last (user) message. */
+const withNote = (messages: Message[], note: string): Message[] => {
+  const last = messages[messages.length - 1];
+  return [...messages.slice(0, -1), { ...last, content: `${last.content}
+
+${note}` }];
+};
+
+export function chat(messages: Message[], opts: ChatOpts): Promise<string> {
   const run = async () => {
+    if (!opts.think || opts.json) return generate(messages, opts);
+    // think mode: reasoning notes first (shown live), then the answer written from them. The small
+    // Qwen 3.5 models rarely start their own <think> block, so the step is made explicit.
+    const notes = await generate(withNote(messages, NOTES_PROMPT), { signal: opts.signal, maxTokens: 450, onText: opts.onThink });
+    return generate(withNote(messages, `Your notes from thinking it through:
+${notes}
+
+Now write the final answer, following your notes.`), opts);
+  };
+  const result = queue.then(run, run);
+  queue = result.catch(() => {});
+  return result;
+}
+
+async function generate(messages: Message[], opts: ChatOpts): Promise<string> {
+  {
     if (opts.signal.aborted) throw new DOMException("Aborted", "AbortError");
     const engine = await getEngine();
     const onAbort = () => void engine.interruptGenerate();
     opts.signal.addEventListener("abort", onAbort);
+    // keep prompt + reply inside the context window
+    const prompt = estimateTokens(messages.map((m) => m.content).join("\n")) + 40 * messages.length;
+    const maxTokens = Math.max(200, Math.min(opts.maxTokens, CONTEXT - prompt - 64));
     try {
       const stream = await engine.chat.completions.create({
         messages,
         stream: true,
-        max_tokens: opts.maxTokens,
-        // Qwen's recommended settings for direct (non-thinking) answers
+        max_tokens: maxTokens,
+        // Qwen's recommended settings for direct answers: precise for JSON, a little warmer for prose
         temperature: opts.json ? 0.3 : 0.7,
         top_p: 0.8,
         presence_penalty: 0.5,
@@ -240,6 +299,58 @@ export function chat(
     } finally {
       opts.signal.removeEventListener("abort", onAbort);
       await engine.resetChat().catch(() => {});
+    }
+  }
+}
+
+/**
+ * Describe a picture for the team. The text model is unloaded first (graphics memory is tight),
+ * the vision model reads the picture, then it is unloaded again; the text model reloads from the
+ * browser cache on the next request.
+ */
+export function describeImage(dataUrl: string, question: string, signal: AbortSignal): Promise<string> {
+  const run = async () => {
+    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+    if (!webGpuSupported()) throw new Error("This browser has no WebGPU.");
+    const pending = enginePromise;
+    enginePromise = null;
+    const text = await pending?.catch(() => null);
+    await text?.unload().catch(() => {});
+    const gpu = (navigator as Navigator & { gpu: WebGpu }).gpu;
+    const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    const f16 = adapter?.features.has("shader-f16") ?? false;
+    const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
+    setState({ status: "loading", progress: 0, text: "", tier: "vision" });
+    const engine = await CreateMLCEngine(`${VISION_MODEL.base}-${f16 ? "q4f16_1" : "q4f32_1"}-MLC`, {
+      initProgressCallback: (r) => setState({ status: "loading", progress: r.progress, text: r.text, tier: "vision" }),
+    });
+    setState({ status: "idle" });
+    const onAbort = () => void engine.interruptGenerate();
+    signal.addEventListener("abort", onAbort);
+    try {
+      const reply = await engine.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text:
+                  "Describe this picture in detail for a colleague who cannot see it: what it shows, every piece of text in it (quoted exactly), " +
+                  `numbers, layout and colours. The colleague's task is: "${question.slice(0, 400)}". Focus on what matters for that task.`,
+              },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+        max_tokens: 600,
+        temperature: 0.2,
+      });
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      return (reply.choices[0]?.message?.content ?? "").trim();
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      await engine.unload().catch(() => {});
     }
   };
   const result = queue.then(run, run);
