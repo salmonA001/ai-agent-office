@@ -621,6 +621,19 @@ const zoneOf = (s: Spot) => {
 
 let favourite = new Map<string, ZoneId>();
 
+/**
+ * Where an agent can take real work in their favourite zone: a focus pod, a seat at the strategy
+ * table, the labs' touch table and whiteboards, or a café table with a laptop.
+ */
+export const ZONE_WORK_SPOTS: Partial<Record<ZoneId, string[]>> = {
+  pods: ["pod-0", "pod-1", "pod-2", "pod-3"],
+  hub: ["hub-n0", "hub-n1", "hub-n2", "hub-n3", "hub-s0", "hub-s1", "hub-s2", "hub-s3", "hub-w", "hub-e"],
+  labs: ["tt-a", "tt-b", "wb-1", "wb-2"],
+  social: ["cafe-t1a", "cafe-t1b", "cafe-t2a", "cafe-t2b"],
+};
+/** How often an agent with such a zone takes a job there instead of doing it at the desk. */
+const WORK_AWAY = 0.6;
+
 /** Agent id -> favourite zone, from the agent list. */
 export function setAgentZones(zones: Record<string, ZoneId | undefined>) {
   favourite = new Map(Object.entries(zones).filter((e): e is [string, ZoneId] => Boolean(e[1])));
@@ -711,6 +724,10 @@ export class Wanderer {
   holding: string | null = null;
   /** seconds left of a hello with a colleague passing by (both stop and wave) */
   greetT = 0;
+  /** the spot in the agent's favourite zone where they're doing their current job, if not at the desk */
+  workAt: Spot | null = null;
+  private working = false;
+  private decidedWork = false;
   private greetCooldown = 10 + Math.random() * 20;
   private greetYaw = 0;
   readonly id: string;
@@ -739,6 +756,11 @@ export class Wanderer {
     this.y = seatY;
     this.home = home;
     this.origin = { home };
+  }
+
+  /** The agent has a job in progress (not just watching Max plan): they may take it to their zone. */
+  setWorking(working: boolean) {
+    this.working = working;
   }
 
   /** Free to accept a colleague's invitation: at the desk, or at a hangout spot that isn't itself a two-person one. */
@@ -791,7 +813,14 @@ export class Wanderer {
     this.busy = busy;
     this.greetCooldown -= dt;
     this.canWander = canWander;
-    if ((busy || !canWander) && this.mode !== "seated") {
+    // the job is done: wrap up at the work spot, then carry on as usual
+    if (!this.working && this.workAt) {
+      if (this.mode === "spot" && this.spot === this.workAt) this.timer = 6 + Math.random() * 8;
+      this.workAt = null;
+    }
+    if (!this.working) this.decidedWork = false;
+    const awayAtWork = busy && canWander && this.workAt !== null;
+    if ((busy || !canWander) && this.mode !== "seated" && !awayAtWork) {
       this.orders = [];
       this.ordered = false;
       this.goHome(home);
@@ -805,7 +834,18 @@ export class Wanderer {
       [this.x, this.z] = home.seat;
       targetY = this.seatY;
       targetYaw = 0;
-      if (busy || !canWander) {
+      if (busy && canWander && this.working && !this.decidedWork) {
+        // a new job: sometimes take it to a pod, the hub table, the labs or the café
+        this.decidedWork = true;
+        const s = Math.random() < WORK_AWAY ? this.freeWorkSpot() : null;
+        if (s) {
+          this.orders = [];
+          this.ordered = false;
+          this.workAt = s;
+          this.spot = s;
+          this.start({ home }, { spot: s }, HURRY, "out");
+        }
+      } else if (busy || !canWander) {
         this.orders = [];
         this.ordered = false;
         this.timer = Math.max(this.timer, 4 + Math.random() * 4);
@@ -823,6 +863,8 @@ export class Wanderer {
       targetY = this.spot.seat;
       targetYaw = this.spot.face;
       this.timer -= dt;
+      // working away from the desk: stay put until the job is done
+      if (this.workAt === this.spot && busy) this.timer = Math.max(this.timer, 1);
       // an office event sent someone else to this spot: move on
       if (!this.ordered && taken.get(this.spot.id) !== this.id) this.timer = Math.min(this.timer, 0);
       // a two-person spot whose partner isn't coming (or has left): don't play alone for long
@@ -903,6 +945,18 @@ export class Wanderer {
   dispose() {
     releaseSpot(this.id);
     walkers.delete(this.id);
+  }
+
+  /** A free work spot in the agent's favourite zone, claimed for them. */
+  private freeWorkSpot(): Spot | null {
+    const zone = favourite.get(this.id);
+    const ids = zone ? ZONE_WORK_SPOTS[zone] : undefined;
+    if (!ids) return null;
+    const free = ids.map((id) => spotById(id)).filter((sp) => sp && !taken.has(sp.id));
+    if (!free.length) return null;
+    const sp = free[Math.floor(Math.random() * free.length)];
+    claimSpot(this.id, sp);
+    return sp;
   }
 
   /** The next step of a routine, if that spot is free. */

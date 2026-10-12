@@ -2363,7 +2363,7 @@ function FitnessStudio({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
 }
 
 /** One sound-proofed booth: felt back panel, desk, monitor, chair and a busy light. */
-function FocusPod({ x, z, open, felt, glow, busy }: { x: number; z: number; open: "east" | "west"; felt: string; glow: boolean; busy: boolean }) {
+function FocusPod({ id, x, z, open, felt }: { id: string; x: number; z: number; open: "east" | "west"; felt: string }) {
   // x, z: where the sitter sits (facing -z); the desk is in front, the door on the open side
   const side = open === "east" ? 1 : -1;
   const wx = x + side * 1.3;
@@ -2379,20 +2379,13 @@ function FocusPod({ x, z, open, felt, glow, busy }: { x: number; z: number; open
       <GlassWallZ x={wx} z0={z - 1.15} z1={z - 0.45} h={2.0} />
       <GlassWallZ x={wx} z0={z + 0.6} z1={z + 0.95} h={2.0} />
       <B s={[0.07, 0.07, 1.06]} p={[wx, 2.0, z + 0.07]} c="#5f6b70" />
-      <mesh position={[wx, 2.1, z + 0.07]}>
-        <sphereGeometry args={[0.06, 12, 10]} />
-        <meshBasicMaterial color={busy ? "#ef4444" : "#22c55e"} toneMapped={false} />
-      </mesh>
+      <PodLive id={id} x={x} z={z} wx={wx} dz={dz} side={side} />
       {/* desk with a monitor, keyboard and headphones */}
       <B s={[1.5, 0.05, 0.6]} p={[x, 0.74, dz]} c="#e7d3b5" />
       {[-0.68, 0.68].map((ox) => (
         <B key={ox} s={[0.05, 0.72, 0.5]} p={[x + ox, 0.36, dz]} c="#374151" />
       ))}
       <B s={[0.7, 0.42, 0.04]} p={[x, 1.08, dz - 0.18]} c="#111827" />
-      <mesh position={[x, 1.08, dz - 0.155]}>
-        <planeGeometry args={[0.64, 0.36]} />
-        <meshBasicMaterial color={glow ? "#7dd3fc" : "#bae6fd"} toneMapped={false} />
-      </mesh>
       <B s={[0.05, 0.16, 0.05]} p={[x, 0.85, dz - 0.18]} c="#374151" />
       <B s={[0.44, 0.02, 0.14]} p={[x, 0.775, dz + 0.08]} c="#f5f5f4" />
       <mesh position={[x + 0.5, 0.8, dz + 0.05]} rotation-x={Math.PI / 2}>
@@ -2400,7 +2393,6 @@ function FocusPod({ x, z, open, felt, glow, busy }: { x: number; z: number; open
         <meshStandardMaterial color="#111827" />
       </mesh>
       <OfficeChair p={[x, 0, z + 0.05]} />
-      <Bulb p={[x - side * 0.55, 1.6, z - 1.05]} r={0.06} on={glow} />
     </group>
   );
 }
@@ -2408,17 +2400,259 @@ function FocusPod({ x, z, open, felt, glow, busy }: { x: number; z: number; open
 /** Zone 4: four enclosed focus pods off a quiet aisle. */
 function FocusPods({ decor }: { decor: FloorDecor }) {
   const { door, z1, gym, pods } = SOUTH;
-  const glow = decor.phase !== "day";
   const carpet = useDisposable(() => carpetTexture("#6b7f73", [4, 3.6]), "pods-floor");
   return (
     <group>
       <Floor x0={gym} x1={pods} z0={door} z1={z1} map={carpet} />
-      <FocusPod x={2.6} z={19.35} open="east" felt="#5b8a72" glow={glow} busy />
-      <FocusPod x={6.4} z={19.35} open="west" felt="#7a6aa8" glow={glow} busy={false} />
-      <FocusPod x={2.6} z={22.55} open="east" felt="#c07a5a" glow={glow} busy={false} />
-      <FocusPod x={6.4} z={22.55} open="west" felt="#4f7aa8" glow={glow} busy />
+      <FocusPod id="pod-0" x={2.6} z={19.35} open="east" felt="#5b8a72" />
+      <FocusPod id="pod-1" x={6.4} z={19.35} open="west" felt="#7a6aa8" />
+      <FocusPod id="pod-2" x={2.6} z={22.55} open="east" felt="#c07a5a" />
+      <FocusPod id="pod-3" x={6.4} z={22.55} open="west" felt="#4f7aa8" />
       {decor.items.plants && <PalmPlant p={[4.5, 0, 23.6]} s={0.85} />}
     </group>
+  );
+}
+
+// ---------- South wing props that react to the people using them ----------
+
+/** Marker strokes for a whiteboard sketch (transparent, drawn over the board). */
+function sketchTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(seed);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  const pens = ["#dc2626", "#2563eb", "#16a34a", "#111827"];
+  for (let i = 0; i < 5; i++) {
+    const x = 30 + i * 95 + rnd() * 20;
+    const y = 50 + rnd() * 140;
+    g.strokeStyle = pens[i % pens.length];
+    g.lineWidth = 4;
+    // a box or a circle, a few scribbled words, and an arrow to the next idea
+    if (i % 2) {
+      g.beginPath();
+      g.ellipse(x + 30, y, 34, 22, 0, 0, Math.PI * 2);
+      g.stroke();
+    } else g.strokeRect(x, y - 22, 64, 44);
+    g.lineWidth = 2.5;
+    for (let l = 0; l < 2; l++) {
+      g.beginPath();
+      g.moveTo(x + 8, y - 6 + l * 12);
+      for (let k = 1; k <= 8; k++) g.lineTo(x + 8 + k * 6, y - 6 + l * 12 + Math.sin(k * 2 + rnd() * 3) * 3);
+      g.stroke();
+    }
+    if (i < 4) {
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(x + 70, y);
+      g.lineTo(x + 95, y + (rnd() - 0.5) * 30);
+      g.stroke();
+    }
+  }
+  g.strokeStyle = "#f59e0b";
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(40, 225);
+  g.lineTo(470, 225);
+  g.stroke();
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  return tex;
+}
+
+/** While someone sketches at the board, a new drawing appears left to right; it fades once they leave. */
+function LiveSketch({ spot, seed }: { spot: string; seed: number }) {
+  const tex = useDisposable(() => sketchTexture(seed), `sketch-${seed}`);
+  const wipe = useRef<Group>(null);
+  const mat = useRef<MeshBasicMaterial>(null);
+  const progress = useRef(0);
+  useFrame((_, dt) => {
+    const g = wipe.current;
+    const m = mat.current;
+    if (!g || !m?.map) return;
+    const drawing = isPresent(spot);
+    progress.current = drawing ? Math.min(1, progress.current + dt / 16) : Math.max(0, progress.current - dt / 40);
+    const k = Math.max(0.001, progress.current);
+    // reveal the left part of the sketch at its real size, like a marker moving across
+    g.scale.x = k;
+    m.map.repeat.x = k;
+    g.visible = progress.current > 0.005;
+  });
+  return (
+    <group ref={wipe} position={[-1.04, 0, 0.034]} userData={DYNAMIC}>
+      <mesh position={[1.04, 0, 0]}>
+        <planeGeometry args={[2.08, 1.03]} />
+        <meshBasicMaterial ref={mat} map={tex} transparent toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** The touch table lights up and projects floating ideas while someone works at it. */
+function LiveTouchTable({ map }: { map: Texture }) {
+  const top = useRef<MeshBasicMaterial>(null);
+  const holo = useRef<Group>(null);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    const active = isPresent("tt-a") || isPresent("tt-b");
+    top.current?.color.setScalar(active ? 0.85 + Math.sin(t * 3) * 0.15 : 0.45);
+    const h = holo.current;
+    if (!h) return;
+    h.visible = active;
+    if (!active || still) return;
+    h.children.forEach((c, i) => {
+      c.position.y = 0.25 + Math.sin(t * 1.5 + i * 2) * 0.06;
+      c.rotation.y = t * (0.8 + i * 0.3);
+      c.rotation.x = t * 0.5;
+    });
+  });
+  return (
+    <group userData={DYNAMIC}>
+      <mesh position={[0, 0.905, 0]} rotation-x={-Math.PI / 2}>
+        <planeGeometry args={[1.48, 0.88]} />
+        <meshBasicMaterial ref={top} map={map} toneMapped={false} />
+      </mesh>
+      <group ref={holo} position={[0, 0.9, 0]} visible={false}>
+        {["#22d3ee", "#a78bfa", "#f472b6"].map((c, i) => (
+          <mesh key={c} position={[(i - 1) * 0.4, 0.25, 0]}>
+            {i === 1 ? <icosahedronGeometry args={[0.09, 0]} /> : <boxGeometry args={[0.12, 0.12, 0.12]} />}
+            <meshBasicMaterial color={c} transparent opacity={0.75} toneMapped={false} wireframe={i === 1} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+/** The 3D printer's head sweeps and the print grows while someone runs a job. */
+function LivePrinter() {
+  const head = useRef<Mesh>(null);
+  const print = useRef<Mesh>(null);
+  const grown = useRef(0.3);
+  const still = useStill();
+  useFrame(({ clock }, dt) => {
+    const t = clock.elapsedTime;
+    const printing = isPresent("printer3d");
+    if (printing) grown.current = grown.current >= 1 ? 0.15 : grown.current + dt / 25;
+    if (head.current) {
+      head.current.position.x = printing && !still ? Math.sin(t * 5) * 0.2 : 0;
+      head.current.position.z = printing && !still ? Math.cos(t * 3.3) * 0.18 : 0;
+      head.current.position.y = 0.76 + grown.current * 0.12;
+    }
+    print.current?.scale.set(1, grown.current, 1);
+  });
+  return (
+    <group userData={DYNAMIC}>
+      <mesh ref={head} position={[0, 0.8, 0]}>
+        <boxGeometry args={[0.1, 0.06, 0.1]} />
+        <meshStandardMaterial color="#111827" />
+      </mesh>
+      <mesh ref={print} position={[0, 0.78, 0]}>
+        <torusKnotGeometry args={[0.08, 0.03, 48, 8]} />
+        <meshStandardMaterial color="#f97316" />
+      </mesh>
+    </group>
+  );
+}
+
+/** A focus pod's live bits: busy light (red when someone's in), screen wakes up with scrolling work, lamp on. */
+function PodLive({ id, x, z, wx, dz, side }: { id: string; x: number; z: number; wx: number; dz: number; side: number }) {
+  const light = useRef<MeshBasicMaterial>(null);
+  const screen = useRef<MeshBasicMaterial>(null);
+  const lamp = useRef<MeshBasicMaterial>(null);
+  const code = useDisposable(() => codeTexture(id.length + x), `pod-code-${id}`);
+  const still = useStill();
+  useFrame((_, dt) => {
+    const inUse = isPresent(id);
+    light.current?.color.set(inUse ? "#ef4444" : "#22c55e");
+    lamp.current?.color.set(inUse ? "#ffd58a" : "#f5f1e6");
+    const m = screen.current;
+    if (!m?.map) return;
+    m.color.set(inUse ? "#ffffff" : "#1e293b");
+    if (inUse && !still) m.map.offset.y = (m.map.offset.y + dt * 0.05) % 1;
+  });
+  return (
+    <group userData={DYNAMIC}>
+      <mesh position={[wx, 2.1, z + 0.07]}>
+        <sphereGeometry args={[0.06, 12, 10]} />
+        <meshBasicMaterial ref={light} color="#22c55e" toneMapped={false} />
+      </mesh>
+      <mesh position={[x, 1.08, dz - 0.155]}>
+        <planeGeometry args={[0.64, 0.36]} />
+        <meshBasicMaterial ref={screen} map={code} toneMapped={false} />
+      </mesh>
+      <mesh position={[x - side * 0.55, 1.6, z - 1.05]}>
+        <sphereGeometry args={[0.06, 12, 12]} />
+        <meshBasicMaterial ref={lamp} color="#f5f1e6" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Lines of code / text for a pod's monitor (scrolls while someone works). */
+function codeTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(Math.floor(seed * 7));
+  g.fillStyle = "#0f172a";
+  g.fillRect(0, 0, 256, 256);
+  const colors = ["#7dd3fc", "#a78bfa", "#86efac", "#fca5a5", "#e2e8f0"];
+  for (let y = 8; y < 256; y += 12) {
+    let x = 8 + Math.floor(rnd() * 4) * 12;
+    while (x < 230 && rnd() > 0.15) {
+      const w = 12 + rnd() * 40;
+      g.fillStyle = colors[Math.floor(rnd() * colors.length)];
+      g.fillRect(x, y, w, 5);
+      x += w + 6;
+    }
+  }
+  return finish(c, [1, 1]);
+}
+
+const HUB_IDS = ["hub-n0", "hub-n1", "hub-n2", "hub-n3", "hub-s0", "hub-s1", "hub-s2", "hub-s3", "hub-w", "hub-e"];
+
+/** The hub's screen: dim when the room is free; a live video call (with a blinking REC dot) when people meet. */
+function HubScreen({ map }: { map: Texture }) {
+  const screen = useRef<MeshBasicMaterial>(null);
+  const rec = useRef<Mesh>(null);
+  useFrame(({ clock }) => {
+    const inUse = HUB_IDS.some((id) => isPresent(id));
+    screen.current?.color.set(inUse ? "#ffffff" : "#3b4252");
+    if (rec.current) rec.current.visible = inUse && clock.elapsedTime % 1.2 < 0.7;
+  });
+  return (
+    <group userData={DYNAMIC}>
+      <mesh position={[0, 0, 0.03]}>
+        <planeGeometry args={[2.8, 1.25]} />
+        <meshBasicMaterial ref={screen} map={map} toneMapped={false} />
+      </mesh>
+      <mesh ref={rec} position={[-1.28, 0.52, 0.035]} visible={false}>
+        <circleGeometry args={[0.045, 16]} />
+        <meshBasicMaterial color="#ef4444" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Pinball playfield flashing while someone plays. */
+function LivePinball({ glow }: { glow: boolean }) {
+  const field = useRef<MeshBasicMaterial>(null);
+  useFrame(({ clock }) => {
+    const m = field.current;
+    if (!m) return;
+    if (isPresent("pinball")) m.color.setHSL((clock.elapsedTime * 0.6) % 1, 0.9, 0.7);
+    else m.color.set(glow ? "#f0abfc" : "#f5d0fe");
+  });
+  return (
+    <mesh position={[0, 0.9, 0]} rotation-x={-Math.PI / 2 + 0.1} userData={DYNAMIC}>
+      <planeGeometry args={[0.52, 1.0]} />
+      <meshBasicMaterial ref={field} color="#f5d0fe" toneMapped={false} />
+    </mesh>
   );
 }
 
@@ -2440,26 +2674,26 @@ function CreativeLabs({ decor }: { decor: FloorDecor }) {
         </mesh>
       )}
       {/* digital whiteboards on the west wall */}
-      {[
-        [18.9, board1],
-        [21.6, board2],
-      ].map(([z, map]) => (
-        <group key={z as number} position={[pods + 0.1, 1.2, z as number]} rotation-y={Math.PI / 2}>
+      {(
+        [
+          [18.9, board1, "wb-1"],
+          [21.6, board2, "wb-2"],
+        ] as const
+      ).map(([z, map, spot], i) => (
+        <group key={z} position={[pods + 0.1, 1.2, z]} rotation-y={Math.PI / 2}>
           <B s={[2.2, 1.15, 0.05]} p={[0, 0, 0]} c="#1f2937" />
           <mesh position={[0, 0, 0.03]}>
             <planeGeometry args={[2.08, 1.03]} />
-            <meshBasicMaterial map={map as Texture} toneMapped={false} />
+            <meshBasicMaterial map={map} toneMapped={false} />
           </mesh>
+          <LiveSketch spot={spot} seed={31 + i * 17} />
           <B s={[1.2, 0.04, 0.1]} p={[0, -0.6, 0.06]} c="#9ca3af" />
         </group>
       ))}
       {/* touch table with a glowing screen top */}
       <group position={[12.0, 0, 20.2]}>
         <B s={[1.6, 0.12, 1.0]} p={[0, 0.84, 0]} c="#1f2937" />
-        <mesh position={[0, 0.905, 0]} rotation-x={-Math.PI / 2}>
-          <planeGeometry args={[1.48, 0.88]} />
-          <meshBasicMaterial map={table} toneMapped={false} />
-        </mesh>
+        <LiveTouchTable map={table} />
         <B s={[0.5, 0.78, 0.4]} p={[0, 0.39, 0]} c="#374151" />
       </group>
       {/* 3D printer with a print in progress */}
@@ -2470,10 +2704,7 @@ function CreativeLabs({ decor }: { decor: FloorDecor }) {
           <meshStandardMaterial color="#bfe3f0" transparent opacity={0.3} depthWrite={false} />
         </mesh>
         <B s={[0.62, 0.04, 0.62]} p={[0, 1.37, 0]} c="#374151" />
-        <mesh position={[0, 0.88, 0]}>
-          <torusKnotGeometry args={[0.08, 0.03, 48, 8]} />
-          <meshStandardMaterial color="#f97316" />
-        </mesh>
+        <LivePrinter />
       </group>
       {/* beanbag for big thoughts */}
       <mesh position={[15.6, 0.22, 22.4]} scale={[1, 0.6, 1]} castShadow>
@@ -2483,10 +2714,7 @@ function CreativeLabs({ decor }: { decor: FloorDecor }) {
       {/* pinball machine and an arcade cabinet */}
       <group position={[10.0, 0, 23.3]}>
         <B s={[0.6, 0.75, 1.1]} p={[0, 0.5, 0]} c="#7c3aed" />
-        <mesh position={[0, 0.9, 0]} rotation-x={-Math.PI / 2 + 0.1}>
-          <planeGeometry args={[0.52, 1.0]} />
-          <meshBasicMaterial color={glow ? "#f0abfc" : "#f5d0fe"} toneMapped={false} />
-        </mesh>
+        <LivePinball glow={glow} />
         <B s={[0.6, 0.7, 0.12]} p={[0, 1.25, 0.5]} c="#4c1d95" />
         {[-0.24, 0.24].map((x) => (
           <B key={x} s={[0.05, 0.45, 0.05]} p={[x, 0.22, -0.48]} c="#111827" />
@@ -2514,10 +2742,7 @@ function StrategyHub({ decor }: { decor: FloorDecor }) {
       <B s={[0.05, 1.8, 3.8]} p={[labs + 0.1, 0.9, 20.6]} c="#5a3d2b" />
       <group position={[labs + 0.15, 1.15, 20.6]} rotation-y={Math.PI / 2}>
         <B s={[2.9, 1.35, 0.05]} p={[0, 0, 0]} c="#0b0f19" />
-        <mesh position={[0, 0, 0.03]}>
-          <planeGeometry args={[2.8, 1.25]} />
-          <meshBasicMaterial map={screen} toneMapped={false} />
-        </mesh>
+        <HubScreen map={screen} />
         <B s={[0.5, 0.06, 0.08]} p={[0, 0.72, 0.03]} c="#111827" />
       </group>
       <B s={[0.4, 0.42, 2.6]} p={[labs + 0.3, 0.21, 20.6]} c="#3b2a20" />

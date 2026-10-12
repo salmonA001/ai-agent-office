@@ -1308,6 +1308,8 @@ type AvatarProps = {
   /** working, queued, or listening to the plan: stay at (or rush back to) the desk */
   busy: boolean;
   working: boolean;
+  /** has a part of a task (queued or in progress), so may take it to their favourite zone */
+  assigned: boolean;
   attentive: boolean;
   bubble?: string;
   lastDoneAt?: number;
@@ -1445,6 +1447,7 @@ function AgentAvatarImpl(props: AvatarProps) {
     const g = group.current;
     if (!g) return;
     const p = live.current;
+    walker.setWorking(p.assigned);
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
     g.position.set(walker.x + walker.offX, walker.y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
@@ -1468,7 +1471,17 @@ function AgentAvatarImpl(props: AvatarProps) {
   const alone = phase.kind === "spot" && !!phase.spot.pair && !partnerHere;
   const chatAlone = alone && phase.kind === "spot" && phase.spot.activity === "chat";
   const cup = holding === "cup";
-  const action: Action = seated
+  // doing the current job in a pod, at the hub table, in the labs or at the café
+  // (while it waits its turn, the agent reads up on it there)
+  const workingAway = props.assigned && phase.kind === "spot" && phase.spot === walker.workAt;
+  const headingToWork = props.assigned && phase.kind === "walking" && walker.workAt !== null;
+  const action: Action = workingAway
+    ? !working
+      ? "read"
+      : phase.spot.activity === "draw"
+        ? "chalk"
+        : "write"
+    : seated
     ? working
       ? "write"
       : attentive
@@ -1485,23 +1498,25 @@ function AgentAvatarImpl(props: AvatarProps) {
           ? "sip"
           : "idle"
         : ACTIVITY_ACTION[phase.spot.activity];
-  const say = seated
-    ? working
-      ? bubble
-      : undefined
-    : phase.kind === "walking"
-      ? phase.rushing
-        ? translate(props.lang, "bubble.onMyWay")
-        : greeting
-          ? translate(props.lang, `greet.${Math.floor(hash(seed * 3.7 + Math.floor(walker.x)) * 5)}` as Key)
-          : holding === "box"
-            ? translate(props.lang, "bubble.parcel")
-            : undefined
-      : alone
-        ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner")
-        : phrase(props.lang, phase.spot.say);
+  let say: string | undefined;
+  if (workingAway) say = working ? bubble : translate(props.lang, "bubble.readingUp");
+  else if (headingToWork) say = translate(props.lang, "bubble.toWork");
+  else if (seated) say = working ? bubble : undefined;
+  else if (phase.kind === "walking")
+    say = phase.rushing
+      ? translate(props.lang, "bubble.onMyWay")
+      : greeting
+        ? translate(props.lang, `greet.${Math.floor(hash(seed * 3.7 + Math.floor(walker.x)) * 5)}` as Key)
+        : holding === "box"
+          ? translate(props.lang, "bubble.parcel")
+          : undefined;
+  else say = alone ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner") : phrase(props.lang, phase.spot.say);
 
-  const status = describe(props.lang, phase, working, attentive, bubble);
+  const status = workingAway
+    ? translate(props.lang, "act.workingAt", { where: phrase(props.lang, phase.spot.where), title: bubble ?? "" })
+    : headingToWork && walker.workAt
+      ? translate(props.lang, "act.headingTo", { where: phrase(props.lang, walker.workAt.where) })
+      : describe(props.lang, phase, working, attentive, bubble);
   useEffect(() => {
     setAgentActivity(agent.id, status);
   }, [agent.id, status]);
@@ -1554,6 +1569,7 @@ const AgentAvatar = memo(
     a.home.row === b.home.row &&
     a.busy === b.busy &&
     a.working === b.working &&
+    a.assigned === b.assigned &&
     a.attentive === b.attentive &&
     a.bubble === b.bubble &&
     a.lastDoneAt === b.lastDoneAt &&
@@ -2232,6 +2248,7 @@ export default function OfficeScene({
               home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row }}
               busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
               working={state.working.length > 0}
+              assigned={state.screen.mode === "working" || state.screen.mode === "queued"}
               attentive={attentive}
               bubble={state.working[0]}
               lastDoneAt={state.lastDoneAt}
