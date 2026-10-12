@@ -33,6 +33,7 @@ import {
   manager as managerRef,
   pet as petWalker,
   PetWalker,
+  seenFromRoof,
   setAgentHobbies,
   type ManagerPhase,
   ManagerWalker,
@@ -1497,7 +1498,9 @@ function AgentAvatarImpl(props: AvatarProps) {
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
     g.position.set(walker.x + walker.offX, walker.y + walker.level * ROOF_Y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
-    g.visible = !walker.hidden && walker.level === getLevel();
+    // on their own floor; from the roof you also see whoever is down in the open courtyard
+    const view = getLevel();
+    g.visible = !walker.hidden && (walker.level === view || (view === 1 && seenFromRoof(walker.x, walker.z)));
     if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
     const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
     const here = pair ? isPresent(pair) : false;
@@ -1796,7 +1799,7 @@ function Pacer({
     if (!g) return;
     const { onDuty, still } = live.current;
     if (walker.update(delta, onDuty, !still)) onPhase(walker.phase);
-    g.visible = getLevel() === 0;
+    g.visible = getLevel() === 0 || seenFromRoof(walker.x, walker.z);
     if (!walker.atBase()) {
       g.position.set(walker.x, 0, walker.z);
       g.rotation.y = walker.yaw;
@@ -2056,7 +2059,7 @@ function Dog({ lang }: { lang: Lang }) {
     walker.update(dt, !still);
     g.position.set(walker.x, 0, walker.z);
     g.rotation.y = walker.yaw;
-    g.visible = getLevel() === 0;
+    g.visible = getLevel() === 0 || seenFromRoof(walker.x, walker.z);
     const t = clock.elapsedTime;
     const kind = walker.phase.kind;
     const walking = kind === "walk" && !still;
@@ -2248,10 +2251,12 @@ function CameraFly() {
       const off = w instanceof Wanderer ? [w.offX, w.offZ] : [0, 0];
       // follow them up to the roof and back down
       const level = w instanceof Wanderer ? w.level : 0;
-      if (level !== getLevel() && !(w instanceof Wanderer && w.hidden)) showLevel(level);
+      // (someone in the open courtyard can be watched from the roof as well)
+      const visibleHere = level === getLevel() || (getLevel() === 1 && seenFromRoof(w.x, w.z));
+      if (!visibleHere && !(w instanceof Wanderer && w.hidden)) showLevel(level);
       const k = still ? 1 : 1 - Math.exp(-delta * 3);
       const offset = camera.position.clone().sub(orbit.target);
-      orbit.target.lerp(spot.set(w.x + off[0], TARGET[1] + level * ROOF_Y, w.z + off[1]), k);
+      orbit.target.lerp(spot.set(w.x + off[0], TARGET[1] + (getLevel() === 1 && level === 0 ? 0.5 : level) * ROOF_Y, w.z + off[1]), k);
       camera.position.copy(orbit.target).add(offset);
       const z = followZoom.current;
       if (z !== null) {

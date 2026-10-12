@@ -301,6 +301,15 @@ export type Spot = {
 /** Height of the roof deck above the ground floor. */
 export const ROOF_Y = 2.72;
 
+/** The garden courtyard has no roof: from up there you can look down into it. */
+export const COURTYARD = { x0: 16, x1: 26, z0: 8.8, z1: 16 };
+
+/** Whether a point on the ground floor can be seen from the roof (through the open courtyard). */
+export function seenFromRoof(x: number, z: number) {
+  const m = 0.25;
+  return x > COURTYARD.x0 + m && x < COURTYARD.x1 - m && z > COURTYARD.z0 + m && z < COURTYARD.z1 - m;
+}
+
 const PI = Math.PI;
 
 type SpotInit = Omit<Spot, "approach" | "seat"> & { approach?: P2[]; seat?: number };

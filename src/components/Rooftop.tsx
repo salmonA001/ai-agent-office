@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { CanvasTexture, DoubleSide, type Group, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
 import type { Phase } from "@/lib/office-custom";
 import { useStill } from "@/lib/motion";
-import { ROOF_Y } from "./office-nav";
+import { COURTYARD, ROOF_Y } from "./office-nav";
 import { seeded, useDisposable } from "./scene-utils";
 import { DYNAMIC, StaticMerge } from "./static-merge";
 
@@ -13,7 +13,7 @@ type V3 = [number, number, number];
 
 /** Roof footprint (matches the building below); the garden courtyard stays open to the sky. */
 const ROOF = { x0: -8, x1: 26, z0: -6, z1: 24 };
-const COURT = { x0: 16, x1: 26, z0: 8.8, z1: 16 };
+const COURT = COURTYARD;
 const Y = ROOF_Y;
 
 function B({ s, p, c, r = 0, rough = 0.7, metal = 0 }: { s: V3; p: V3; c: string; r?: number; rough?: number; metal?: number }) {
