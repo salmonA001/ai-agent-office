@@ -26,7 +26,9 @@ export type EventKind =
   | "outage"
   | "welcome"
   | "allhands"
-  | "picnic";
+  | "picnic"
+  | "strategy"
+  | "hackathon";
 
 export type ActiveEvent = {
   id: number;
@@ -317,6 +319,7 @@ const EVENTS: EventDef[] = [
       orders: gather(idle, [
         ...["yoga-1", "yoga-2", "stretch"].map((id) => fix(spotById(id), "Yoga class!", ["🧘", "😌"], "at the yoga class")),
         ...EVENT_SPOTS.yoga,
+        ...["ym-0", "ym-1", "ym-2", "med-0", "med-1", "med-2"].map((id) => fix(spotById(id), "Yoga class!", ["🧘", "😌"], "at the yoga class")),
       ]),
       dwell: 4,
       text: { key: "ge.yoga.text" },
@@ -441,6 +444,40 @@ const EVENTS: EventDef[] = [
       ),
       dwell: 4,
       text: { key: "ge.picnic.text" },
+    }),
+  },
+  {
+    kind: "strategy",
+    icon: "📊",
+    seconds: 32,
+    xp: 12,
+    when: (h) => between(h, 9, 17),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        EVENT_SPOTS.hub.map((s, i) =>
+          fix(s, ["Next quarter's goals", "Here's the data", "Let's prioritise", "Agreed!"][i % 4], ["📊", "🎯", "🤝"], "at the strategy meeting", i % 3 ? "type" : "talk"),
+        ),
+      ),
+      dwell: 4,
+      text: { key: "ge.strategy.text" },
+    }),
+  },
+  {
+    kind: "hackathon",
+    icon: "💡",
+    seconds: 32,
+    xp: 12,
+    when: (h) => between(h, 13, 20),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        ["wb-1", "wb-2", "tt-a", "tt-b", "printer3d", "idea-bag", "pinball"].map((id) =>
+          fix(spotById(id), "Hackathon!", ["💡", "🚀", "🛠️"], "at the hackathon in the creative labs"),
+        ),
+      ),
+      dwell: 4,
+      text: { key: "ge.hackathon.text" },
     }),
   },
   {

@@ -103,6 +103,27 @@ const NODES: Record<string, P2> = {
   GM: [19.8, 13.6],
   GS1: [21.6, 13.6],
   GS2: [22.8, 13.6],
+  // south wing: a corridor along its rooms, reached from the café and the east aisle
+  TX: [6.8, R[3]],
+  SX: [6.8, 16.7],
+  SC: [12.2, 16.7],
+  FA: [-4.0, 16.7],
+  FB: [4.5, 16.7],
+  FD: [21.5, 16.7],
+  // fitness & meditation studio
+  FA1: [-4.0, 20.3],
+  // deep focus pods
+  FB1: [4.5, 19.2],
+  FB2: [4.5, 22.4],
+  // creative labs
+  FC1: [13.6, 18.3],
+  FC2: [13.6, 22.4],
+  // strategy hub
+  FD1: [21.5, 18.6],
+  FD2: [18.2, 18.6],
+  FD3: [18.2, 22.6],
+  FD5: [24.8, 18.6],
+  FD6: [24.8, 22.6],
 };
 
 const EDGES: [string, string][] = [
@@ -150,7 +171,8 @@ const EDGES: [string, string][] = [
   ["RW2", "RE2"],
   ["RW3", "T1"],
   ["T1", "T2"],
-  ["T2", "T3"],
+  ["T2", "TX"],
+  ["TX", "T3"],
   ["T3", "RE3"],
   // zones
   ["RW0", "LB"],
@@ -171,16 +193,49 @@ const EDGES: [string, string][] = [
   ["GE", "GM"],
   ["GM", "GS1"],
   ["GS1", "GS2"],
+  // south wing
+  ["TX", "SX"],
+  ["RE3", "SC"],
+  ["FA", "FB"],
+  ["FB", "SX"],
+  ["SX", "SC"],
+  ["SC", "FD"],
+  ["FA", "FA1"],
+  ["FB", "FB1"],
+  ["FB1", "FB2"],
+  ["SC", "FC1"],
+  ["FC1", "FC2"],
+  ["FD", "FD1"],
+  ["FD1", "FD2"],
+  ["FD2", "FD3"],
+  ["FD1", "FD5"],
+  ["FD5", "FD6"],
+  ["FD3", "FD6"],
 ];
 
 // ---------- Places to go ----------
 
 /** How an agent looks while at a spot (Mochi plays a matching animation). */
-export type Activity = "look" | "sip" | "play" | "rest" | "read" | "call" | "yoga" | "run" | "chat" | "talk" | "nap";
+export type Activity =
+  | "look"
+  | "sip"
+  | "play"
+  | "rest"
+  | "read"
+  | "call"
+  | "yoga"
+  | "run"
+  | "chat"
+  | "talk"
+  | "nap"
+  | "type"
+  | "draw"
+  | "lift"
+  | "meditate";
 
 /** What kind of break a spot is; the user can switch whole categories off. */
-export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas";
-export const SPOT_CATS: SpotCat[] = ["food", "chat", "games", "rest", "reading", "exercise", "calls", "nature", "ideas"];
+export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas" | "focus";
+export const SPOT_CATS: SpotCat[] = ["food", "chat", "games", "rest", "reading", "exercise", "focus", "calls", "nature", "ideas"];
 
 export type Spot = {
   id: string;
@@ -232,6 +287,18 @@ const TOWN_HALL_SEATS: Spot[] = [4.3, 5.7, 7.1].flatMap((z, row) =>
     }),
   ),
 );
+
+/** Strategy hub: 4 seats on each long side of the table and one at each end. */
+const HUB_SEATS: Spot[] = [
+  ...[20.0, 21.0, 22.0, 23.0].map((x, i) =>
+    spot({ id: `hub-n${i}`, at: [x, 19.55], node: "FD1", approach: [[x, 18.6]], face: 0, seat: 0.5, activity: "type", cat: "ideas", say: "Prepping the roadmap", where: "in the strategy hub", emoji: ["📊", "🗺️"] }),
+  ),
+  ...[20.0, 21.0, 22.0, 23.0].map((x, i) =>
+    spot({ id: `hub-s${i}`, at: [x, 21.65], node: "FD3", approach: [[x, 22.6]], face: PI, seat: 0.5, activity: "type", cat: "ideas", say: "Crunching the numbers", where: "in the strategy hub", emoji: ["📈", "🧮"] }),
+  ),
+  spot({ id: "hub-w", at: [19.0, 20.6], node: "FD2", approach: [[18.2, 20.6]], face: PI / 2, seat: 0.5, activity: "type", cat: "ideas", say: "Prepping the roadmap", where: "in the strategy hub", emoji: ["📊", "🗺️"] }),
+  spot({ id: "hub-e", at: [24.0, 20.6], node: "FD5", approach: [[24.8, 20.6]], face: -PI / 2, seat: 0.5, activity: "type", cat: "ideas", say: "Crunching the numbers", where: "in the strategy hub", emoji: ["📈", "🧮"] }),
+];
 
 /** Places idle agents wander to on their own. */
 export const SPOTS: Spot[] = [
@@ -322,6 +389,40 @@ export const SPOTS: Spot[] = [
   spot({ id: "lounger-1", at: [21.6, 14.65], node: "GS1", approach: [[21.6, 14.0]], face: 0, seat: 0.3, activity: "rest", cat: "rest", say: "Sunbathing", where: "on a garden lounger", emoji: ["😎", "☀️"] }),
   spot({ id: "lounger-2", at: [23.0, 14.65], node: "GS2", approach: [[23.0, 14.0]], face: 0, seat: 0.3, activity: "nap", cat: "rest", say: "Soaking up the sun", where: "on a garden lounger", emoji: ["😎", "💤"] }),
   spot({ id: "hammock", at: [24.9, 14.6], node: "GS2", approach: [[24.9, 13.95]], face: 0, seat: 0.55, activity: "nap", cat: "rest", say: "Swinging in the hammock", where: "in the garden hammock", emoji: ["💤", "🌴"] }),
+
+  // ----- zone 5: fitness & meditation studio -----
+  spot({ id: "tread-a", at: [-7.15, 18.2], node: "FA1", approach: [[-6.0, 18.95], [-7.15, 18.95]], face: PI / 2, seat: 0.16, activity: "run", cat: "exercise", say: "Cardio time", where: "in the fitness studio", emoji: ["🏃", "💦"] }),
+  spot({ id: "tread-b", at: [-7.15, 19.8], node: "FA1", approach: [[-6.0, 18.95], [-7.15, 18.95]], face: PI / 2, seat: 0.16, activity: "run", cat: "exercise", say: "New personal best!", where: "in the fitness studio", emoji: ["🏃", "🏅"] }),
+  spot({ id: "bike", at: [-4.6, 18.45], node: "FA1", approach: [[-4.0, 18.45]], face: 0, seat: 0.55, activity: "run", cat: "exercise", say: "Spinning class", where: "on the exercise bike", emoji: ["🚴", "💪"] }),
+  spot({ id: "weights", at: [-2.2, 18.6], node: "FA1", approach: [[-2.2, 19.4]], face: PI / 2, activity: "lift", cat: "exercise", say: "Leg day? Arm day!", where: "at the weights", emoji: ["🏋️", "💪"] }),
+  ...[21.0, 22.0, 23.0].map((z, i) =>
+    spot({ id: `ym-${i}`, at: [-6.8, z], node: "FA1", approach: [[-5.4, z]], face: PI / 2, activity: "yoga", cat: "exercise", say: i ? "Downward dog" : "Sun salutation", where: "in the fitness studio", emoji: ["🧘", "🌸"] }),
+  ),
+  ...[-3.8, -2.8, -1.8].map((x, i) =>
+    spot({ id: `med-${i}`, at: [x, 22.2], node: "FA1", approach: [[x, 21.4]], face: 0, seat: 0.12, activity: "meditate", cat: "exercise", say: "Breathe in… breathe out", where: "in the meditation corner", emoji: ["🕯️", "😌", "🌿"] }),
+  ),
+
+  // ----- zone 4: deep focus pods -----
+  ...[
+    [2.6, 19.35, "FB1"],
+    [6.4, 19.35, "FB1"],
+    [2.6, 22.55, "FB2"],
+    [6.4, 22.55, "FB2"],
+  ].map(([x, z, node], i) =>
+    spot({ id: `pod-${i}`, at: [x as number, z as number], node: node as string, face: PI, seat: 0.5, activity: "type", cat: "focus", say: i % 2 ? "In the zone" : "Deep work, do not disturb", where: "in a focus pod", emoji: ["🎧", "🤫", "🧠"] }),
+  ),
+
+  // ----- zone 3: creative labs -----
+  spot({ id: "wb-1", at: [9.4, 18.9], node: "FC1", approach: [[10.3, 18.4]], face: -PI / 2, activity: "draw", cat: "ideas", say: "Sketching the flow", where: "at the digital whiteboard", emoji: ["✏️", "💡"] }),
+  spot({ id: "wb-2", at: [9.4, 21.6], node: "FC2", approach: [[10.4, 21.9]], face: -PI / 2, activity: "draw", cat: "ideas", say: "Mind-mapping", where: "at the digital whiteboard", emoji: ["🧠", "✨"] }),
+  spot({ id: "tt-a", at: [12.0, 19.2], node: "FC1", approach: [[12.0, 18.4]], face: 0, activity: "chat", cat: "ideas", say: "What if we…", where: "at the touch table", emoji: ["💡", "🖐️"], pair: "tt-b" }),
+  spot({ id: "tt-b", at: [12.0, 21.2], node: "FC2", approach: [[13.6, 21.2]], face: PI, activity: "chat", cat: "ideas", say: "Yes, and…", where: "at the touch table", emoji: ["💡", "🤩"], pair: "tt-a" }),
+  spot({ id: "printer3d", at: [15.0, 18.4], node: "FC1", face: PI / 2, activity: "look", cat: "ideas", say: "3D printing a prototype", where: "at the 3D printer", emoji: ["🖨️", "🧩"] }),
+  spot({ id: "idea-bag", at: [15.4, 22.4], node: "FC2", approach: [[14.6, 22.4]], face: -PI / 2, seat: 0.32, activity: "rest", cat: "ideas", say: "Thinking big", where: "in the creative labs", emoji: ["💭", "🌈"] }),
+  spot({ id: "pinball", at: [10.0, 22.55], node: "FC2", approach: [[13.6, 22.55]], face: 0, activity: "play", cat: "games", say: "Multiball!", where: "at the pinball machine", emoji: ["🎰", "😆"] }),
+
+  // ----- zone 6: strategy hub (a few seats used day to day) -----
+  ...HUB_SEATS.slice(1, 3),
 ];
 
 /** Places only used by office events (gatherings, chores). */
@@ -361,6 +462,7 @@ export const EVENT_SPOTS = {
     ),
   ],
   townHall: TOWN_HALL_SEATS,
+  hub: HUB_SEATS,
   delivery: [
     spot({ id: "parcel-pickup", at: [-7.0, 0.3], node: "EL", face: 0, activity: "look", cat: "ideas", say: "Signing for a parcel", where: "at the elevator", emoji: ["📦", "✍️"], gives: "box" }),
     spot({ id: "parcel-drop", at: [-6.2, 14.85], node: "PB", approach: [[-6.2, 14.0]], face: 0, activity: "look", cat: "ideas", say: "Unpacking supplies", where: "at the supply cabinet", emoji: ["📦", "✨"], takes: true }),

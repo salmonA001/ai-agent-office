@@ -13,6 +13,7 @@ import {
   MANAGER_TV,
   OfficeChair,
   OfficeFloor,
+  ZoneSigns,
   PRESENTER,
   Projector,
 } from "./OfficeFloor";
@@ -20,6 +21,7 @@ import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
+import { releaseFocus, useCameraFocus, ZONE_LOOK } from "./camera-focus";
 import { currentEventKind, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
 import {
   type Activity,
@@ -108,7 +110,9 @@ type Action =
   | "run"
   | "talk"
   | "nap"
-  | "carry";
+  | "carry"
+  | "lift"
+  | "meditate";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -452,6 +456,7 @@ function Mochi({
       const hop = t % 7;
       y = Math.sin(t * 2) * 0.015 + (hop < 0.45 ? Math.sin((hop / 0.45) * Math.PI) * 0.1 : 0);
     } else if (action === "nap" || action === "read" || action === "yoga") y = 0;
+    else if (action === "meditate") y = Math.sin(t * 0.9) * 0.012;
     else y = Math.abs(Math.sin(t * 8)) * 0.012;
     root.current.position.y = y;
     root.current.rotation.z = walking
@@ -464,6 +469,7 @@ function Mochi({
 
     const nod = Math.max(0, Math.sin(t * 4)) * 0.1;
     head.current.rotation.z = cheering ? 0 : action === "idle" ? Math.sin(t * 0.8) * 0.12 : action === "nap" ? 0.28 : action === "phone" ? 0.18 : 0;
+    if (action === "meditate" && !cheering) head.current.rotation.z = Math.sin(t * 0.45) * 0.05;
     head.current.rotation.x = cheering
       ? 0
       : action === "write"
@@ -526,11 +532,20 @@ function Mochi({
     } else if (action === "carry") {
       L.set(-1.35, 0, 0.3);
       R.set(-1.35, 0, -0.3);
+    } else if (action === "lift") {
+      // alternating bicep curls
+      L.set(-0.4 - Math.max(0, Math.sin(t * 3)) * 1.6, 0, -0.2);
+      R.set(-0.4 - Math.max(0, -Math.sin(t * 3)) * 1.6, 0, 0.2);
+    } else if (action === "meditate") {
+      // hands resting out to the sides, rising a little with each breath
+      const breath = Math.sin(t * 0.9) * 0.06;
+      L.set(-0.25, 0, -(0.75 + breath));
+      R.set(-0.25, 0, 0.75 + breath);
     } else {
       L.set(-0.15 + Math.sin(t * 1.5) * 0.06, 0, -0.3);
       R.set(-0.15 - Math.sin(t * 1.5) * 0.06, 0, 0.3);
     }
-    eyes.current.scale.y = action === "nap" && !cheering ? 0.12 : t % 3.7 < 0.13 ? 0.12 : 1;
+    eyes.current.scale.y = (action === "nap" || action === "meditate") && !cheering ? 0.12 : t % 3.7 < 0.13 ? 0.12 : 1;
   });
 
   return (
@@ -1278,6 +1293,10 @@ const ACTIVITY_ACTION: Record<Activity, Action> = {
   chat: "talk",
   talk: "talk",
   nap: "nap",
+  type: "write",
+  draw: "chalk",
+  lift: "lift",
+  meditate: "meditate",
 };
 
 // ---------- Floating emoji emotes ----------
@@ -1563,7 +1582,7 @@ function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNod
 }
 
 /** Where the camera looks: the middle of the floor. */
-const TARGET: V3 = [9, 0.6, 5];
+const TARGET: V3 = [9, 0.6, 9];
 
 type LightSet = { ambient: [string, number]; hemi: [string, string, number]; sun: [string, number, V3]; lamps: number };
 
@@ -1586,6 +1605,10 @@ const ROOM_LIGHTS: V3[] = [
   [-5.6, 2.4, 3.2],
   [0.2, 2.4, -2.6],
   [5.5, 2.4, -3.2],
+  [-3.5, 2.4, 20.6],
+  [4.7, 2.4, 20.6],
+  [12.8, 2.4, 20.6],
+  [21.5, 2.4, 20.6],
 ];
 
 /** Power cut: almost dark, red emergency lights. */
@@ -1610,10 +1633,10 @@ function Lights({ phase }: { phase: Phase }) {
         intensity={set.sun[1]}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-22}
-        shadow-camera-right={22}
-        shadow-camera-top={22}
-        shadow-camera-bottom={-22}
+        shadow-camera-left={-24}
+        shadow-camera-right={24}
+        shadow-camera-top={24}
+        shadow-camera-bottom={-24}
         shadow-camera-far={80}
         shadow-bias={-0.0005}
       />
@@ -1747,6 +1770,52 @@ function TownHallScreen({ lang }: { lang: Lang }) {
   );
 }
 
+/** The zoom that shows the whole floor, for flying back out from a zone. */
+let fitZoom = 20;
+
+/** Fly the camera to the zone picked on the overlay; grabbing the view cancels the flight. */
+function CameraFly() {
+  const get = useThree((s) => s.get);
+  const hasControls = useThree((s) => Boolean(s.controls));
+  const focus = useCameraFocus();
+  const still = useStill();
+  const goal = useRef<{ target: Vector3; zoom: number } | null>(null);
+  useEffect(() => {
+    if (!focus.n || focus.id === null) return;
+    const look = focus.id === "all" ? null : ZONE_LOOK[focus.id];
+    goal.current = {
+      target: look ? new Vector3(look[0], TARGET[1], look[1]) : new Vector3(...TARGET),
+      zoom: look ? fitZoom * 2.3 : fitZoom,
+    };
+  }, [focus.n, focus.id]);
+  useEffect(() => {
+    const controls = get().controls as unknown as { addEventListener(e: string, f: () => void): void; removeEventListener(e: string, f: () => void): void } | null;
+    if (!controls) return;
+    const stop = () => {
+      goal.current = null;
+      releaseFocus();
+    };
+    controls.addEventListener("start", stop);
+    return () => controls.removeEventListener("start", stop);
+  }, [get, hasControls]);
+  useFrame((_, delta) => {
+    const g = goal.current;
+    if (!g) return;
+    const { camera, controls } = get();
+    const orbit = controls as unknown as { target: Vector3; update(): void } | null;
+    if (!orbit) return;
+    const k = still ? 1 : 1 - Math.exp(-delta * 4);
+    const offset = camera.position.clone().sub(orbit.target);
+    orbit.target.lerp(g.target, k);
+    camera.position.copy(orbit.target).add(offset);
+    camera.zoom += (g.zoom - camera.zoom) * k;
+    camera.updateProjectionMatrix();
+    orbit.update();
+    if (orbit.target.distanceTo(g.target) < 0.01 && Math.abs(camera.zoom - g.zoom) < g.zoom * 0.002) goal.current = null;
+  });
+  return null;
+}
+
 /** Fit the orthographic camera to the whole floor whenever the canvas is resized. */
 function CameraFit() {
   const get = useThree((s) => s.get);
@@ -1774,6 +1843,7 @@ function CameraFit() {
     // narrow screens crop the side corners a little so the desks stay readable
     const crop = width < 500 ? 0.66 : 1;
     const zoom = Math.min(width / ((maxX - minX) * crop * 1.02), height / ((maxY - minY) * 1.04));
+    fitZoom = zoom;
     camera.zoom = zoom;
     camera.updateProjectionMatrix();
     const orbit = controls as unknown as { minZoom: number; maxZoom: number } | null;
@@ -1851,6 +1921,7 @@ export default function OfficeScene({
     >
       <Lights phase={phase} />
       <OfficeFloor decor={decor} />
+      <ZoneSigns lang={lang} accent={decor.accent} />
       <EventDirector />
       <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
@@ -1903,6 +1974,7 @@ export default function OfficeScene({
         maxAzimuthAngle={1.6}
       />
       <CameraFit />
+      <CameraFly />
     </Canvas>
   );
 }

@@ -9,15 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.78",
-    "@ai-sdk/google": "^4.0.93",
-    "@ai-sdk/openai": "^4.0.91",
-    "@ai-sdk/react": "^4.0.140",
     "@mlc-ai/web-llm": "^0.2.85",
     "@phosphor-icons/react": "^2.1.10",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",
-    "ai": "^7.0.137",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

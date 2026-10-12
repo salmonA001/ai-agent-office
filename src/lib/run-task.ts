@@ -1,8 +1,8 @@
 import type { Agent } from "./agents";
-import { chat } from "./browser-ai";
+import { chat, currentTier, MODELS } from "./browser-ai";
 import { type Key, type Lang, type Msg, translate } from "./i18n";
 import { countWords } from "./words";
-import { MAX_SUBTASKS, planOutput, type PlannedSubtask } from "./schemas";
+import { planOutput, type PlannedSubtask } from "./schemas";
 
 export type SubtaskStatus = "queued" | "working" | "done" | "error";
 export type TaskStatus = "planning" | "working" | "synthesizing" | "done" | "error" | "cancelled";
@@ -34,83 +34,25 @@ export type Task = {
   subtasks: Subtask[];
   final: string;
   error?: string;
-  engine?: Engine;
   events?: TaskEvent[];
 };
-
-export type Engine = "cloud" | "browser";
-
-export class AccessError extends Error {}
-/** Cloud AI can't serve requests (quota, missing key); the task continues on the in-browser AI. */
-export class CloudUnavailableError extends Error {}
 
 type Update = (fn: (task: Task) => Task) => void;
 type Result = { agentName: string; role: string; title: string; output: string };
 
-interface Backend {
-  plan(task: string, agents: Agent[], signal: AbortSignal): Promise<PlannedSubtask[]>;
-  work(task: string, agent: Agent, sub: PlannedSubtask, signal: AbortSignal, onText: (t: string) => void): Promise<string>;
-  synthesize(task: string, results: Result[], signal: AbortSignal, onText: (t: string) => void): Promise<string>;
-}
+/** At most this many agents work on one task (more would not fit the model's memory). */
+const MAX_PARTS = 4;
+/** Characters of the team's work the manager can read in one go (the model sees about 4,000 tokens). */
+const MERGE_BUDGET = 6500;
 
-// ---------- Cloud: server routes (AI provider key or AI Gateway) ----------
+const LANG_RULE: Record<Lang, string> = {
+  en: " Write in English.",
+  th: " Write everything in Thai (ภาษาไทย), natural and fluent.",
+};
 
-async function post(path: string, body: unknown, code: string, signal: AbortSignal) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-office-code": code },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (res.status === 401) throw new AccessError("Access code required");
-  if (!res.ok) {
-    const data = await res.json().catch(() => null);
-    if (data?.code === "cloud_unavailable") throw new CloudUnavailableError(data.error);
-    throw new Error(data?.error ?? `Request failed (${res.status})`);
-  }
-  return res;
-}
+const firstSentence = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 
-async function readStream(res: Response, onText: (chunk: string) => void) {
-  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let total = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value;
-    onText(value);
-  }
-  return total;
-}
-
-function cloudBackend(code: string, lang: Lang): Backend {
-  return {
-    async plan(task, agents, signal) {
-      const res = await post(
-        "/api/plan",
-        { task, lang, agents: agents.map(({ id, name, role }) => ({ id, name, role })) },
-        code,
-        signal,
-      );
-      return ((await res.json()) as { subtasks: PlannedSubtask[] }).subtasks;
-    },
-    async work(task, agent, sub, signal, onText) {
-      const res = await post("/api/work", { task, lang, agent, subtask: { title: sub.title, brief: sub.brief } }, code, signal);
-      const text = await readStream(res, onText);
-      // A failed cloud stream ends empty (the server hides provider errors mid-stream).
-      if (!text.trim()) throw new CloudUnavailableError("Cloud agent returned nothing");
-      return text;
-    },
-    async synthesize(task, results, signal, onText) {
-      const res = await post("/api/synthesize", { task, lang, results }, code, signal);
-      const text = await readStream(res, onText);
-      if (!text.trim()) throw new CloudUnavailableError("Cloud manager returned nothing");
-      return text;
-    },
-  };
-}
-
-// ---------- Browser: small local model via WebGPU, no key needed ----------
+// ---------- Fallback when the plan can't be parsed: pick agents by keyword ----------
 
 const KEYWORDS: [RegExp, string][] = [
   [/\b(design|ui|ux|logo|layout|colou?rs?|mockup|wireframe)\b/i, "designer"],
@@ -125,7 +67,6 @@ const KEYWORDS: [RegExp, string][] = [
   [/\b(write|email|post|blog|story|poem|haiku|letter|copy)\b/i, "writer"],
 ];
 
-/** Used when the small model's plan is unusable: pick agents by keyword. */
 function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
   const picked = KEYWORDS.flatMap(([re, id]) => {
     const word = task.match(re)?.[0];
@@ -137,7 +78,7 @@ function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
     return {
       agentId: id,
       title: `${agent.role} part`,
-      brief: `Handle the ${agent.role.toLowerCase()} side of the task.`,
+      brief: `Handle the ${agent.role.toLowerCase()} side of the task: ${task}`,
       reason: word
         ? `The task mentions "${word}", which is ${agent.role.toLowerCase()} work.`
         : `No clear specialty matched, so ${agent.name} takes it as the first available agent.`,
@@ -145,122 +86,146 @@ function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
   });
 }
 
-const LANG_RULE: Record<Lang, string> = { en: "", th: " Write everything in Thai (ภาษาไทย)." };
+// ---------- The three (or four) steps, each a call to the in-browser model ----------
 
-const makeBrowserBackend = (lang: Lang): Backend => ({
-  async plan(task, agents, signal) {
-    const schema = JSON.stringify({
-      type: "object",
-      properties: {
-        subtasks: {
-          type: "array",
-          minItems: 1,
-          maxItems: 3,
-          items: {
-            type: "object",
-            properties: {
-              agentId: { type: "string", enum: agents.map((a) => a.id) },
-              title: { type: "string" },
-              brief: { type: "string" },
-              reason: { type: "string" },
-            },
-            required: ["agentId", "title", "brief", "reason"],
+async function plan(task: string, agents: Agent[], lang: Lang, signal: AbortSignal): Promise<PlannedSubtask[]> {
+  const schema = JSON.stringify({
+    type: "object",
+    properties: {
+      subtasks: {
+        type: "array",
+        minItems: 1,
+        maxItems: MAX_PARTS,
+        items: {
+          type: "object",
+          properties: {
+            agentId: { type: "string", enum: agents.map((a) => a.id) },
+            title: { type: "string" },
+            brief: { type: "string" },
+            reason: { type: "string" },
           },
+          required: ["agentId", "title", "brief", "reason"],
         },
       },
-      required: ["subtasks"],
-    });
-    const roster = agents.map((a) => `${a.id}: ${a.name}, ${a.role}`).join("\n");
-    try {
-      const raw = await chat(
-        [
-          {
-            role: "system",
-            content:
-              "You are an office manager. Split the user's task into 1-3 subtasks for different agents. " +
-              "Simple tasks get 1 subtask. For each, give a short reason why that agent fits. " +
-              `Reply in JSON.${LANG_RULE[lang]}\nAgents:\n${roster}`,
-          },
-          { role: "user", content: task },
-        ],
-        { signal, maxTokens: 400, json: schema },
-      );
-      const parsed = planOutput.safeParse(JSON.parse(raw));
-      if (parsed.success) return parsed.data.subtasks.slice(0, MAX_SUBTASKS);
-    } catch (err) {
-      if (signal.aborted) throw err;
-    }
-    return fallbackPlan(task, agents);
-  },
-  work(task, agent, sub, signal, onText) {
-    return chat(
+    },
+    required: ["subtasks"],
+  });
+  const team = agents.map((a) => `- ${a.id}: ${a.name}, ${a.role}. ${firstSentence(a.instructions)}`).join("\n");
+  try {
+    const raw = await chat(
       [
         {
           role: "system",
-          content: `You are ${agent.name}, the ${agent.role}. ${agent.instructions} Do only your assigned part. Use Markdown. Be concise.${LANG_RULE[lang]}`,
+          content:
+            "You are Max, the manager of an AI office. Plan how your team handles the user's task.\n" +
+            "Rules:\n" +
+            "- A simple or single-skill task gets exactly 1 subtask for the best-suited agent.\n" +
+            `- A task with clearly different parts gets 2-${MAX_PARTS} subtasks, each for a different agent, that can be done at the same time without waiting for each other.\n` +
+            "- Each brief is specific and self-contained: what to produce, the key points to cover, and the format (bullets, table, email, code, ...).\n" +
+            "- title: a few words. reason: one short sentence on why this agent fits.\n" +
+            `Reply in JSON only.${LANG_RULE[lang]}\n\nTeam:\n${team}`,
         },
-        { role: "user", content: `Overall task: ${task}\n\nYour part: ${sub.title}\n${sub.brief}` },
+        { role: "user", content: task },
       ],
-      { signal, maxTokens: 600, onText },
+      { signal, maxTokens: 700, json: schema },
     );
-  },
-  synthesize(task, results, signal, onText) {
-    // The local model has a small context window, so each part is trimmed.
-    const work = results.map((r) => `## ${r.title} (${r.agentName})\n${r.output.slice(0, 1500)}`).join("\n\n");
-    return chat(
-      [
-        { role: "system", content: `Combine the team's work into one clear final answer. Use Markdown.${LANG_RULE[lang]}` },
-        { role: "user", content: `Task: ${task}\n\n${work}` },
-      ],
-      { signal, maxTokens: 700, onText },
-    );
-  },
-});
+    // tolerate stray text around the JSON object
+    const parsed = planOutput.safeParse(JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)));
+    if (parsed.success) {
+      // one subtask per agent
+      const seen = new Set<string>();
+      const subtasks = parsed.data.subtasks.filter((s) => !seen.has(s.agentId) && seen.add(s.agentId));
+      if (subtasks.length) return subtasks.slice(0, MAX_PARTS);
+    }
+  } catch (err) {
+    if (signal.aborted) throw err;
+  }
+  return fallbackPlan(task, agents);
+}
+
+function work(
+  task: string,
+  agent: Agent,
+  sub: PlannedSubtask,
+  team: { title: string; name: string }[],
+  lang: Lang,
+  signal: AbortSignal,
+  onText: (t: string) => void,
+) {
+  const plan = team.map((p, i) => `${i + 1}. ${p.title} (${p.name}${p.name === agent.name ? ", you" : ""})`).join("\n");
+  return chat(
+    [
+      {
+        role: "system",
+        content:
+          `You are ${agent.name}, the ${agent.role} in an AI office. ${agent.instructions}\n` +
+          (team.length > 1 ? `The team's plan for this task:\n${plan}\nDo only your part; teammates cover the rest.\n` : "") +
+          "Be specific and practical: concrete facts, numbers, examples, steps or code where useful. " +
+          "Structure the answer with Markdown headings and lists. Start directly with the content, no preamble." +
+          LANG_RULE[lang],
+      },
+      { role: "user", content: `Task: ${task}\n\nYour part: ${sub.title}\n${sub.brief}` },
+    ],
+    { signal, maxTokens: MODELS[currentTier()].maxTokens, onText },
+  );
+}
+
+function merge(task: string, results: Result[], lang: Lang, signal: AbortSignal, onText: (t: string) => void) {
+  const share = Math.floor(MERGE_BUDGET / results.length);
+  const parts = results.map((r) => `## ${r.title} (by ${r.agentName}, ${r.role})\n${r.output.slice(0, share)}`).join("\n\n");
+  return chat(
+    [
+      {
+        role: "system",
+        content:
+          "You are Max, the manager of an AI office. Merge your team's work into one polished final answer to the user's task. " +
+          "Keep every useful detail, remove repetition, resolve contradictions and organise it with clear Markdown headings. " +
+          "Start directly with the answer. If it helps, end with a short 'Next steps' list." +
+          LANG_RULE[lang],
+      },
+      { role: "user", content: `Task: ${task}\n\nThe team's work:\n\n${parts}` },
+    ],
+    { signal, maxTokens: 1400, onText },
+  );
+}
+
+function review(task: string, draft: string, lang: Lang, signal: AbortSignal, onText: (t: string) => void) {
+  return chat(
+    [
+      {
+        role: "system",
+        content:
+          "You are a meticulous editor. Improve the draft answer to the user's task: fix factual or logical mistakes, " +
+          "fill obvious gaps, make it clearer and better organised, and keep everything that is already good. " +
+          "Output only the improved final answer in Markdown, with no remarks about your changes." +
+          LANG_RULE[lang],
+      },
+      { role: "user", content: `Task: ${task}\n\nDraft answer:\n${draft.slice(0, MERGE_BUDGET)}` },
+    ],
+    { signal, maxTokens: 1400, onText },
+  );
+}
 
 // ---------- Orchestration ----------
 
-/** Manager plans, agents work in parallel, manager merges the results. */
+/** Manager plans, agents work, manager merges, and (optionally) the answer gets a final review. */
 export async function runTask(
   task: Task,
   agents: Agent[],
-  engine: Engine,
-  code: string,
   signal: AbortSignal,
   update: Update,
-  onCloudUnavailable?: (reason: "access" | "unavailable") => void,
   lang: Lang = "en",
+  opts: { review: boolean } = { review: true },
 ) {
-  const browserBackend = makeBrowserBackend(lang);
-  let backend = engine === "cloud" ? cloudBackend(code, lang) : browserBackend;
   const log = (kind: TaskEvent["kind"], key: Key, params?: Msg["params"], agentId?: string) =>
     update((t) => ({
       ...t,
       events: [...(t.events ?? []), { at: Date.now(), kind, text: translate("en", key, params), msg: { key, params }, agentId }],
     }));
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
-  // Switch this task (and, via the callback, later tasks) to the in-browser AI.
-  const fallBack = (reason: "access" | "unavailable") => {
-    if (backend === browserBackend) return;
-    backend = browserBackend;
-    engine = "browser";
-    update((t) => ({ ...t, engine: "browser" }));
-    log("info", reason === "access" ? "ev.fallbackAccess" : "ev.fallbackQuota");
-    onCloudUnavailable?.(reason);
-  };
-  const withFallback = async <T,>(fn: () => Promise<T>): Promise<T> => {
-    try {
-      return await fn();
-    } catch (err) {
-      // Parallel agents can all fail at once; every one of them retries locally.
-      // No access code also falls back: visitors without one still get the free local AI.
-      if (!(err instanceof CloudUnavailableError || err instanceof AccessError)) throw err;
-      fallBack(err instanceof AccessError ? "access" : "unavailable");
-      return fn();
-    }
-  };
 
   log("plan", "ev.planStart");
-  const subtasks = await withFallback(() => backend.plan(task.prompt, agents, signal));
+  const subtasks = await plan(task.prompt, agents, lang, signal);
   if (subtasks.length === 1) log("plan", "ev.planOne");
   else log("plan", "ev.planMany", { n: subtasks.length });
   for (const s of subtasks)
@@ -273,35 +238,28 @@ export async function runTask(
 
   const setSub = (i: number, fn: (s: Subtask) => Subtask) =>
     update((t) => ({ ...t, subtasks: t.subtasks.map((s, j) => (j === i ? fn(s) : s)) }));
+  const team = subtasks.map((s) => ({ title: s.title, name: nameOf(s.agentId) }));
 
   const results = await Promise.all(
     subtasks.map(async (sub, i): Promise<Result | null> => {
       const agent = agents.find((a) => a.id === sub.agentId) ?? agents[0];
-      const begin = () => {
-        log("start", "ev.start", { name: agent.name, title: sub.title }, agent.id);
-        setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
-      };
-      if (engine === "cloud") begin();
+      let started = false;
       try {
-        const output = await withFallback(() => {
-          let started = engine === "cloud";
-          setSub(i, (s) => ({ ...s, output: "" }));
-          return backend.work(task.prompt, agent, sub, signal, (chunk) => {
-            // Local runs queue up, so an agent only "starts working" when its first words arrive.
-            if (!started) {
-              started = true;
-              begin();
-            }
-            setSub(i, (s) => ({ ...s, output: s.output + chunk }));
-          });
+        const output = await work(task.prompt, agent, sub, team, lang, signal, (chunk) => {
+          // the model answers one agent at a time, so an agent "starts" when its first words arrive
+          if (!started) {
+            started = true;
+            log("start", "ev.start", { name: agent.name, title: sub.title }, agent.id);
+            setSub(i, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
+          }
+          setSub(i, (s) => ({ ...s, output: s.output + chunk }));
         });
         if (!output.trim()) throw new Error("Agent returned no output");
         setSub(i, (s) => ({ ...s, status: "done", finishedAt: Date.now() }));
-        const words = countWords(output);
-        log("done", "ev.done", { name: agent.name, title: sub.title, words }, agent.id);
-        return { agentName: agent.name, role: agent.role, title: sub.title, output: output.slice(0, 20000) };
+        log("done", "ev.done", { name: agent.name, title: sub.title, words: countWords(output) }, agent.id);
+        return { agentName: agent.name, role: agent.role, title: sub.title, output };
       } catch (err) {
-        if (signal.aborted || err instanceof AccessError) throw err;
+        if (signal.aborted) throw err;
         setSub(i, (s) => ({ ...s, status: "error", output: s.output || String((err as Error).message) }));
         log("error", "ev.error", { name: agent.name, msg: (err as Error).message }, agent.id);
         return null;
@@ -312,20 +270,32 @@ export async function runTask(
   const ok = results.filter((r): r is Result => r !== null);
   if (ok.length === 0) throw new Error("Every agent failed on this task.");
 
-  const finish = () => log("finish", "ev.finish", { s: Math.round((Date.now() - task.createdAt) / 1000) });
-  if (ok.length === 1 && subtasks.length === 1) {
-    update((t) => ({ ...t, status: "done", final: ok[0].output }));
-    finish();
-    return;
+  let draft = ok[0].output;
+  if (ok.length > 1 || subtasks.length > 1) {
+    log("merge", "ev.merge", { n: ok.length });
+    update((t) => ({ ...t, status: "synthesizing", final: "" }));
+    draft = await merge(task.prompt, ok, lang, signal, (chunk) => update((t) => ({ ...t, final: t.final + chunk })));
+    if (!draft.trim()) throw new Error("The manager returned no final report.");
+  }
+  update((t) => ({ ...t, final: draft }));
+
+  if (opts.review) {
+    log("merge", "ev.review");
+    update((t) => ({ ...t, status: "synthesizing" }));
+    let better = "";
+    try {
+      better = await review(task.prompt, draft, lang, signal, (chunk) => {
+        better += chunk;
+        // show the reviewed version once it's taking shape; until then keep the draft on screen
+        if (better.length > 200) update((t) => ({ ...t, final: better }));
+      });
+    } catch (err) {
+      if (signal.aborted) throw err;
+    }
+    // a review that comes back much shorter probably lost content: keep the draft
+    update((t) => ({ ...t, final: better.trim().length > draft.trim().length * 0.6 ? better : draft }));
   }
 
-  log("merge", "ev.merge", { n: ok.length });
-  update((t) => ({ ...t, status: "synthesizing" }));
-  const final = await withFallback(() => {
-    update((t) => ({ ...t, final: "" }));
-    return backend.synthesize(task.prompt, ok, signal, (chunk) => update((t) => ({ ...t, final: t.final + chunk })));
-  });
-  if (!final.trim()) throw new Error("The manager returned no final report.");
   update((t) => ({ ...t, status: "done" }));
-  finish();
+  log("finish", "ev.finish", { s: Math.round((Date.now() - task.createdAt) / 1000) });
 }

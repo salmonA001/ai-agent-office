@@ -2,18 +2,25 @@
 
 import {
   ArrowCounterClockwiseIcon,
+  BarbellIcon,
   CheckIcon,
-  CloudIcon,
+  CoffeeIcon,
   CopyIcon,
   CornersInIcon,
   CornersOutIcon,
   CpuIcon,
   FastForwardIcon,
+  GearIcon,
+  HeadphonesIcon,
+  type Icon,
   ListIcon,
+  MapTrifoldIcon,
   MoonIcon,
   PaintBrushIcon,
+  PaletteIcon,
   PaperPlaneRightIcon,
   PlusIcon,
+  PresentationChartIcon,
   SunHorizonIcon,
   SunIcon,
   TrashIcon,
@@ -26,11 +33,12 @@ import remarkGfm from "remark-gfm";
 import { type Agent, DEFAULT_AGENTS, withDefaultAgents } from "@/lib/agents";
 import { clockText, phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { useOfficeCustom } from "@/lib/office-custom";
-import { type EngineState, getEngineState, subscribeEngine, webGpuSupported } from "@/lib/browser-ai";
+import { type EngineState, getAiSettings, getEngineState, MODELS, subscribeEngine, useAiSettings, wantedTier, webGpuSupported } from "@/lib/browser-ai";
 import { type Key, phrase, useI18n } from "@/lib/i18n";
 import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
-import { type Engine, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
 import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
 import { MAX_DESKS } from "./office-nav";
 import { CustomizePanel } from "./OfficeCustomize";
@@ -48,7 +56,7 @@ const OfficeScene = dynamic(() => import("./OfficeScene"), { ssr: false, loading
 
 const IDLE_ENGINE: EngineState = { status: "idle" };
 
-const STORE = { agents: "office.agents", tasks: "office.tasks", code: "office.code" };
+const STORE = { agents: "office.agents", tasks: "office.tasks" };
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -204,6 +212,51 @@ function FullscreenButton({ full, onToggle }: { full: boolean; onToggle: () => v
   );
 }
 
+const ZONE_ICON: Record<ZoneId, Icon> = {
+  engine: GearIcon,
+  social: CoffeeIcon,
+  labs: PaletteIcon,
+  pods: HeadphonesIcon,
+  fitness: BarbellIcon,
+  hub: PresentationChartIcon,
+};
+
+/** Buttons that fly the camera to each working zone, or back out to the whole office. */
+function ZonePicker() {
+  const { t } = useI18n();
+  const focus = useCameraFocus();
+  const items: { id: ZoneId | "all"; label: string; I: Icon }[] = [
+    { id: "all", label: t("zones.all"), I: MapTrifoldIcon },
+    ...ZONE_IDS.map((id) => ({ id, label: t(`zone.${id}` as Key), I: ZONE_ICON[id] })),
+  ];
+  return (
+    <div
+      role="toolbar"
+      aria-label={t("zones.label")}
+      className="glass-strong flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full p-1 [scrollbar-width:none]"
+    >
+      {items.map(({ id, label, I }) => {
+        const on = focus.id === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => focusZone(id)}
+            aria-label={label}
+            aria-pressed={on}
+            title={label}
+            className={`press grid size-8 shrink-0 place-items-center rounded-full transition-colors duration-200 sm:size-9 ${
+              on ? "bg-accent text-on-accent" : "text-muted hover:bg-accent/15 hover:text-ink"
+            }`}
+          >
+            <I size={17} weight={on ? "fill" : "duotone"} aria-hidden />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Office time on the 3D view. */
 function ClockChip({ minutes, fast }: { minutes: number; fast: boolean }) {
   const { t } = useI18n();
@@ -238,8 +291,6 @@ export function Office() {
   const [agents, setAgents] = useState<Agent[]>(DEFAULT_AGENTS);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [needCode, setNeedCode] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [showHire, setShowHire] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
@@ -251,8 +302,6 @@ export function Office() {
   const selectAgent = useCallback((id: string) => {
     setFocusId((cur) => (cur === id ? null : id));
   }, []);
-  const [engine, setEngine] = useState<Engine | null>(null);
-  const [cloudReady, setCloudReady] = useState(false);
   const engineState = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
   const controllers = useRef(new Map<string, AbortController>());
   const { stage, full: isFull, pseudo: pseudoFull, toggle: toggleFull } = useStageFullscreen();
@@ -266,20 +315,8 @@ export function Office() {
     setAgents(withDefaultAgents(load(STORE.agents, DEFAULT_AGENTS)));
     setTasks(storedTasks);
     setSelectedId(storedTasks[0]?.id ?? null);
-    setCode(load(STORE.code, ""));
     setLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
-  useEffect(() => {
-    // Use the server's AI when a key is configured; otherwise run a model in the browser.
-    fetch("/api/status")
-      .then((r) => r.json())
-      .then((d: { cloud: boolean }) => {
-        setCloudReady(d.cloud);
-        setEngine(d.cloud ? "cloud" : "browser");
-      })
-      .catch(() => setEngine("browser"));
   }, []);
 
   useEffect(() => {
@@ -295,7 +332,7 @@ export function Office() {
   }, []);
 
   const start = useCallback(
-    (text: string, accessCode: string) => {
+    (text: string) => {
       const team = agents.slice(0, MAX_DESKS);
       const task: Task = {
         id: crypto.randomUUID(),
@@ -304,7 +341,6 @@ export function Office() {
         status: "planning",
         subtasks: [],
         final: "",
-        engine: engine ?? "browser",
         events: [{ at: Date.now(), kind: "received", text: "You assigned the task. Max picks it up.", msg: { key: "ev.received" } }],
       };
       const controller = new AbortController();
@@ -313,19 +349,7 @@ export function Office() {
       setSelectedId(task.id);
       setSideTab("progress");
 
-      runTask(
-        task,
-        team,
-        task.engine!,
-        accessCode,
-        controller.signal,
-        (fn) => updateTask(task.id, fn),
-        (reason) => {
-          setEngine("browser");
-          if (reason === "access") setNeedCode(true);
-        },
-        lang,
-      )
+      runTask(task, team, controller.signal, (fn) => updateTask(task.id, fn), lang, { review: getAiSettings().review })
         .catch((err: Error) => {
           if (controller.signal.aborted) {
             updateTask(task.id, (t) => ({ ...t, status: "cancelled" }));
@@ -335,13 +359,13 @@ export function Office() {
         })
         .finally(() => controllers.current.delete(task.id));
     },
-    [agents, engine, updateTask, lang],
+    [agents, updateTask, lang],
   );
 
   const submit = () => {
     const text = prompt.trim();
     if (text.length < 3) return;
-    start(text, code);
+    start(text);
     setPrompt("");
   };
 
@@ -444,14 +468,6 @@ export function Office() {
         }}
         onNewTask={focusComposer}
         busyCount={busy.size}
-        engine={engine}
-        cloudReady={cloudReady}
-        code={code}
-        onSaveCode={(c) => {
-          setCode(c);
-          save(STORE.code, c);
-          if (cloudReady) setEngine("cloud");
-        }}
         onReset={resetOffice}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -478,8 +494,8 @@ export function Office() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-accent">
-              {engine === "cloud" ? <CloudIcon size={14} weight="duotone" aria-hidden /> : <CpuIcon size={14} weight="duotone" aria-hidden />}
-              {engine === "cloud" ? t("engine.cloud") : engine === "browser" ? t("engine.browser") : t("engine.detecting")}
+              <CpuIcon size={14} weight="duotone" aria-hidden />
+              <ModelName />
             </span>
             <span className="hidden items-center gap-2 xl:inline-flex">
               <TeamStats ids={agents.map((a) => a.id)} />
@@ -495,34 +511,7 @@ export function Office() {
         </header>
 
         <main className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-5 px-4 py-5 sm:px-6">
-          <EngineBanner engine={engine} state={engineState} />
-
-          {needCode && (
-            <form
-              className="glass enter-drop flex flex-wrap items-end gap-3 rounded-xl p-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                save(STORE.code, code);
-                setNeedCode(false);
-                if (cloudReady) setEngine("cloud");
-              }}
-            >
-              <label className="flex flex-1 flex-col gap-1 text-sm">
-                {t("code.prompt")}
-                <input
-                  type="password"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="min-h-10 rounded-lg border border-line bg-well px-3 text-ink transition-colors focus:border-accent/60"
-                  autoComplete="off"
-                />
-              </label>
-              <button className="press min-h-10 rounded-lg bg-primary px-4 font-semibold text-on-primary">{t("code.use")}</button>
-              <button type="button" onClick={() => setNeedCode(false)} className="press min-h-10 rounded-lg border border-line px-4 text-sm text-ink">
-                {t("code.stay")}
-              </button>
-            </form>
-          )}
+          <EngineBanner state={engineState} />
 
           {/* Office floor */}
           {/* glass blur and the entrance transform would trap the fixed full-screen overlay, so drop them while it's open */}
@@ -611,8 +600,11 @@ export function Office() {
                 />
                 <DrillOverlay />
                 {/* clock and full screen, layered over the 3D office */}
-                <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-end gap-2">
-                  <div className="pointer-events-auto flex items-start gap-2">
+                <div className="pointer-events-none absolute inset-x-2 top-2 flex items-start justify-between gap-2">
+                  <div className="pointer-events-auto min-w-0">
+                    <ZonePicker />
+                  </div>
+                  <div className="pointer-events-auto flex shrink-0 items-start gap-2">
                     {minutes !== null && <ClockChip minutes={minutes} fast={custom.lighting === "fast"} />}
                     <FullscreenButton full={isFull} onToggle={toggleFull} />
                   </div>
@@ -746,7 +738,7 @@ export function Office() {
                   task={selected}
                   agents={agents}
                   onCancel={() => cancel(selected.id)}
-                  onRetry={() => start(selected.prompt, code)}
+                  onRetry={() => start(selected.prompt)}
                   onDelete={() => remove(selected.id)}
                 />
               ) : (
@@ -963,13 +955,27 @@ function HireForm({ onHire }: { onHire: (a: Agent) => void }) {
   );
 }
 
-function EngineBanner({ engine, state }: { engine: Engine | null; state: EngineState }) {
+/** Which model the office runs on (the one loaded, or the one the settings will load). */
+function ModelName() {
   const { t } = useI18n();
-  if (engine !== "browser") return null;
+  const ai = useAiSettings();
+  const state = useSyncExternalStore(subscribeEngine, getEngineState, () => IDLE_ENGINE);
+  const tier = state.status === "ready" || state.status === "loading" ? state.tier : ai.model === "auto" ? null : ai.model;
+  return <>{tier ? t("engine.model", { name: MODELS[tier].name }) : t("engine.browser")}</>;
+}
+
+const noop = () => () => {};
+
+function EngineBanner({ state }: { state: EngineState }) {
+  const { t } = useI18n();
+  // the hints depend on this device, so they only render in the browser (not in the prerendered page)
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  if (!mounted) return null;
   if (state.status === "loading") {
+    const m = MODELS[state.tier];
     return (
       <div className="glass enter-drop rounded-xl border-accent p-4" role="status">
-        <p className="text-sm font-semibold">{t("engineBanner.loading")}</p>
+        <p className="text-sm font-semibold">{t("engineBanner.loading", { name: m.name, size: m.download })}</p>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-well">
           <div className="h-full bg-accent transition-[width] duration-500 ease-out" style={{ width: `${Math.round(state.progress * 100)}%` }} />
         </div>
@@ -980,12 +986,12 @@ function EngineBanner({ engine, state }: { engine: Engine | null; state: EngineS
   if (state.status === "error") {
     return (
       <p role="alert" className="glass enter-drop rounded-xl border-danger p-4 text-sm text-error">
-        {state.message}
+        {state.message === "no-webgpu" ? t("engineBanner.noWebgpu") : t("engineBanner.error", { msg: state.message })}
       </p>
     );
   }
   if (state.status === "ready") return null;
-  return (
-    <p className="glass enter-drop rounded-xl p-3 text-sm text-muted">{webGpuSupported() ? t("engineBanner.free") : t("engineBanner.noWebgpu")}</p>
-  );
+  if (!webGpuSupported()) return <p className="glass enter-drop rounded-xl p-3 text-sm text-error">{t("engineBanner.noWebgpu")}</p>;
+  const m = MODELS[wantedTier()];
+  return <p className="glass enter-drop rounded-xl p-3 text-sm text-muted">{t("engineBanner.free", { name: m.name, size: m.download })}</p>;
 }

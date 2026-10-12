@@ -4,7 +4,7 @@ import {
   ChartLineUpIcon,
   CheckCircleIcon,
   ClockCounterClockwiseIcon,
-  CloudIcon,
+  CheckIcon,
   CpuIcon,
   MagnifyingGlassIcon,
   PaperPlaneRightIcon,
@@ -19,7 +19,8 @@ import { type ReactNode, useEffect, useId, useState } from "react";
 import type { Agent } from "@/lib/agents";
 import { type Key, LANGS, useI18n } from "@/lib/i18n";
 import { setProfileName, useProfileName } from "@/lib/profile";
-import type { Engine, Task, TaskStatus } from "@/lib/run-task";
+import type { Task, TaskStatus } from "@/lib/run-task";
+import { MODEL_CHOICES, MODELS, setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Motion, MOTIONS, setMotion, useDeviceReducedMotion, useMotion } from "@/lib/motion";
 import { THEMES, useTheme } from "@/lib/theme";
 import { countWords } from "@/lib/words";
@@ -43,10 +44,6 @@ type SidebarProps = {
   onSelectTask: (id: string) => void;
   onNewTask: () => void;
   busyCount: number;
-  engine: Engine | null;
-  cloudReady: boolean;
-  code: string;
-  onSaveCode: (code: string) => void;
   onReset: () => void;
   /** mobile drawer */
   open: boolean;
@@ -433,13 +430,11 @@ function RecentTab({ tasks, selectedId, onSelectTask }: SidebarProps) {
 
 // ---------- Account ----------
 
-function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onReset }: SidebarProps) {
+function AccountTab({ tasks, agents, onReset }: SidebarProps) {
   const uid = useId();
   const { t } = useI18n();
   const name = useProfileName();
   const game = useGame();
-  const [draftCode, setDraftCode] = useState(code);
-  const [saved, setSaved] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const done = tasks.filter((x) => x.status === "done").length;
   const words = tasks.reduce(
@@ -487,40 +482,7 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
       <ThemePicker />
       <MotionPicker />
 
-      <section className="enter" aria-labelledby={`${uid}-engine`} style={{ ["--i" as string]: 6 }}>
-        <h3 id={`${uid}-engine`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-          {t("account.engine")}
-        </h3>
-        <p className="inline-flex items-center gap-2 rounded-full border border-line bg-well px-3 py-1 text-xs font-semibold text-accent">
-          {engine === "cloud" ? <CloudIcon size={14} weight="duotone" aria-hidden /> : <CpuIcon size={14} weight="duotone" aria-hidden />}
-          {engine === "cloud" ? t("engine.cloud") : engine === "browser" ? t("engine.browser") : t("engine.detecting")}
-        </p>
-        {cloudReady && (
-          <form
-            className="mt-3 flex items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              onSaveCode(draftCode);
-              setSaved(true);
-              window.setTimeout(() => setSaved(false), 1500);
-            }}
-          >
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted">
-              {t("account.code")}
-              <input
-                type="password"
-                autoComplete="off"
-                value={draftCode}
-                onChange={(e) => setDraftCode(e.target.value)}
-                className="min-h-10 rounded-lg border border-line bg-well px-3 text-sm text-ink transition-colors focus:border-accent/60"
-              />
-            </label>
-            <button type="submit" className="press min-h-10 rounded-lg bg-primary px-3 text-sm font-semibold text-on-primary">
-              {saved ? t("account.codeSaved") : t("account.codeSave")}
-            </button>
-          </form>
-        )}
-      </section>
+      <ModelPicker />
 
       <section className="enter rounded-2xl border border-danger/40 p-4" style={{ ["--i" as string]: 7 }}>
         <p className="text-xs text-muted">{t("account.resetHint")}</p>
@@ -544,6 +506,60 @@ function AccountTab({ tasks, agents, engine, cloudReady, code, onSaveCode, onRes
         </button>
       </section>
     </div>
+  );
+}
+
+/** Which in-browser model the office uses, and whether answers get a final review. */
+function ModelPicker() {
+  const uid = useId();
+  const { t } = useI18n();
+  const ai = useAiSettings();
+  return (
+    <section className="enter" aria-labelledby={`${uid}-model`} style={{ ["--i" as string]: 6 }}>
+      <h3 id={`${uid}-model`} className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
+        {t("account.engine")}
+      </h3>
+      <p className="mb-2 text-xs text-muted">{t("model.hint")}</p>
+      <div className="flex flex-col gap-1.5" role="radiogroup" aria-labelledby={`${uid}-model`}>
+        {MODEL_CHOICES.map((choice) => {
+          const on = ai.model === choice;
+          const info = choice === "auto" ? null : MODELS[choice];
+          return (
+            <button
+              key={choice}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => setAiSettings({ model: choice })}
+              className={`press flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                on ? "border-accent bg-accent/10 text-ink" : "border-line bg-well text-muted hover:text-ink"
+              }`}
+            >
+              <CpuIcon size={18} weight={on ? "duotone" : "regular"} aria-hidden className={on ? "text-accent" : ""} />
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">{t(`model.${choice}` as Key)}</span>
+                <span className="block text-xs text-muted">
+                  {info ? t("model.details", { name: info.name, size: info.download, vram: info.vram }) : t("model.autoHint")}
+                </span>
+              </span>
+              {on && <CheckIcon size={16} weight="bold" aria-hidden className="text-accent" />}
+            </button>
+          );
+        })}
+      </div>
+      <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-well p-3">
+        <input
+          type="checkbox"
+          checked={ai.review}
+          onChange={(e) => setAiSettings({ review: e.target.checked })}
+          className="mt-0.5 size-4 accent-[rgb(var(--glow))]"
+        />
+        <span className="min-w-0 text-sm">
+          <span className="block font-semibold">{t("model.review")}</span>
+          <span className="block text-xs text-muted">{t("model.reviewHint")}</span>
+        </span>
+      </label>
+    </section>
   );
 }
 

@@ -14,6 +14,7 @@ import {
   FishIcon,
   FrameCornersIcon,
   GameControllerIcon,
+  HeadphonesIcon,
   type Icon,
   LampIcon,
   LightbulbIcon,
@@ -69,6 +70,7 @@ const CAT_ICON: Record<SpotCat, Icon> = {
   calls: PhoneIcon,
   nature: TreeIcon,
   ideas: LightbulbIcon,
+  focus: HeadphonesIcon,
 };
 
 const LIGHT_ICON: Record<Lighting, Icon> = { auto: ClockIcon, fast: FastForwardIcon, day: SunIcon, sunset: SunHorizonIcon, night: MoonIcon };

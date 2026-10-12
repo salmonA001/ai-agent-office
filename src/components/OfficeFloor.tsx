@@ -15,9 +15,10 @@ import {
   SRGBColorSpace,
   type Texture,
 } from "three";
-import { type Lang, translate } from "@/lib/i18n";
+import { type Key, type Lang, translate } from "@/lib/i18n";
 import type { DecorItem, FloorStyle, Phase } from "@/lib/office-custom";
 import { currentEventKind } from "./office-events";
+import type { ZoneId } from "./camera-focus";
 import { walkers } from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, seeded, useDisposable } from "./scene-utils";
@@ -28,16 +29,18 @@ type V3 = [number, number, number];
 // ---------- Floor plan (metres, y up). The camera looks from +x/+z, so the north (-z) and
 // west (-x) walls are full height and the south/east walls are cut away like a dollhouse. ----------
 
-export const FLOOR = { x0: -8, x1: 26, z0: -6, z1: 16 };
+export const FLOOR = { x0: -8, x1: 26, z0: -6, z1: 24 };
 /** The east wing (lobby, town hall, garden) starts here; the open hall is west of it. */
 export const EAST = { x0: 16, lobbyZ: 1.2, gardenZ: 8.8 };
 export const CORRIDOR = { z0: -0.3, z1: 0.9 };
+/** South wing: a corridor (z0..door) and four zones split at x = gym, pods, labs. */
+export const SOUTH = { z0: 16, door: 17.2, z1: 24, gym: 1, pods: 8.5, labs: 17 };
 const MEETING = { x0: -8, x1: -2.6 };
 const KITCHEN = { x0: -2.6, x1: 3 };
 const LOUNGE = { x0: 3, x1: 8 };
 const GAME = { x0: 8, x1: 12.2 };
 const SERVER = { x0: 12.2, x1: 16 };
-export const WORKSPACE = { z0: CORRIDOR.z1, z1: FLOOR.z1 };
+export const WORKSPACE = { z0: CORRIDOR.z1, z1: SOUTH.z0 };
 export const PROJECTOR = { x: -5.6, z: FLOOR.z0 };
 export const PRESENTER = { x: -3.9, z: -4.9 };
 export const MANAGER_TV = { x: -7.7, z: -1.7 };
@@ -1195,7 +1198,7 @@ function Cafe({ decor }: { decor: FloorDecor }) {
       {[2.6, 5.4, 8.2].map((x) => (
         <BistroTable key={x} x={x} />
       ))}
-      {decor.items.plants && <Planter p={[10.6, 0, 15.72]} len={2.6} />}
+      {decor.items.plants && <Planter p={[10.45, 0, 15.72]} len={2.2} />}
       {decor.items.stringLights && <StringLights glow={glow} />}
     </group>
   );
@@ -1650,14 +1653,14 @@ function Garden({ decor }: { decor: FloorDecor }) {
   const flowers = ["#f472b6", "#fde047", "#f97316", "#c084fc", "#f43f5e", "#38bdf8"];
   return (
     <group>
-      <Floor x0={x0} x1={FLOOR.x1} z0={gardenZ} z1={FLOOR.z1} map={grass} />
+      <Floor x0={x0} x1={FLOOR.x1} z0={gardenZ} z1={SOUTH.z0} map={grass} />
       {/* stone paths */}
       <Floor x0={x0} x1={23.6} z0={13.15} z1={14.05} color="#d6cfc2" y={0.006} />
       <Floor x0={17.05} x1={17.95} z0={gardenZ} z1={13.15} color="#d6cfc2" y={0.006} />
       <Hedge a={[x0, gardenZ]} b={[17.0, gardenZ]} />
       <Hedge a={[18.0, gardenZ]} b={[FLOOR.x1, gardenZ]} />
       <Hedge a={[x0, gardenZ]} b={[x0, 13.0]} />
-      <Hedge a={[x0, 14.2]} b={[x0, FLOOR.z1]} />
+      <Hedge a={[x0, 14.2]} b={[x0, SOUTH.z0]} />
       {/* flower bed along the hedge */}
       <B s={[6.0, 0.22, 0.45]} p={[22, 0.11, 9.375]} c="#7a5a3a" />
       {Array.from({ length: 18 }, (_, i) => (
@@ -1730,6 +1733,532 @@ function EastWing({ decor }: { decor: FloorDecor }) {
   );
 }
 
+// ---------- South wing: four working zones off a second corridor ----------
+
+/** Digital whiteboard: sticky notes, a flow sketch and a doodled chart. */
+function whiteboardTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(seed);
+  g.fillStyle = "#f8fafc";
+  g.fillRect(0, 0, 512, 256);
+  const notes = ["#fde68a", "#fbcfe8", "#bae6fd", "#bbf7d0", "#fed7aa"];
+  for (let i = 0; i < 9; i++) {
+    const x = 18 + (i % 3) * 58 + rnd() * 8;
+    const y = 18 + Math.floor(i / 3) * 74 + rnd() * 8;
+    g.fillStyle = notes[Math.floor(rnd() * notes.length)];
+    g.fillRect(x, y, 48, 48);
+    g.fillStyle = "rgba(30,41,59,0.55)";
+    for (let l = 0; l < 3; l++) g.fillRect(x + 6, y + 10 + l * 12, 18 + rnd() * 18, 3);
+  }
+  // flow chart
+  g.strokeStyle = "#2563eb";
+  g.lineWidth = 4;
+  const boxes: [number, number][] = [
+    [230, 40],
+    [330, 40],
+    [280, 130],
+    [400, 130],
+  ];
+  boxes.forEach(([x, y]) => g.strokeRect(x, y, 70, 40));
+  g.beginPath();
+  g.moveTo(300, 60);
+  g.lineTo(330, 60);
+  g.moveTo(265, 80);
+  g.lineTo(300, 130);
+  g.moveTo(350, 150);
+  g.lineTo(400, 150);
+  g.stroke();
+  // chart doodle
+  g.strokeStyle = "#ef4444";
+  g.beginPath();
+  g.moveTo(240, 230);
+  for (let i = 1; i <= 8; i++) g.lineTo(240 + i * 30, 230 - i * 8 - rnd() * 20);
+  g.stroke();
+  return finish(c, [1, 1]);
+}
+
+/** Video call and roadmap on the strategy hub's screen wall. */
+function avTexture() {
+  const c = document.createElement("canvas");
+  c.width = 640;
+  c.height = 300;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#0f172a";
+  g.fillRect(0, 0, 640, 300);
+  const tiles = ["#fca5a5", "#fcd34d", "#86efac", "#93c5fd", "#c4b5fd", "#f9a8d4"];
+  tiles.forEach((col, i) => {
+    const x = 16 + (i % 3) * 104;
+    const y = 16 + Math.floor(i / 3) * 136;
+    g.fillStyle = "#1e293b";
+    g.fillRect(x, y, 96, 124);
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(x + 48, y + 52, 26, 0, Math.PI * 2);
+    g.fill();
+    g.fillRect(x + 20, y + 84, 56, 30);
+  });
+  // roadmap: three swimlanes of bars
+  g.fillStyle = "#e2e8f0";
+  g.fillRect(340, 16, 284, 268);
+  const bars = ["#2563eb", "#16a34a", "#f59e0b"];
+  bars.forEach((col, i) => {
+    g.fillStyle = col;
+    g.fillRect(356 + i * 30, 50 + i * 76, 150, 26);
+    g.fillRect(420 + i * 40, 84 + i * 76, 110, 18);
+  });
+  g.fillStyle = "#0f172a";
+  g.fillRect(356, 28, 120, 10);
+  return finish(c, [1, 1]);
+}
+
+/** Wall along z at x, built from the same glass panels as the corridor fronts. */
+function GlassWallZ({ x, z0, z1, h = INT_H }: { x: number; z0: number; z1: number; h?: number }) {
+  return (
+    <group position={[x, 0, (z0 + z1) / 2]} rotation-y={-Math.PI / 2}>
+      <GlassWall x0={-(z1 - z0) / 2} x1={(z1 - z0) / 2} z={0} h={h} />
+    </group>
+  );
+}
+
+/** Open doorway frame across a gap in a wall along x. */
+function Doorway({ x0, x1, z, color = "#5f6b70" }: { x0: number; x1: number; z: number; color?: string }) {
+  return (
+    <group>
+      <B s={[0.07, 2.05, 0.14]} p={[x0, 1.025, z]} c={color} />
+      <B s={[0.07, 2.05, 0.14]} p={[x1, 1.025, z]} c={color} />
+      <B s={[x1 - x0 + 0.07, 0.07, 0.14]} p={[(x0 + x1) / 2, 2.05, z]} c={color} />
+    </group>
+  );
+}
+
+function Dumbbell({ p, c }: { p: V3; c: string }) {
+  return (
+    <group position={p}>
+      <B s={[0.04, 0.04, 0.24]} p={[0, 0, 0]} c="#9ca3af" metal={0.6} rough={0.3} />
+      {[-0.1, 0.1].map((z) => (
+        <B key={z} s={[0.1, 0.1, 0.05]} p={[0, 0, z]} c={c} />
+      ))}
+    </group>
+  );
+}
+
+/** Zone 5: cardio and weights at the front, yoga mats and a meditation corner on soft floors. */
+function FitnessStudio({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
+  const { door, z1, gym } = SOUTH;
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      <Floor x0={FLOOR.x0} x1={gym} z0={door} z1={20.6} color="#3f4448" />
+      {/* cork floor for yoga, tatami for meditation */}
+      <Floor x0={FLOOR.x0} x1={-4.7} z0={20.6} z1={z1} color="#d9b98c" />
+      <Floor x0={-4.7} x1={gym} z0={20.6} z1={z1} color="#d8d3a4" />
+      {Array.from({ length: 5 }, (_, i) => (
+        <Floor key={i} x0={-4.7 + i * 1.14} x1={-4.7 + i * 1.14 + 0.02} z0={20.6} z1={z1} color="#b5ad72" y={0.004} />
+      ))}
+      {/* cardio */}
+      <Treadmill p={[-7.0, 0, 18.2]} />
+      <Treadmill p={[-7.0, 0, 19.8]} />
+      <group position={[-4.6, 0, 18.45]}>
+        <B s={[0.12, 0.08, 1.0]} p={[0, 0.04, 0]} c="#2b2f33" />
+        <B s={[0.06, 0.5, 0.06]} p={[0, 0.3, 0]} c="#4b5563" />
+        <B s={[0.24, 0.06, 0.3]} p={[0, 0.55, 0]} c="#111317" />
+        <B s={[0.06, 0.8, 0.06]} p={[0, 0.45, 0.4]} c="#4b5563" />
+        <B s={[0.44, 0.05, 0.06]} p={[0, 0.86, 0.4]} c="#111317" />
+        <mesh position={[0, 0.3, 0.32]} rotation-z={Math.PI / 2}>
+          <cylinderGeometry args={[0.2, 0.2, 0.07, 20]} />
+          <meshStandardMaterial color="#ef4444" metalness={0.4} roughness={0.4} />
+        </mesh>
+      </group>
+      {/* dumbbell rack and kettlebells */}
+      <group position={[-1.35, 0, 18.6]}>
+        <B s={[0.5, 0.06, 1.2]} p={[0, 0.3, 0]} c="#2b2f33" />
+        <B s={[0.5, 0.06, 1.2]} p={[0, 0.62, 0]} c="#2b2f33" />
+        {[-0.55, 0.55].map((z) => (
+          <B key={z} s={[0.06, 0.7, 0.06]} p={[0, 0.35, z]} c="#4b5563" />
+        ))}
+        {[-0.4, -0.13, 0.14, 0.41].map((z, i) => (
+          <group key={z}>
+            <Dumbbell p={[0, 0.39, z]} c={["#ef4444", "#3b82f6", "#22c55e", "#f59e0b"][i]} />
+            <Dumbbell p={[0, 0.71, z]} c="#111317" />
+          </group>
+        ))}
+      </group>
+      {[17.6, 17.95].map((z, i) => (
+        <mesh key={z} position={[-0.3 - i * 0.4, 0.13, z]} castShadow>
+          <sphereGeometry args={[0.13, 16, 12]} />
+          <meshStandardMaterial color={i ? "#f97316" : "#111317"} roughness={0.5} />
+        </mesh>
+      ))}
+      <mesh position={[0.3, 0.32, 20.0]} castShadow>
+        <sphereGeometry args={[0.32, 24, 16]} />
+        <meshStandardMaterial color="#a78bfa" roughness={0.4} />
+      </mesh>
+      {/* mirror wall for the yoga mats */}
+      <group position={[-7.91, 1.05, 22.2]} rotation-y={Math.PI / 2}>
+        <B s={[3.0, 1.5, 0.04]} p={[0, 0, 0]} c="#d6d3cf" />
+        <mesh position={[0, 0, 0.025]}>
+          <planeGeometry args={[2.9, 1.4]} />
+          <meshStandardMaterial color="#dcebf2" metalness={0.6} roughness={0.08} />
+        </mesh>
+      </group>
+      {[21.0, 22.0, 23.0].map((z, i) => (
+        <YogaMat key={z} p={[-6.8, 0, z]} color={["#8b5cf6", "#14b8a6", "#f472b6"][i]} />
+      ))}
+      {/* meditation cushions facing a little stone fountain and candles */}
+      {[-3.8, -2.8, -1.8].map((x, i) => (
+        <mesh key={x} position={[x, 0.06, 22.2]} scale={[1, 0.35, 1]} castShadow>
+          <sphereGeometry args={[0.3, 20, 12]} />
+          <meshStandardMaterial color={["#e0b0ff", "#a3d9c9", "#ffc9a8"][i]} roughness={1} />
+        </mesh>
+      ))}
+      <group position={[-2.8, 0, 23.45]}>
+        <B s={[2.4, 0.3, 0.5]} p={[0, 0.15, 0]} c="#8a6a4a" />
+        {[0.12, 0.09, 0.06].map((r, i) => (
+          <mesh key={r} position={[0.2, 0.36 + i * 0.12, 0]} scale={[1.3, 0.7, 1]}>
+            <sphereGeometry args={[r, 12, 8]} />
+            <meshStandardMaterial color={["#6b7280", "#9ca3af", "#d1d5db"][i]} />
+          </mesh>
+        ))}
+        {[-0.9, -0.6, 0.8].map((x) => (
+          <group key={x}>
+            <B s={[0.07, 0.14, 0.07]} p={[x, 0.37, 0]} c="#fef3c7" />
+            <Bulb p={[x, 0.47, 0]} r={0.025} on={glow} />
+          </group>
+        ))}
+        <mesh position={[-0.25, 0.42, 0]}>
+          <icosahedronGeometry args={[0.13, 0]} />
+          <meshStandardMaterial color="#52b788" flatShading />
+        </mesh>
+      </group>
+      <WindowPane p={[-7.92 + 0.02, 1.5, 18.9]} r={Math.PI / 2} w={1.6} h={1.0} sky={sky} />
+      {decor.items.plants && (
+        <>
+          <PalmPlant p={[0.45, 0, 23.5]} />
+          <PalmPlant p={[-7.45, 0, 23.6]} s={0.9} />
+        </>
+      )}
+    </group>
+  );
+}
+
+/** One sound-proofed booth: felt back panel, desk, monitor, chair and a busy light. */
+function FocusPod({ x, z, open, felt, glow, busy }: { x: number; z: number; open: "east" | "west"; felt: string; glow: boolean; busy: boolean }) {
+  // x, z: where the sitter sits (facing -z); the desk is in front, the door on the open side
+  const side = open === "east" ? 1 : -1;
+  const wx = x + side * 1.3;
+  const back = x - side * 1.4;
+  const dz = z - 0.75;
+  return (
+    <group>
+      <Floor x0={Math.min(back, wx)} x1={Math.max(back, wx)} z0={z - 1.15} z1={z + 0.95} color="#46505a" y={0.005} />
+      {/* felt panel behind the desk and on the closed side */}
+      <B s={[2.6, 1.7, 0.06]} p={[x, 0.85, z - 1.12]} c={felt} rough={1} />
+      <B s={[0.06, 1.7, 2.0]} p={[back, 0.85, z - 0.1]} c={felt} rough={1} />
+      <GlassWall x0={Math.min(back, wx)} x1={Math.max(back, wx)} z={z + 0.95} h={2.0} />
+      <GlassWallZ x={wx} z0={z - 1.15} z1={z - 0.45} h={2.0} />
+      <GlassWallZ x={wx} z0={z + 0.6} z1={z + 0.95} h={2.0} />
+      <B s={[0.07, 0.07, 1.06]} p={[wx, 2.0, z + 0.07]} c="#5f6b70" />
+      <mesh position={[wx, 2.1, z + 0.07]}>
+        <sphereGeometry args={[0.06, 12, 10]} />
+        <meshBasicMaterial color={busy ? "#ef4444" : "#22c55e"} toneMapped={false} />
+      </mesh>
+      {/* desk with a monitor, keyboard and headphones */}
+      <B s={[1.5, 0.05, 0.6]} p={[x, 0.74, dz]} c="#e7d3b5" />
+      {[-0.68, 0.68].map((ox) => (
+        <B key={ox} s={[0.05, 0.72, 0.5]} p={[x + ox, 0.36, dz]} c="#374151" />
+      ))}
+      <B s={[0.7, 0.42, 0.04]} p={[x, 1.08, dz - 0.18]} c="#111827" />
+      <mesh position={[x, 1.08, dz - 0.155]}>
+        <planeGeometry args={[0.64, 0.36]} />
+        <meshBasicMaterial color={glow ? "#7dd3fc" : "#bae6fd"} toneMapped={false} />
+      </mesh>
+      <B s={[0.05, 0.16, 0.05]} p={[x, 0.85, dz - 0.18]} c="#374151" />
+      <B s={[0.44, 0.02, 0.14]} p={[x, 0.775, dz + 0.08]} c="#f5f5f4" />
+      <mesh position={[x + 0.5, 0.8, dz + 0.05]} rotation-x={Math.PI / 2}>
+        <torusGeometry args={[0.08, 0.018, 8, 16, Math.PI]} />
+        <meshStandardMaterial color="#111827" />
+      </mesh>
+      <OfficeChair p={[x, 0, z + 0.05]} />
+      <Bulb p={[x - side * 0.55, 1.6, z - 1.05]} r={0.06} on={glow} />
+    </group>
+  );
+}
+
+/** Zone 4: four enclosed focus pods off a quiet aisle. */
+function FocusPods({ decor }: { decor: FloorDecor }) {
+  const { door, z1, gym, pods } = SOUTH;
+  const glow = decor.phase !== "day";
+  const carpet = useDisposable(() => carpetTexture("#6b7f73", [4, 3.6]), "pods-floor");
+  return (
+    <group>
+      <Floor x0={gym} x1={pods} z0={door} z1={z1} map={carpet} />
+      <FocusPod x={2.6} z={19.35} open="east" felt="#5b8a72" glow={glow} busy />
+      <FocusPod x={6.4} z={19.35} open="west" felt="#7a6aa8" glow={glow} busy={false} />
+      <FocusPod x={2.6} z={22.55} open="east" felt="#c07a5a" glow={glow} busy={false} />
+      <FocusPod x={6.4} z={22.55} open="west" felt="#4f7aa8" glow={glow} busy />
+      {decor.items.plants && <PalmPlant p={[4.5, 0, 23.6]} s={0.85} />}
+    </group>
+  );
+}
+
+/** Zone 3: digital whiteboards, a touch table, a 3D printer, pinball and an arcade cabinet. */
+function CreativeLabs({ decor }: { decor: FloorDecor }) {
+  const { door, z1, pods, labs } = SOUTH;
+  const glow = decor.phase !== "day";
+  const tiles = useDisposable(() => tileTexture("#eee9f7", "#ddd3ef", [8, 6.8]), "labs-floor");
+  const board1 = useDisposable(() => whiteboardTexture(5), "wb-5");
+  const board2 = useDisposable(() => whiteboardTexture(11), "wb-11");
+  const table = useDisposable(() => whiteboardTexture(23), "wb-23");
+  return (
+    <group>
+      <Floor x0={pods} x1={labs} z0={door} z1={z1} map={tiles} />
+      {decor.items.rugs && (
+        <mesh rotation-x={-Math.PI / 2} position={[12.0, 0.006, 20.2]} receiveShadow>
+          <circleGeometry args={[1.6, 40]} />
+          <meshStandardMaterial color={decor.accent} roughness={1} />
+        </mesh>
+      )}
+      {/* digital whiteboards on the west wall */}
+      {[
+        [18.9, board1],
+        [21.6, board2],
+      ].map(([z, map]) => (
+        <group key={z as number} position={[pods + 0.1, 1.2, z as number]} rotation-y={Math.PI / 2}>
+          <B s={[2.2, 1.15, 0.05]} p={[0, 0, 0]} c="#1f2937" />
+          <mesh position={[0, 0, 0.03]}>
+            <planeGeometry args={[2.08, 1.03]} />
+            <meshBasicMaterial map={map as Texture} toneMapped={false} />
+          </mesh>
+          <B s={[1.2, 0.04, 0.1]} p={[0, -0.6, 0.06]} c="#9ca3af" />
+        </group>
+      ))}
+      {/* touch table with a glowing screen top */}
+      <group position={[12.0, 0, 20.2]}>
+        <B s={[1.6, 0.12, 1.0]} p={[0, 0.84, 0]} c="#1f2937" />
+        <mesh position={[0, 0.905, 0]} rotation-x={-Math.PI / 2}>
+          <planeGeometry args={[1.48, 0.88]} />
+          <meshBasicMaterial map={table} toneMapped={false} />
+        </mesh>
+        <B s={[0.5, 0.78, 0.4]} p={[0, 0.39, 0]} c="#374151" />
+      </group>
+      {/* 3D printer with a print in progress */}
+      <group position={[15.75, 0, 18.4]}>
+        <B s={[0.7, 0.75, 0.7]} p={[0, 0.375, 0]} c="#f5f5f4" />
+        <mesh position={[0, 1.05, 0]}>
+          <boxGeometry args={[0.6, 0.6, 0.6]} />
+          <meshStandardMaterial color="#bfe3f0" transparent opacity={0.3} depthWrite={false} />
+        </mesh>
+        <B s={[0.62, 0.04, 0.62]} p={[0, 1.37, 0]} c="#374151" />
+        <mesh position={[0, 0.88, 0]}>
+          <torusKnotGeometry args={[0.08, 0.03, 48, 8]} />
+          <meshStandardMaterial color="#f97316" />
+        </mesh>
+      </group>
+      {/* beanbag for big thoughts */}
+      <mesh position={[15.6, 0.22, 22.4]} scale={[1, 0.6, 1]} castShadow>
+        <sphereGeometry args={[0.42, 20, 16]} />
+        <meshStandardMaterial color="#facc15" roughness={0.9} />
+      </mesh>
+      {/* pinball machine and an arcade cabinet */}
+      <group position={[10.0, 0, 23.3]}>
+        <B s={[0.6, 0.75, 1.1]} p={[0, 0.5, 0]} c="#7c3aed" />
+        <mesh position={[0, 0.9, 0]} rotation-x={-Math.PI / 2 + 0.1}>
+          <planeGeometry args={[0.52, 1.0]} />
+          <meshBasicMaterial color={glow ? "#f0abfc" : "#f5d0fe"} toneMapped={false} />
+        </mesh>
+        <B s={[0.6, 0.7, 0.12]} p={[0, 1.25, 0.5]} c="#4c1d95" />
+        {[-0.24, 0.24].map((x) => (
+          <B key={x} s={[0.05, 0.45, 0.05]} p={[x, 0.22, -0.48]} c="#111827" />
+        ))}
+      </group>
+      <group position={[11.3, 0, 23.45]} rotation-y={Math.PI}>
+        <Arcade p={[0, 0, 0]} hue={0.55} />
+      </group>
+      {decor.items.plants && <PalmPlant p={[16.5, 0, 23.6]} s={0.9} />}
+      {decor.items.lamps && <FloorLamp p={[16.5, 0, 20.4]} on={glow} />}
+    </group>
+  );
+}
+
+/** Zone 6: the formal conference room with a big table and a screen wall. */
+function StrategyHub({ decor }: { decor: FloorDecor }) {
+  const { door, z1, labs } = SOUTH;
+  const glow = decor.phase !== "day";
+  const carpet = useDisposable(() => carpetTexture("#2d3a55", [6, 4.4]), "hub-floor");
+  const screen = useDisposable(() => avTexture(), "hub-av");
+  return (
+    <group>
+      <Floor x0={labs} x1={FLOOR.x1} z0={door} z1={z1} map={carpet} />
+      {/* walnut panel, screen wall, camera bar, credenza and speakers */}
+      <B s={[0.05, 1.8, 3.8]} p={[labs + 0.1, 0.9, 20.6]} c="#5a3d2b" />
+      <group position={[labs + 0.15, 1.15, 20.6]} rotation-y={Math.PI / 2}>
+        <B s={[2.9, 1.35, 0.05]} p={[0, 0, 0]} c="#0b0f19" />
+        <mesh position={[0, 0, 0.03]}>
+          <planeGeometry args={[2.8, 1.25]} />
+          <meshBasicMaterial map={screen} toneMapped={false} />
+        </mesh>
+        <B s={[0.5, 0.06, 0.08]} p={[0, 0.72, 0.03]} c="#111827" />
+      </group>
+      <B s={[0.4, 0.42, 2.6]} p={[labs + 0.3, 0.21, 20.6]} c="#3b2a20" />
+      {[18.9, 22.3].map((z) => (
+        <B key={z} s={[0.3, 1.0, 0.3]} p={[labs + 0.35, 0.5, z]} c="#111827" />
+      ))}
+      {/* conference table for ten */}
+      <group position={[21.5, 0, 20.6]}>
+        <B s={[4.0, 0.06, 1.4]} p={[0, 0.75, 0]} c="#6b4a33" rough={0.35} />
+        <B s={[3.4, 0.065, 0.3]} p={[0, 0.752, 0]} c="#1f2937" rough={0.3} />
+        {[-1.3, 1.3].map((x) => (
+          <B key={x} s={[0.3, 0.72, 0.8]} p={[x, 0.36, 0]} c="#2b2f33" />
+        ))}
+        <mesh position={[0, 0.8, 0]}>
+          <cylinderGeometry args={[0.14, 0.16, 0.05, 20]} />
+          <meshStandardMaterial color="#111827" />
+        </mesh>
+        {[-1.5, -0.5, 0.5, 1.5].map((x) => (
+          <group key={x}>
+            <B s={[0.32, 0.015, 0.22]} p={[x, 0.79, -0.42]} c="#d1d5db" metal={0.5} rough={0.3} />
+            <B s={[0.32, 0.015, 0.22]} p={[x, 0.79, 0.42]} c="#d1d5db" metal={0.5} rough={0.3} />
+          </group>
+        ))}
+      </group>
+      {[20.0, 21.0, 22.0, 23.0].map((x) => (
+        <group key={x}>
+          <OfficeChair p={[x, 0, 19.55]} r={Math.PI} />
+          <OfficeChair p={[x, 0, 21.65]} />
+        </group>
+      ))}
+      <OfficeChair p={[19.0, 0, 20.6]} r={-Math.PI / 2} />
+      <OfficeChair p={[24.0, 0, 20.6]} r={Math.PI / 2} />
+      {/* linear pendant over the table */}
+      <B s={[3.6, 0.05, 0.12]} p={[21.5, 2.35, 20.6]} c="#2b2f33" />
+      <mesh position={[21.5, 2.32, 20.6]}>
+        <boxGeometry args={[3.5, 0.02, 0.08]} />
+        <meshBasicMaterial color={glow ? "#ffe2a8" : "#f8fafc"} toneMapped={false} />
+      </mesh>
+      {[20.0, 23.0].map((x) => (
+        <mesh key={x} position={[x, 2.6, 20.6]}>
+          <cylinderGeometry args={[0.006, 0.006, 0.5, 4]} />
+          <meshStandardMaterial color="#6b7280" />
+        </mesh>
+      ))}
+      {decor.items.plants && (
+        <>
+          <PalmPlant p={[25.5, 0, 17.65]} />
+          <PalmPlant p={[25.5, 0, 23.55]} />
+          <PalmPlant p={[17.5, 0, 23.55]} s={0.85} />
+        </>
+      )}
+      {decor.items.art && <Art p={[25.5, 1.4, 23.94]} r={Math.PI} seed={29} w={1.0} h={0.6} />}
+    </group>
+  );
+}
+
+/** Corridor, glass fronts with doorways, room dividers and the four zones. */
+function SouthWing({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
+  const terrazzo = useDisposable(() => tileTexture("#ece8e1", "#dcd6cc", [17, 0.6]), "south-corridor");
+  const { z0, door, z1, gym, pods, labs } = SOUTH;
+  return (
+    <group>
+      <Floor x0={FLOOR.x0} x1={FLOOR.x1} z0={z0} z1={door} map={terrazzo} />
+      {/* low wall to the hall with two ways through, a hedge along the garden */}
+      <Wall a={[FLOOR.x0, z0]} b={[6.3, z0]} h={1.0} />
+      <Wall a={[7.3, z0]} b={[11.75, z0]} h={1.0} />
+      <Wall a={[12.75, z0]} b={[EAST.x0, z0]} h={1.0} />
+      <Hedge a={[EAST.x0, z0]} b={[FLOOR.x1, z0]} />
+      {/* glass fronts on the four zones */}
+      <GlassWall x0={FLOOR.x0} x1={-4.5} z={door} />
+      <Doorway x0={-4.5} x1={-3.5} z={door} />
+      <GlassWall x0={-3.5} x1={4.0} z={door} />
+      <Doorway x0={4.0} x1={5.0} z={door} />
+      <GlassWall x0={5.0} x1={12.0} z={door} />
+      <Doorway x0={12.0} x1={13.4} z={door} />
+      <GlassWall x0={13.4} x1={21.0} z={door} />
+      <Doorway x0={21.0} x1={22.0} z={door} color="#7a2f3b" />
+      <GlassWall x0={22.0} x1={FLOOR.x1} z={door} />
+      {/* room dividers */}
+      <Wall a={[gym, door]} b={[gym, z1]} h={INT_H} color="#e7e3ee" />
+      <Wall a={[pods, door]} b={[pods, z1]} h={INT_H} />
+      <Wall a={[labs, door]} b={[labs, z1]} h={INT_H} />
+      <FitnessStudio decor={decor} sky={sky} />
+      <FocusPods decor={decor} />
+      <CreativeLabs decor={decor} />
+      <StrategyHub decor={decor} />
+    </group>
+  );
+}
+
+/** Zone name board: a dark panel with an emoji badge. */
+function zoneSignTexture(emoji: string, text: string, accent: string) {
+  const c = document.createElement("canvas");
+  c.width = 640;
+  c.height = 160;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#111827";
+  g.beginPath();
+  g.roundRect(4, 4, 632, 152, 28);
+  g.fill();
+  g.fillStyle = accent;
+  g.beginPath();
+  g.arc(82, 80, 54, 0, Math.PI * 2);
+  g.fill();
+  g.font = '64px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(emoji, 82, 86);
+  let size = 62;
+  const font = (s: number) => `800 ${s}px system-ui, "Segoe UI", "Noto Sans Thai", sans-serif`;
+  g.font = font(size);
+  while (size > 26 && g.measureText(text).width > 470) {
+    size -= 2;
+    g.font = font(size);
+  }
+  g.textAlign = "left";
+  g.fillStyle = "#f8fafc";
+  g.fillText(text, 156, 84);
+  return finish(c, [1, 1]);
+}
+
+/** Name boards for the six working zones (the two in the old building stand on little posts). */
+const ZONES: { id: ZoneId; emoji: string; sign: V3; posts?: number }[] = [
+  { id: "engine", emoji: "⚙️", sign: [9.5, 1.6, 0.9], posts: 1.0 },
+  { id: "social", emoji: "☕", sign: [-1.1, 1.85, 15.75], posts: 1.05 },
+  { id: "labs", emoji: "🎨", sign: [12.7, 2.2, SOUTH.door] },
+  { id: "pods", emoji: "🎧", sign: [4.5, 2.2, SOUTH.door] },
+  { id: "fitness", emoji: "🧘", sign: [-4.0, 2.2, SOUTH.door] },
+  { id: "hub", emoji: "📊", sign: [21.5, 2.2, SOUTH.door] },
+];
+
+function ZoneSign({ zone, text, accent }: { zone: (typeof ZONES)[number]; text: string; accent: string }) {
+  const tex = useDisposable(() => zoneSignTexture(zone.emoji, text, accent), `zone:${zone.id}:${text}:${accent}`);
+  return (
+    <group position={zone.sign}>
+      <mesh>
+        <planeGeometry args={[1.8, 0.45]} />
+        <meshBasicMaterial map={tex} transparent toneMapped={false} side={DoubleSide} />
+      </mesh>
+      {zone.posts !== undefined &&
+        [-0.7, 0.7].map((x) => {
+          const h = zone.sign[1] - 0.22 - zone.posts!;
+          return <B key={x} s={[0.04, h, 0.04]} p={[x, -0.22 - h / 2, 0]} c="#374151" />;
+        })}
+    </group>
+  );
+}
+
+/** Name boards over the six zones, in the current language. */
+export function ZoneSigns({ lang, accent }: { lang: Lang; accent: string }) {
+  return (
+    <group>
+      {ZONES.map((z) => (
+        <ZoneSign key={z.id} zone={z} text={translate(lang, `zone.${z.id}` as Key)} accent={accent} />
+      ))}
+    </group>
+  );
+}
+
 function PicnicBasket() {
   return (
     <group position={[19.8, 0.77, 11.3]}>
@@ -1790,6 +2319,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[5.6, CORRIDOR.z1]} b={[13.4, CORRIDOR.z1]} h={1.0} />
       <Wall a={[14.4, CORRIDOR.z1]} b={[EAST.x0, CORRIDOR.z1]} h={1.0} />
       <EastWing decor={decor} />
+      <SouthWing decor={decor} sky={sky} />
     </group>
   );
 });
