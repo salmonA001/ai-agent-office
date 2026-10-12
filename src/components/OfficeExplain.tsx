@@ -1,104 +1,11 @@
 "use client";
 
-import { QuestionIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/agents";
 import { agentInstructions, type Key, phrase, renderMsg, useI18n } from "@/lib/i18n";
 import type { Task, TaskEvent } from "@/lib/run-task";
 import { useAgentActivity } from "./agent-activity";
 import { XpBadge } from "./OfficeGame";
-import type { ManagerState } from "./OfficeScene";
-
-const STEPS: { label: Key; text: Key }[] = [
-  { label: "step.assign", text: "step.assign.text" },
-  { label: "step.plan", text: "step.plan.text" },
-  { label: "step.work", text: "step.work.text" },
-  { label: "step.merge", text: "step.merge.text" },
-  { label: "step.done", text: "step.done.text" },
-];
-
-export function stepIndex(manager: ManagerState, finished: boolean) {
-  if (manager === "planning") return 1;
-  if (manager === "watching") return 2;
-  if (manager === "merging") return 3;
-  return finished ? 4 : 0;
-}
-
-/** Shows which stage the office is in and what that stage means. */
-export function Stepper({ active }: { active: number }) {
-  const { t } = useI18n();
-  return (
-    <div className="glass-strong enter-fade rounded-xl px-3 py-2">
-      <p className="text-[11px] font-semibold sm:hidden">
-        <span className="text-muted">{t("step.short", { n: active + 1, total: STEPS.length })} · </span>
-        <span className="text-accent">{t(STEPS[active].label)}</span>
-      </p>
-      <ol className="hidden flex-wrap items-center gap-x-1 gap-y-1 text-[11px] font-semibold sm:flex" aria-label={t("guide.open")}>
-        {STEPS.map((s, i) => (
-          <li key={s.label} className="flex items-center gap-1">
-            <span
-              aria-current={i === active ? "step" : undefined}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors duration-300 ${
-                i === active ? "bg-accent text-on-accent" : i < active ? "text-accent" : "text-muted"
-              }`}
-            >
-              <span aria-hidden>{i < active ? "✓" : i + 1}</span>
-              {t(s.label)}
-            </span>
-            {i < STEPS.length - 1 && (
-              <span aria-hidden className="text-muted/60">
-                ›
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
-      <p key={active} className="enter-fade mt-1 hidden text-xs text-ink/90 sm:block" aria-live="polite">
-        {t(STEPS[active].text)}
-      </p>
-    </div>
-  );
-}
-
-const LEGEND: [string, Key][] = [
-  ["🟩", "guide.screen"],
-  ["⏳", "guide.spinner"],
-  ["📽️", "guide.projector"],
-  ["🚶", "guide.wander"],
-  ["💬", "guide.bubbles"],
-  ["👆", "guide.click"],
-  ["🎨", "guide.customize"],
-];
-
-/** "How to read this office" button with a short legend. */
-export function HowItWorks({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex flex-col items-end gap-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-label={open ? t("guide.close") : t("guide.open")}
-        className="glass-strong press inline-flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold text-accent"
-      >
-        {open ? <XIcon size={16} weight="bold" aria-hidden /> : <QuestionIcon size={16} weight="bold" aria-hidden />}
-        <span className="hidden sm:inline">{open ? t("guide.close") : t("guide.open")}</span>
-      </button>
-      {open && (
-        <ul className="glass-strong enter-drop max-h-64 w-72 overflow-y-auto rounded-xl p-3 text-xs">
-          {LEGEND.map(([icon, key], i) => (
-            <li key={key} className="enter flex gap-2 py-1" style={{ ["--i" as string]: i }}>
-              <span aria-hidden className="text-base leading-none">
-                {icon}
-              </span>
-              <span className="text-ink/90">{t(key)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 const EVENT_ICON: Record<TaskEvent["kind"], string> = {
   received: "📥",

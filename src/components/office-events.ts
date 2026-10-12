@@ -24,7 +24,9 @@ export type EventKind =
   | "icecream"
   | "delivery"
   | "outage"
-  | "welcome";
+  | "welcome"
+  | "allhands"
+  | "picnic";
 
 export type ActiveEvent = {
   id: number;
@@ -345,9 +347,7 @@ const EVENTS: EventDef[] = [
     plan: (idle) => ({
       orders: gather(
         idle,
-        [EVENT_SPOTS.meeting[0], spotById("meeting-seat"), EVENT_SPOTS.meeting[1], ...EVENT_SPOTS.movie].map((s) =>
-          fix(s, "Popcorn time!", ["🍿", "🎬", "😮"], "at movie night in the meeting room"),
-        ),
+        EVENT_SPOTS.townHall.map((s) => fix(s, "Popcorn time!", ["🍿", "🎬", "😮"], "at movie night in the town hall", "sip")),
       ),
       dwell: 4,
       text: { key: "ge.movie.text" },
@@ -412,6 +412,38 @@ const EVENTS: EventDef[] = [
     }),
   },
   {
+    kind: "allhands",
+    icon: "📣",
+    seconds: 32,
+    xp: 10,
+    when: (h) => between(h, 9, 11.5) || between(h, 14, 16),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        EVENT_SPOTS.townHall.map((s) => fix(s, "Great work, team!", ["📣", "👏", "🎉"], "at the all-hands in the town hall")),
+      ),
+      dwell: 4,
+      text: { key: "ge.allhands.text" },
+    }),
+  },
+  {
+    kind: "picnic",
+    icon: "🧺",
+    seconds: 30,
+    xp: 8,
+    when: (h) => between(h, 11, 15.5),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        ["picnic-a", "picnic-b", "lounger-1", "lounger-2", "pond", "flowers", "hammock"].map((id) =>
+          fix(spotById(id), "Picnic time!", ["🧺", "🥪", "☀️"], "at the picnic in the garden"),
+        ),
+      ),
+      dwell: 4,
+      text: { key: "ge.picnic.text" },
+    }),
+  },
+  {
     kind: "welcome",
     icon: "🎉",
     seconds: 26,
@@ -454,10 +486,6 @@ export function setEventHour(hour: number) {
   eventHour = hour;
 }
 
-/** Note a shift hand-over in the log. */
-export function logShift(shift: "day" | "night", n: number) {
-  log(shift === "day" ? "☀️" : "🌙", { key: "gl.shift", params: { shift: { key: `shift.${shift}` }, n } });
-}
 
 /** Switch the random events on or off (the buttons in the events panel still work). */
 export function setAutoEvents(on: boolean) {
@@ -474,8 +502,7 @@ export function triggerEvent(kind: EventKind | "random" = "random", heroId?: str
 }
 
 function begin(def: EventDef, t: number, hero?: string) {
-  // only people who are in the building take part (or are the birthday person)
-  const everyone = [...walkers.values()].filter((w) => w.isHere()).map((w) => w.id);
+  const everyone = [...walkers.keys()];
   const idle = everyone.filter((id) => walkers.get(id)!.isIdle());
   const title: Msg = { key: `ge.${def.kind}` };
   if (!idle.length && def.kind !== "welcome") {
@@ -483,7 +510,7 @@ function begin(def: EventDef, t: number, hero?: string) {
     nextAt = t + 20;
     return;
   }
-  const plan = def.plan(idle, everyone.length ? everyone : [...walkers.keys()], hero);
+  const plan = def.plan(idle, everyone, hero);
   if (!plan) return;
   const agentIds: string[] = [];
   for (const [id, spots] of plan.orders) if (walkers.get(id)?.command(spots, plan.dwell)) agentIds.push(id);

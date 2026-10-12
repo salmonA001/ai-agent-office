@@ -4,7 +4,7 @@ import { Billboard, OrbitControls, Outlines, RoundedBox, Sparkles, Text } from "
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasTexture, type Group, type Mesh, Object3D, type Sprite, type SpriteMaterial, SRGBColorSpace, Vector3 } from "three";
-import { type Agent, shiftOf } from "@/lib/agents";
+import type { Agent } from "@/lib/agents";
 import {
   type BoardLine,
   EventProps,
@@ -17,10 +17,10 @@ import {
   Projector,
 } from "./OfficeFloor";
 import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
-import { arrivalOf, clockText, onShift, phaseAt, type Shift, SHIFT_HOURS, shiftAt, useOfficeMinutes } from "@/lib/office-clock";
+import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { awardXp, currentEventKind, logShift, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
+import { currentEventKind, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
 import {
   type Activity,
   DESK_SCALE,
@@ -32,7 +32,6 @@ import {
   setBreakRules,
   setOfficeHour,
   SPOT_CATS,
-  type Trip,
   type WalkPhase,
   Wanderer,
 } from "./office-nav";
@@ -126,8 +125,8 @@ const LOOKS: Look[] = [
   { species: "puppy", color: "#ffe3e3", inner: "#ffa8a8" },
 ];
 
-/** The night crew: cool moonlit pastels, with owls. */
-const NIGHT_LOOKS: Look[] = [
+/** More looks for bigger teams: cool pastels and owls. */
+const MORE_LOOKS: Look[] = [
   { species: "owl", color: "#ddd0ff", inner: "#b8a4f0" },
   { species: "cat", color: "#cdd6ff", inner: "#a5b4fc" },
   { species: "bunny", color: "#d4e6ff", inner: "#93c5fd" },
@@ -137,11 +136,6 @@ const NIGHT_LOOKS: Look[] = [
 ];
 
 const ACCESSORY: Record<string, Accessory> = {
-  "night-researcher": "glasses",
-  "night-writer": "beanie",
-  "night-coder": "beanie",
-  "night-designer": "beanie",
-  "night-support": "headphones",
   researcher: "glasses",
   writer: "bow",
   coder: "headphones",
@@ -1184,33 +1178,21 @@ type DeskProps = {
   position: V3;
   lang: Lang;
   desk: DeskLook;
-  /** coloured stripe on the screen: sun yellow for the day crew, indigo for the night crew */
-  shift: Shift | null;
-  /** owner is off duty: monitor off */
-  off: boolean;
 };
 
-const SHIFT_STRIPE: Record<Shift, string> = { day: "#f2c14e", night: "#5b6abf" };
-
-function AgentDeskImpl({ agent, look, state, seed, position, lang, desk, shift, off }: DeskProps) {
+function AgentDeskImpl({ agent, look, state, seed, position, lang, desk }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
       <DeskFrame look={desk} />
-      {shift && (
-        <mesh position={[0, 1.255, -0.39]}>
-          <boxGeometry args={[1.5, 0.03, 0.05]} />
-          <meshStandardMaterial color={SHIFT_STRIPE[shift]} emissive={SHIFT_STRIPE[shift]} emissiveIntensity={off ? 0 : 0.35} />
-        </mesh>
-      )}
       {/* mug in the owner's colour */}
       <mesh position={[-0.55, 0.815, 0.05]} castShadow>
         <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
         <meshStandardMaterial color={look.inner} />
       </mesh>
       {desk.items && <DeskItems seed={seed} />}
-      {desk.lamp && <DeskLamp glow={desk.glow && !off} />}
-      {off ? <DarkMonitor /> : <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />}
-      <OfficeChair p={[0, 0, off ? 0.45 : 0.62]} />
+      {desk.lamp && <DeskLamp glow={desk.glow} />}
+      <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
+      <OfficeChair p={[0, 0, 0.62]} />
     </group>
   );
 }
@@ -1225,8 +1207,6 @@ const AgentDesk = memo(
     a.position.join() === b.position.join() &&
     a.lang === b.lang &&
     a.desk === b.desk &&
-    a.shift === b.shift &&
-    a.off === b.off &&
     a.state.screen.mode === b.state.screen.mode &&
     a.state.screen.title === b.state.screen.title &&
     Math.floor((a.state.screen.len ?? 0) / 30) === Math.floor((b.state.screen.len ?? 0) / 30),
@@ -1275,9 +1255,6 @@ type AvatarProps = {
   busy: boolean;
   working: boolean;
   attentive: boolean;
-  /** the shift schedule says this agent should be in */
-  duty: boolean;
-  shift: Shift;
   bubble?: string;
   lastDoneAt?: number;
   seed: number;
@@ -1299,6 +1276,7 @@ const ACTIVITY_ACTION: Record<Activity, Action> = {
   yoga: "yoga",
   run: "run",
   chat: "talk",
+  talk: "talk",
   nap: "nap",
 };
 
@@ -1362,42 +1340,33 @@ function Emote({ pool, seed, y = 1.25 }: { pool: string[]; seed: number; y?: num
   );
 }
 
-type Doing = { working: boolean; attentive: boolean; task?: string; trip: Trip; duty: boolean; shift: Shift; backAt: string };
-
-function describe(lang: Lang, phase: WalkPhase, d: Doing) {
-  if (phase.kind === "away") return translate(lang, "act.away", { time: d.backAt });
-  if (d.trip === "arrive") return translate(lang, phase.kind === "spot" ? "act.clockIn" : "act.arriving");
-  if (d.trip === "leave") return translate(lang, phase.kind === "spot" ? "act.clockOut" : "act.leaving");
-  if (d.trip === "exit") return translate(lang, "act.leaving");
+function describe(lang: Lang, phase: WalkPhase, working: boolean, attentive: boolean, task?: string) {
   if (phase.kind === "seated") {
-    if (d.working && !d.duty) return translate(lang, "act.overtime", { title: d.task ?? "" });
-    if (d.working) return d.task ? translate(lang, "act.typingOn", { title: d.task }) : translate(lang, "act.typing");
-    if (d.attentive) return translate(lang, "act.watching");
+    if (working) return task ? translate(lang, "act.typingOn", { title: task }) : translate(lang, "act.typing");
+    if (attentive) return translate(lang, "act.watching");
     return translate(lang, "act.free");
   }
   if (phase.kind === "walking") return translate(lang, phase.rushing ? "act.rushing" : "act.strolling");
   return `${phrase(lang, phase.spot.say)} ${phrase(lang, phase.spot.where)}`;
 }
 
-function emotePool(phase: WalkPhase, d: Doing) {
-  if (d.trip === "arrive") return d.shift === "day" ? ["☀️", "👋", "☕"] : ["🌙", "👋", "🦉"];
-  if (d.trip) return d.shift === "day" ? ["🏠", "👋", "😮‍💨"] : ["🌅", "🏠", "😴"];
+function emotePool(phase: WalkPhase, working: boolean, attentive: boolean) {
   if (phase.kind === "spot") return phase.spot.emoji;
   if (phase.kind === "walking") return phase.rushing ? ["❗", "🏃"] : ["🎵", "🙂"];
-  if (d.working) return d.duty ? ["💡", "⌨️", "🤓", "🧠"] : ["😪", "⌨️", "☕"];
-  if (d.attentive) return ["👂", "📝", "🤔"];
+  if (working) return ["💡", "⌨️", "🤓", "🧠"];
+  if (attentive) return ["👂", "📝", "🤔"];
   return ["🙂", "🎵", "😊"];
 }
 
 function AgentAvatarImpl(props: AvatarProps) {
-  const { agent, look, home, working, attentive, duty, shift, bubble, lastDoneAt, seed, lift, selected, onSelect } = props;
+  const { agent, look, home, working, attentive, bubble, lastDoneAt, seed, lift, selected, onSelect } = props;
   const group = useRef<Group>(null);
   const ring = useRef<Mesh>(null);
   const live = useRef(props);
   useEffect(() => {
     live.current = props;
   });
-  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5), props.duty || props.busy));
+  const [walker] = useState(() => new Wanderer(agent.id, home, SEAT_Y, 2 + ((seed * 7) % 5)));
   const [phase, setPhase] = useState<WalkPhase>(walker.phase);
   // whether the person across the table has arrived, for chats
   const [partnerHere, setPartnerHere] = useState(false);
@@ -1410,72 +1379,46 @@ function AgentAvatarImpl(props: AvatarProps) {
     const g = group.current;
     if (!g) return;
     const p = live.current;
-    const wasHere = walker.isHere();
-    if (walker.update(delta, p.home, p.busy, p.canWander, p.duty)) {
-      setPhase(walker.phase);
-      // a full shift done: a little XP on the way out
-      if (wasHere && !walker.isHere() && !p.duty) awardXp(agent.id, 5, { key: "why.shift" }, true);
-    }
+    if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
     g.position.set(walker.x + walker.offX, walker.y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
-    // pop in and out of the elevator
-    const k = walker.fade;
-    g.visible = walker.isHere() && k > 0.02;
-    g.scale.setScalar(DESK_SCALE * (0.35 + 0.65 * k));
     if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
     const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
     const here = pair ? isPresent(pair) : false;
     if (here !== partnerHere) setPartnerHere(here);
   });
 
-  // trip and parcel change together with the phase, which re-renders this component
-  const trip = walker.trip;
+  // the parcel changes together with the phase, which re-renders this component
   const holding = walker.holding;
-  const backAt = clockText(arrivalOf(agent.id, shift));
-  const doing: Doing = { working, attentive, task: bubble, trip, duty, shift, backAt };
   const seated = phase.kind === "seated";
   const facing = seated && (working || attentive) ? "back" : "front";
   const chatAlone = phase.kind === "spot" && phase.spot.activity === "chat" && !partnerHere;
-  const action: Action =
-    phase.kind === "away" || seated
-      ? working
-        ? "write"
-        : "idle"
-      : phase.kind === "walking"
-        ? holding
-          ? "carry"
-          : "walk"
-        : trip
-          ? "wave"
-          : chatAlone
-            ? "sip"
-            : ACTIVITY_ACTION[phase.spot.activity];
-  const greet = (k: "in" | "out") =>
-    translate(props.lang, k === "in" ? (shift === "day" ? "bubble.morning" : "bubble.nightIn") : shift === "day" ? "bubble.bye" : "bubble.byeNight");
-  const say =
-    phase.kind === "away"
-      ? undefined
-      : seated
-        ? working
-          ? bubble
+  const action: Action = seated
+    ? working
+      ? "write"
+      : "idle"
+    : phase.kind === "walking"
+      ? holding
+        ? "carry"
+        : "walk"
+      : chatAlone
+        ? "sip"
+        : ACTIVITY_ACTION[phase.spot.activity];
+  const say = seated
+    ? working
+      ? bubble
+      : undefined
+    : phase.kind === "walking"
+      ? phase.rushing
+        ? translate(props.lang, "bubble.onMyWay")
+        : holding
+          ? translate(props.lang, "bubble.parcel")
           : undefined
-        : phase.kind === "walking"
-          ? phase.rushing
-            ? translate(props.lang, "bubble.onMyWay")
-            : holding
-              ? translate(props.lang, "bubble.parcel")
-              : undefined
-          : trip === "arrive"
-            ? greet("in")
-            : trip === "leave"
-              ? greet("out")
-              : trip
-                ? undefined
-                : chatAlone
-                  ? translate(props.lang, "bubble.saving")
-                  : phrase(props.lang, phase.spot.say);
+      : chatAlone
+        ? translate(props.lang, "bubble.saving")
+        : phrase(props.lang, phase.spot.say);
 
-  const status = describe(props.lang, phase, doing);
+  const status = describe(props.lang, phase, working, attentive, bubble);
   useEffect(() => {
     setAgentActivity(agent.id, status);
   }, [agent.id, status]);
@@ -1503,7 +1446,7 @@ function AgentAvatarImpl(props: AvatarProps) {
           <meshBasicMaterial color="#34d399" toneMapped={false} />
         </mesh>
       )}
-      <Emote pool={emotePool(phase, doing)} seed={seed} />
+      <Emote pool={emotePool(phase, working, attentive)} seed={seed} />
       <Mochi
         look={look}
         accessory={ACCESSORY[agent.id] ?? null}
@@ -1528,8 +1471,6 @@ const AgentAvatar = memo(
     a.busy === b.busy &&
     a.working === b.working &&
     a.attentive === b.attentive &&
-    a.duty === b.duty &&
-    a.shift === b.shift &&
     a.bubble === b.bubble &&
     a.lastDoneAt === b.lastDoneAt &&
     a.seed === b.seed &&
@@ -1622,7 +1563,7 @@ function Pacer({ pacing, children }: { pacing: boolean; children: React.ReactNod
 }
 
 /** Where the camera looks: the middle of the floor. */
-const TARGET: V3 = [4, 0.6, 5];
+const TARGET: V3 = [9, 0.6, 5];
 
 type LightSet = { ambient: [string, number]; hemi: [string, string, number]; sun: [string, number, V3]; lamps: number };
 
@@ -1634,6 +1575,9 @@ const LIGHTS: Record<Phase, LightSet> = {
 };
 
 const ROOM_LIGHTS: V3[] = [
+  [21, 2.6, -2.5],
+  [21, 2.6, 5],
+  [21, 2.4, 12.5],
   [1.5, 2.6, 5.5],
   [8.5, 2.6, 5.5],
   [1.5, 2.6, 10.5],
@@ -1666,10 +1610,10 @@ function Lights({ phase }: { phase: Phase }) {
         intensity={set.sun[1]}
         castShadow
         shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-19}
-        shadow-camera-right={19}
-        shadow-camera-top={19}
-        shadow-camera-bottom={-19}
+        shadow-camera-left={-22}
+        shadow-camera-right={22}
+        shadow-camera-top={22}
+        shadow-camera-bottom={-22}
         shadow-camera-far={80}
         shadow-bias={-0.0005}
       />
@@ -1692,45 +1636,114 @@ function EventDirector() {
   return <EventProps kind={game.event?.kind ?? currentEventKind()} />;
 }
 
-function shiftSignTexture(text: string, on: boolean, color: string) {
+/** Robo, the robot receptionist behind the lobby desk; looks around and waves now and then. */
+function Receptionist({ lang }: { lang: Lang }) {
+  const arm = useRef<Group>(null);
+  const head = useRef<Group>(null);
+  const eyes = useRef<Group>(null);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (still) return;
+    const t = clock.elapsedTime;
+    const waving = t % 8 < 1.6;
+    if (arm.current) arm.current.rotation.z = waving ? 2.5 + Math.sin(t * 10) * 0.35 : 0.15;
+    if (head.current) head.current.rotation.y = Math.sin(t * 0.6) * 0.35;
+    if (eyes.current) eyes.current.scale.y = t % 4 < 0.12 ? 0.15 : 1;
+  });
+  return (
+    <group position={[20.5, 0, -3.5]}>
+      <mesh position={[0, 0.12, 0]}>
+        <cylinderGeometry args={[0.24, 0.3, 0.24, 24]} />
+        <meshStandardMaterial color="#9ca3af" metalness={0.5} roughness={0.4} />
+      </mesh>
+      <RoundedBox args={[0.52, 0.6, 0.4]} radius={0.1} position={[0, 0.6, 0]} castShadow>
+        <meshStandardMaterial color="#e5e7eb" roughness={0.35} />
+      </RoundedBox>
+      <mesh position={[0, 0.66, 0.205]}>
+        <circleGeometry args={[0.07, 20]} />
+        <meshBasicMaterial color="#34d399" toneMapped={false} />
+      </mesh>
+      <mesh position={[-0.32, 0.62, 0]} rotation-z={-0.15}>
+        <capsuleGeometry args={[0.055, 0.28, 6, 12]} />
+        <meshStandardMaterial color="#cbd5e1" />
+      </mesh>
+      <group ref={arm} position={[0.31, 0.8, 0]}>
+        <mesh position={[0, -0.18, 0]}>
+          <capsuleGeometry args={[0.055, 0.28, 6, 12]} />
+          <meshStandardMaterial color="#cbd5e1" />
+        </mesh>
+      </group>
+      <group ref={head} position={[0, 1.13, 0]}>
+        <RoundedBox args={[0.56, 0.4, 0.38]} radius={0.1} castShadow>
+          <meshStandardMaterial color="#f8fafc" roughness={0.3} />
+        </RoundedBox>
+        <mesh position={[0, 0, 0.191]}>
+          <planeGeometry args={[0.44, 0.27]} />
+          <meshBasicMaterial color="#111827" />
+        </mesh>
+        <group ref={eyes}>
+          {[-0.1, 0.1].map((x) => (
+            <mesh key={x} position={[x, 0.02, 0.195]}>
+              <circleGeometry args={[0.045, 16]} />
+              <meshBasicMaterial color="#5eead4" toneMapped={false} />
+            </mesh>
+          ))}
+        </group>
+        <mesh position={[0, 0.3, 0]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.2, 6]} />
+          <meshStandardMaterial color="#6b7280" />
+        </mesh>
+        <mesh position={[0, 0.42, 0]}>
+          <sphereGeometry args={[0.045, 12, 10]} />
+          <meshBasicMaterial color="#f472b6" toneMapped={false} />
+        </mesh>
+      </group>
+      <Label name={translate(lang, "robo.label")} position={[0, 1.95, 0]} scale={LABEL_SCALE} />
+    </group>
+  );
+}
+
+function townHallTexture(lang: Lang, allHands: boolean) {
   const c = document.createElement("canvas");
   c.width = 1024;
-  c.height = 128;
+  c.height = 400;
   const g = c.getContext("2d")!;
-  g.fillStyle = on ? color : "rgba(120,120,130,0.55)";
-  g.beginPath();
-  g.roundRect(4, 4, 1016, 120, 60);
-  g.fill();
+  const font = 'system-ui, "Segoe UI", "Leelawadee UI", "Noto Sans Thai", sans-serif';
+  const bg = g.createLinearGradient(0, 0, 1024, 400);
+  bg.addColorStop(0, allHands ? "#4c1d95" : "#064e3b");
+  bg.addColorStop(1, allHands ? "#be185d" : "#0f766e");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 1024, 400);
+  g.fillStyle = "rgba(255,255,255,0.16)";
+  g.fillRect(0, 0, 1024, 70);
   g.fillStyle = "#ffffff";
-  g.font = '800 58px system-ui, "Segoe UI", "Leelawadee UI", "Noto Sans Thai", sans-serif';
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillText(text, 512, 68);
+  g.font = `800 40px ${font}`;
+  g.fillText(translate(lang, allHands ? "th.allhands" : "th.talk"), 40, 48);
+  g.font = `700 56px ${font}`;
+  g.fillText(translate(lang, allHands ? "th.allhandsTitle" : "th.talkTitle"), 40, 160);
+  // a little bar chart and bullet lines
+  [0.45, 0.7, 0.55, 0.9].forEach((h, i) => {
+    g.fillStyle = ["#fde68a", "#a7f3d0", "#bae6fd", "#fbcfe8"][i];
+    g.fillRect(700 + i * 70, 360 - h * 150, 48, h * 150);
+  });
+  g.fillStyle = "rgba(255,255,255,0.85)";
+  [230, 280, 330].forEach((y, i) => g.fillRect(40, y, 520 - i * 90, 16));
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 4;
   return tex;
 }
 
-/** Banner hanging over the west end of a section: day crew in the front rows, night crew in the back. */
-function ShiftSign({ shift, z, on, lang }: { shift: Shift; z: number; on: boolean; lang: Lang }) {
-  const h = SHIFT_HOURS[shift];
-  const text = `${shift === "day" ? "☀" : "☾"}  ${translate(lang, `shift.${shift}` as Key).toUpperCase()}  ${clockText(h.start)}–${clockText(h.end)}`;
-  const tex = useDisposable(() => shiftSignTexture(text, on, shift === "day" ? "#d9a21b" : "#4f5bb5"), `${text}|${on}`);
-  // turned towards the default camera so it reads straight on
+/** The big screen above the town hall stage: a tech talk, or the all-hands slides during that event. */
+function TownHallScreen({ lang }: { lang: Lang }) {
+  const game = useGame();
+  const allHands = game.event?.kind === "allhands";
+  const tex = useDisposable(() => townHallTexture(lang, allHands), `th-${allHands}-${lang}`);
   return (
-    <group position={[-2.3, 2.85, z]} rotation-y={0.69}>
-      {[-1.1, 1.1].map((x) => (
-        <mesh key={x} position={[x, 0.45, 0]}>
-          <cylinderGeometry args={[0.006, 0.006, 0.6, 4]} />
-          <meshBasicMaterial color="#6b7280" />
-        </mesh>
-      ))}
-      <mesh>
-        <planeGeometry args={[2.8, 0.35]} />
-        <meshBasicMaterial map={tex} transparent toneMapped={false} />
-      </mesh>
-    </group>
+    <mesh position={[21, 1.75, 1.43]}>
+      <planeGeometry args={[4.1, 1.6]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
+    </mesh>
   );
 }
 
@@ -1796,8 +1809,6 @@ export default function OfficeScene({
   const minutes = useOfficeMinutes(custom.lighting, true) ?? 600;
   const minute = Math.floor(minutes);
   const phase = phaseAt(minutes);
-  const shiftsOn = custom.shifts;
-  const crewNow = shiftAt(minutes);
   useEffect(() => {
     setOfficeHour(minute / 60);
     setEventHour(minute / 60);
@@ -1825,27 +1836,9 @@ export default function OfficeScene({
   }, [custom.activities, custom.items, custom.breaks]);
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
 
-  // day crew fills desks from the front rows, night crew from the back rows
-  const seated = agents.slice(0, MAX_DESKS);
-  const dayCrew = seated.filter((a) => shiftOf(a) === "day");
-  const nightCrew = seated.filter((a) => shiftOf(a) === "night");
-  const placed = [
-    ...dayCrew.map((a, i) => ({ a, slot: i, look: LOOKS[i % LOOKS.length] })),
-    ...nightCrew.map((a, k) => ({ a, slot: MAX_DESKS - 1 - k, look: NIGHT_LOOKS[k % NIGHT_LOOKS.length] })),
-  ];
-  const used = new Set(placed.map((p) => p.slot));
-
-  // note the hand-over in the events log
-  const lastCrew = useRef<Shift | null>(null);
-  useEffect(() => {
-    if (shiftsOn && lastCrew.current && lastCrew.current !== crewNow) {
-      logShift(crewNow, (crewNow === "day" ? dayCrew : nightCrew).length);
-    }
-    lastCrew.current = crewNow;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [crewNow, shiftsOn]);
-
   const still = useStill();
+  const seated = agents.slice(0, MAX_DESKS);
+  const looks = [...LOOKS, ...MORE_LOOKS];
 
   return (
     <Canvas
@@ -1853,7 +1846,7 @@ export default function OfficeScene({
       orthographic
       dpr={[1, 1.5]}
       gl={{ powerPreference: "high-performance", alpha: true }}
-      camera={{ position: [TARGET[0] + 13, 17, TARGET[2] + 15.9], zoom: 24, near: -100, far: 200 }}
+      camera={{ position: [TARGET[0] + 13, 17, TARGET[2] + 15.9], zoom: 20, near: -100, far: 200 }}
       fallback={<div className="grid h-full place-items-center text-sm text-muted">3D view needs WebGL.</div>}
     >
       <Lights phase={phase} />
@@ -1865,52 +1858,30 @@ export default function OfficeScene({
       </group>
       <Presenter state={manager} board={board} lang={lang} />
       <PingPongBall />
-      {shiftsOn && (
-        <>
-          <ShiftSign shift="day" z={4.3} on={crewNow === "day"} lang={lang} />
-          <ShiftSign shift="night" z={10.2} on={crewNow === "night"} lang={lang} />
-        </>
-      )}
-      {Array.from({ length: MAX_DESKS }, (_, i) => i)
-        .filter((i) => !used.has(i))
-        .map((i) => {
-          const d = deskSlot(i);
-          return <EmptyDesk key={`free-${i}`} position={[d.x, 0, d.z]} desk={deskLook} />;
-        })}
-      {placed.map(({ a, slot, look }) => {
-        const d = deskSlot(slot);
+      <Receptionist lang={lang} />
+      <TownHallScreen lang={lang} />
+      {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {
+        const d = deskSlot(seated.length + k);
+        return <EmptyDesk key={`free-${d.index}`} position={[d.x, 0, d.z]} desk={deskLook} />;
+      })}
+      {seated.map((a, i) => {
+        const d = deskSlot(i);
         const state = desks[a.id] ?? IDLE_DESK;
-        const shift = shiftOf(a);
-        const duty = !shiftsOn || onShift(a.id, shift, minutes);
-        const attentive = manager === "planning" && duty;
-        const busy = attentive || state.screen.mode === "working" || state.screen.mode === "queued";
-        const seed = slot * 1.7;
+        const attentive = manager === "planning";
+        const look = looks[i % looks.length];
         return (
           <group key={a.id}>
-            <AgentDesk
-              agent={a}
-              look={look}
-              state={state}
-              seed={seed}
-              position={[d.x, 0, d.z]}
-              lang={lang}
-              desk={deskLook}
-              shift={shiftsOn ? shift : null}
-              off={!duty && !busy}
-            />
+            <AgentDesk agent={a} look={look} state={state} seed={i * 1.7} position={[d.x, 0, d.z]} lang={lang} desk={deskLook} />
             <AgentAvatar
-              key={slot}
               agent={a}
               look={look}
               home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row }}
-              busy={busy}
+              busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
               working={state.working.length > 0}
               attentive={attentive}
-              duty={duty}
-              shift={shift}
               bubble={state.working[0]}
               lastDoneAt={state.lastDoneAt}
-              seed={seed}
+              seed={i * 1.7}
               lift={d.col % 2 ? 0.45 : 0}
               level={levels[a.id] ?? 1}
               lang={lang}

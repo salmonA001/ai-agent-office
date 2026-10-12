@@ -1,16 +1,10 @@
-import type { Shift } from "./office-clock";
-
 export type Agent = {
   id: string;
   name: string;
   role: string;
   instructions: string;
   custom?: boolean;
-  /** which crew they work with; missing means the day shift */
-  shift?: Shift;
 };
-
-export const shiftOf = (a: Agent): Shift => a.shift ?? "day";
 
 export const DEFAULT_AGENTS: Agent[] = [
   {
@@ -81,56 +75,18 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Translator",
     instructions: "Translate and localize text naturally between languages, keeping tone, meaning and cultural fit.",
   },
-  // ----- night crew -----
-  {
-    id: "night-researcher",
-    name: "Nova",
-    role: "Researcher",
-    shift: "night",
-    instructions:
-      "Dig up facts, sources and options while the day team sleeps. Separate what is known from what is assumed and flag doubts.",
-  },
-  {
-    id: "night-writer",
-    name: "Luna",
-    role: "Writer",
-    shift: "night",
-    instructions: "Write clear, friendly copy: emails, posts, summaries and docs, in whatever tone the user asks for.",
-  },
-  {
-    id: "night-coder",
-    name: "Orion",
-    role: "Engineer",
-    shift: "night",
-    instructions: "Write correct, minimal, well-commented code and technical explanations. State language and assumptions.",
-  },
-  {
-    id: "night-analyst",
-    name: "Vega",
-    role: "Analyst",
-    shift: "night",
-    instructions: "Break problems down, compare options with pros and cons, run the numbers and recommend one clearly.",
-  },
-  {
-    id: "night-designer",
-    name: "Iris",
-    role: "Designer",
-    shift: "night",
-    instructions: "Describe layouts, colour palettes, typography and user flows in clear words and lists.",
-  },
-  {
-    id: "night-support",
-    name: "Sol",
-    role: "Support Specialist",
-    shift: "night",
-    instructions: "Answer customer questions and write replies, FAQs and help articles in a warm, clear voice.",
-  },
 ];
 
-/** Stored agent lists from older versions get any default agents they are missing. */
+/** Built-in agents that were removed (the crew of the old night shift). */
+const RETIRED = new Set(["night-researcher", "night-writer", "night-coder", "night-analyst", "night-designer", "night-support"]);
+
+/** Stored agent lists from older versions get any default agents they are missing, and lose retired ones. */
 export function withDefaultAgents(stored: Agent[]): Agent[] {
-  const have = new Set(stored.map((a) => a.id));
+  const kept = stored
+    .filter((a) => a.custom || !RETIRED.has(a.id))
+    // drop fields from older versions (e.g. the shift)
+    .map(({ id, name, role, instructions, custom }) => ({ id, name, role, instructions, ...(custom ? { custom } : {}) }));
+  const have = new Set(kept.map((a) => a.id));
   const missing = DEFAULT_AGENTS.filter((a) => !have.has(a.id));
-  const custom = stored.filter((a) => a.custom);
-  return [...stored.filter((a) => !a.custom), ...missing, ...custom];
+  return [...kept.filter((a) => !a.custom), ...missing, ...kept.filter((a) => a.custom)];
 }

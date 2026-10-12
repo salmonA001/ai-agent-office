@@ -2,20 +2,11 @@ import { useEffect, useState } from "react";
 import type { Lighting, Phase } from "./office-custom";
 
 /**
- * Office time and the two shifts. The clock follows the viewer's real time, a time-lapse
- * (one office minute per second, a whole day in 24 minutes) or a fixed time of day.
+ * Office time of day. The clock follows the viewer's real time, a time-lapse (one office
+ * minute per second, a whole day in 24 minutes) or a fixed day, sunset or night.
  */
 
-export type Shift = "day" | "night";
-export const SHIFTS: Shift[] = ["day", "night"];
-
 const DAY = 24 * 60;
-
-/** Shift hours in minutes after midnight, with the meal break. */
-export const SHIFT_HOURS: Record<Shift, { start: number; end: number; meal: number }> = {
-  day: { start: 7 * 60, end: 19 * 60, meal: 12 * 60 },
-  night: { start: 19 * 60, end: 7 * 60, meal: 0 },
-};
 
 let lapse: { realMs: number; office: number } | null = null;
 
@@ -41,33 +32,6 @@ export function phaseAt(minutes: number): Phase {
   if (h >= 7 && h < 17) return "day";
   if ((h >= 17 && h < 19) || (h >= 6 && h < 7)) return "sunset";
   return "night";
-}
-
-/** Which crew the schedule says is on. */
-export function shiftAt(minutes: number): Shift {
-  return minutes >= SHIFT_HOURS.day.start && minutes < SHIFT_HOURS.day.end ? "day" : "night";
-}
-
-/** Stable 0..1 per agent, so everyone doesn't arrive in the same second. */
-function jitter(id: string, salt: number) {
-  let h = salt;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return (h % 1000) / 1000;
-}
-
-/** When this agent clocks in and out, in minutes after midnight. */
-export function arrivalOf(id: string, shift: Shift) {
-  return (SHIFT_HOURS[shift].start + 2 + jitter(id, 7) * 23) % DAY;
-}
-export function departureOf(id: string, shift: Shift) {
-  return (SHIFT_HOURS[shift].end + 2 + jitter(id, 13) * 23) % DAY;
-}
-
-/** Whether the agent is scheduled to be in the office now. */
-export function onShift(id: string, shift: Shift, minutes: number) {
-  const a = arrivalOf(id, shift);
-  const d = departureOf(id, shift);
-  return a < d ? minutes >= a && minutes < d : minutes >= a || minutes < d;
 }
 
 /** "07:05" */

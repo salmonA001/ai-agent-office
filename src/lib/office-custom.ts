@@ -28,8 +28,6 @@ export type OfficeCustom = {
   activities: Record<SpotCat, boolean>;
   breaks: Breaks;
   events: boolean;
-  /** day and night crews clock in and out; off = everyone is always in */
-  shifts: boolean;
 };
 
 export const ACCENT_COLORS: Record<Accent, string> = {
@@ -66,7 +64,6 @@ export const DEFAULT_CUSTOM: OfficeCustom = {
   activities: Object.fromEntries(SPOT_CATS.map((c) => [c, true])) as Record<SpotCat, boolean>,
   breaks: "normal",
   events: true,
-  shifts: true,
 };
 
 const KEY = "office.custom";
@@ -87,7 +84,6 @@ function sanitize(raw: unknown): OfficeCustom {
     activities: flags(SPOT_CATS, r.activities, DEFAULT_CUSTOM.activities),
     breaks: pick(BREAKS, r.breaks, DEFAULT_CUSTOM.breaks),
     events: typeof r.events === "boolean" ? r.events : DEFAULT_CUSTOM.events,
-    shifts: typeof r.shifts === "boolean" ? r.shifts : DEFAULT_CUSTOM.shifts,
   };
 }
 

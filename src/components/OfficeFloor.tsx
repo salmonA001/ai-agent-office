@@ -28,7 +28,9 @@ type V3 = [number, number, number];
 // ---------- Floor plan (metres, y up). The camera looks from +x/+z, so the north (-z) and
 // west (-x) walls are full height and the south/east walls are cut away like a dollhouse. ----------
 
-export const FLOOR = { x0: -8, x1: 16, z0: -6, z1: 16 };
+export const FLOOR = { x0: -8, x1: 26, z0: -6, z1: 16 };
+/** The east wing (lobby, town hall, garden) starts here; the open hall is west of it. */
+export const EAST = { x0: 16, lobbyZ: 1.2, gardenZ: 8.8 };
 export const CORRIDOR = { z0: -0.3, z1: 0.9 };
 const MEETING = { x0: -8, x1: -2.6 };
 const KITCHEN = { x0: -2.6, x1: 3 };
@@ -1204,7 +1206,7 @@ function Hall({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
   const glow = decor.phase !== "day";
   return (
     <group>
-      <Floor x0={FLOOR.x0} x1={FLOOR.x1} z0={WORKSPACE.z0} z1={WORKSPACE.z1} map={floor} />
+      <Floor x0={FLOOR.x0} x1={EAST.x0} z0={WORKSPACE.z0} z1={WORKSPACE.z1} map={floor} />
       <Library decor={decor} sky={sky} />
       <Wellness decor={decor} />
       <PhoneBooth z={11.85} accent={decor.accent} glow={glow} />
@@ -1361,6 +1363,386 @@ function ServerRoom() {
   );
 }
 
+// ---------- East wing: lobby, town hall and garden ----------
+
+function grassTexture(repeat: [number, number]) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(55);
+  g.fillStyle = "#7cc06a";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2400; i++) {
+    g.fillStyle = rnd() > 0.5 ? "rgba(40,110,40,0.22)" : "rgba(210,255,170,0.18)";
+    g.fillRect(rnd() * 256, rnd() * 256, 2, 4);
+  }
+  return finish(c, repeat);
+}
+
+/** Company name on the lobby wall. */
+function LogoWall({ text }: { text: string }) {
+  const tex = useDisposable(() => neonTexture(text.trim() || "AI AGENT OFFICE", "#34d399"), `logo:${text}`);
+  return (
+    <group position={[18.5, 1.65, FLOOR.z0 + 0.1]}>
+      <B s={[3.3, 1.1, 0.06]} p={[0, 0, 0]} c="#2b2f33" />
+      <mesh position={[0, 0, 0.035]}>
+        <planeGeometry args={[3.1, 0.78]} />
+        <meshBasicMaterial map={tex} transparent toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Lift doors on the lobby's back wall (the building's main lifts). */
+function LobbyLift({ x }: { x: number }) {
+  return (
+    <group position={[x, 0, FLOOR.z0 + 0.09]}>
+      <B s={[1.2, 2.3, 0.06]} p={[0, 1.15, 0]} c="#9ca3af" metal={0.5} rough={0.35} />
+      <B s={[0.5, 2.05, 0.03]} p={[-0.26, 1.03, 0.04]} c="#d1d5db" metal={0.6} rough={0.25} />
+      <B s={[0.5, 2.05, 0.03]} p={[0.26, 1.03, 0.04]} c="#d1d5db" metal={0.6} rough={0.25} />
+      <mesh position={[0, 2.2, 0.05]}>
+        <circleGeometry args={[0.05, 3]} />
+        <meshBasicMaterial color="#34d399" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function Lobby({ decor }: { decor: FloorDecor }) {
+  const marble = useDisposable(() => tileTexture("#f3f1ec", "#e3dfd7", [5, 3.6]), "lobby-floor");
+  const { x0, lobbyZ } = EAST;
+  return (
+    <group>
+      <Floor x0={x0} x1={FLOOR.x1} z0={FLOOR.z0} z1={lobbyZ} map={marble} />
+      {decor.items.rugs && <Rug x0={22.9} x1={25.6} z0={-3.8} z1={-1.2} color={decor.accent} />}
+      <LogoWall text={decor.sign} />
+      <LobbyLift x={23.2} />
+      <LobbyLift x={24.8} />
+      {/* reception desk with a monitor, a bell and a plant */}
+      <group position={[20.5, 0, -2.6]}>
+        <B s={[3.0, 1.05, 0.7]} p={[0, 0.525, 0]} c="#f8fafc" />
+        <B s={[3.1, 0.05, 0.82]} p={[0, 1.075, 0]} c="#2b2f33" rough={0.3} />
+        <B s={[3.0, 0.85, 0.03]} p={[0, 0.5, 0.36]} c={decor.accent} />
+        <B s={[0.45, 0.3, 0.03]} p={[0.9, 1.3, -0.15]} c="#111827" />
+        <mesh position={[-0.9, 1.13, 0.1]}>
+          <sphereGeometry args={[0.06, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color="#f2c14e" metalness={0.7} roughness={0.3} />
+        </mesh>
+        <mesh position={[-1.25, 1.17, -0.15]}>
+          <icosahedronGeometry args={[0.1, 0]} />
+          <meshStandardMaterial color="#52b788" flatShading />
+        </mesh>
+      </group>
+      {/* waiting area */}
+      <group position={[23.6, 0, -2.5]}>
+        <B s={[0.6, 0.04, 0.6]} p={[0, 0.42, 0]} c="#c08850" />
+        <B s={[0.08, 0.4, 0.08]} p={[0, 0.2, 0]} c="#2b2f33" />
+        <B s={[0.22, 0.02, 0.3]} p={[-0.1, 0.45, 0.05]} c="#e84393" r={0.3} />
+        <B s={[0.22, 0.02, 0.3]} p={[0.1, 0.47, -0.05]} c="#2e86de" r={-0.2} />
+      </group>
+      <Sofa p={[24.8, 0, -2.5]} r={-Math.PI / 2} color="#cbd5e1" />
+      <PalmPlant p={[16.8, 0, -5.3]} s={1.1} />
+      <PalmPlant p={[25.3, 0, -5.3]} s={1.1} />
+      {decor.items.plants && <PalmPlant p={[25.3, 0, 0.6]} />}
+      {/* glass entrance doors in the east wall */}
+      <group position={[FLOOR.x1, 0, -2.6]}>
+        {[-1.0, 1.0].map((z) => (
+          <B key={z} s={[0.1, 2.3, 0.1]} p={[0, 1.15, z]} c="#5f6b70" />
+        ))}
+        <B s={[0.1, 0.12, 2.1]} p={[0, 2.3, 0]} c="#5f6b70" />
+        <mesh position={[0, 1.1, 0]}>
+          <boxGeometry args={[0.03, 2.1, 1.9]} />
+          <meshStandardMaterial color="#bfe3f0" transparent opacity={0.25} depthWrite={false} roughness={0.1} />
+        </mesh>
+      </group>
+      {/* wall to the server room, low wall with a door into the town hall */}
+      {/* glass wall to the server room, so the racks stay visible */}
+      <group position={[x0, 0, (FLOOR.z0 + CORRIDOR.z0) / 2]} rotation-y={-Math.PI / 2}>
+        <GlassWall x0={-(CORRIDOR.z0 - FLOOR.z0) / 2} x1={(CORRIDOR.z0 - FLOOR.z0) / 2} z={0} />
+      </group>
+      <Wall a={[x0, lobbyZ]} b={[17.0, lobbyZ]} h={1.0} />
+      <Wall a={[18.0, lobbyZ]} b={[FLOOR.x1, lobbyZ]} h={1.0} />
+      {[17.0, 18.0].map((x) => (
+        <B key={x} s={[0.08, 2.1, 0.12]} p={[x, 1.05, lobbyZ]} c="#7a2f3b" />
+      ))}
+      <B s={[1.08, 0.12, 0.12]} p={[17.5, 2.1, lobbyZ]} c="#7a2f3b" />
+    </group>
+  );
+}
+
+function TownHall() {
+  const carpet = useDisposable(() => carpetTexture("#7a2f3b", [5, 3.8]), "townhall-floor");
+  const { x0, lobbyZ, gardenZ } = EAST;
+  return (
+    <group>
+      <Floor x0={x0} x1={FLOOR.x1} z0={lobbyZ} z1={gardenZ} map={carpet} />
+      {/* stage, screen frame (the slides are drawn by the scene), podium and speakers */}
+      <B s={[4.8, 0.25, 1.3]} p={[21, 0.125, 1.95]} c="#3a2a2a" />
+      <B s={[4.8, 0.03, 0.06]} p={[21, 0.255, 2.58]} c="#f2c14e" />
+      {[18.85, 23.15].map((x) => (
+        <B key={x} s={[0.08, 2.4, 0.08]} p={[x, 1.45, 1.36]} c="#2b2f33" />
+      ))}
+      <B s={[4.3, 1.75, 0.05]} p={[21, 1.75, 1.38]} c="#111827" />
+      <group position={[19.4, 0.25, 2.25]}>
+        <B s={[0.5, 1.0, 0.4]} p={[0, 0.5, 0]} c="#4a3b33" />
+        <mesh position={[0.1, 1.12, 0.05]} rotation-x={-0.5}>
+          <cylinderGeometry args={[0.012, 0.012, 0.3, 6]} />
+          <meshStandardMaterial color="#374151" />
+        </mesh>
+      </group>
+      {[18.75, 23.25].map((x) => (
+        <B key={x} s={[0.35, 0.6, 0.3]} p={[x, 0.55, 2.3]} c="#1f2937" />
+      ))}
+      {[4.3, 5.7, 7.1].flatMap((z) => [18.6, 19.8, 21.0, 22.2, 23.4].map((x) => <WoodChair key={`${x},${z}`} p={[x, 0, z]} />))}
+      {/* low wall to the open hall */}
+      <Wall a={[x0, CORRIDOR.z1]} b={[x0, gardenZ]} h={1.0} />
+    </group>
+  );
+}
+
+function Tree({ p, s = 1 }: { p: V3; s?: number }) {
+  return (
+    <group position={p} scale={s}>
+      <mesh position={[0, 0.6, 0]} castShadow>
+        <cylinderGeometry args={[0.1, 0.15, 1.2, 10]} />
+        <meshStandardMaterial color="#7c5a3a" />
+      </mesh>
+      {[
+        [0, 1.55, 0, 0.62],
+        [0.32, 1.35, 0.15, 0.45],
+        [-0.3, 1.4, -0.12, 0.48],
+      ].map(([x, y, z, r]) => (
+        <mesh key={`${x}${z}`} position={[x, y, z]} castShadow>
+          <sphereGeometry args={[r, 14, 12]} />
+          <meshStandardMaterial color={x ? "#3f9e5a" : "#4fb86a"} roughness={0.9} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function Hedge({ a, b }: { a: [number, number]; b: [number, number] }) {
+  const along = a[1] === b[1];
+  const len = along ? b[0] - a[0] : b[1] - a[1];
+  return (
+    <B
+      s={along ? [len, 0.65, 0.4] : [0.36, 0.6, len]}
+      p={[(a[0] + b[0]) / 2, 0.32, (a[1] + b[1]) / 2]}
+      c="#3f8f4e"
+      rough={1}
+    />
+  );
+}
+
+/** Koi pond with lily pads, a little fountain and fish swimming round. */
+function Pond() {
+  const fish = useRef<(Group | null)[]>([]);
+  const jet = useRef<Mesh>(null);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (still) return;
+    const t = clock.elapsedTime;
+    fish.current.forEach((f, i) => {
+      if (!f) return;
+      const a = t * (0.35 + i * 0.1) + i * 2.1;
+      f.position.set(Math.cos(a) * (1.0 + i * 0.15), 0.06, Math.sin(a) * (0.6 + i * 0.1));
+      f.rotation.y = -a;
+    });
+    if (jet.current) jet.current.scale.y = 1 + Math.sin(t * 6) * 0.15;
+  });
+  return (
+    <group position={[22.8, 0, 11.4]}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]} scale={[1.85, 1.25, 1]}>
+        <circleGeometry args={[1, 40]} />
+        <meshStandardMaterial color="#9a8f80" roughness={1} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.03, 0]} scale={[1.65, 1.08, 1]}>
+        <circleGeometry args={[1, 40]} />
+        <meshStandardMaterial color="#4aa3c8" roughness={0.15} metalness={0.2} />
+      </mesh>
+      {[
+        [-0.8, 0.3],
+        [0.9, -0.4],
+        [0.4, 0.55],
+      ].map(([x, z]) => (
+        <mesh key={`${x}${z}`} rotation-x={-Math.PI / 2} position={[x, 0.035, z]}>
+          <circleGeometry args={[0.16, 14, 0.4, Math.PI * 1.8]} />
+          <meshStandardMaterial color="#5aa55a" />
+        </mesh>
+      ))}
+      {["#ff8c42", "#f8fafc", "#ef476f"].map((c, i) => (
+        <group
+          key={c}
+          ref={(g) => {
+            fish.current[i] = g;
+          }}
+        >
+          <mesh scale={[0.7, 0.5, 1.6]}>
+            <sphereGeometry args={[0.06, 10, 8]} />
+            <meshStandardMaterial color={c} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, 0.12, 0]}>
+        <cylinderGeometry args={[0.16, 0.2, 0.2, 14]} />
+        <meshStandardMaterial color="#9ca3af" roughness={0.9} />
+      </mesh>
+      <mesh ref={jet} position={[0, 0.35, 0]}>
+        <coneGeometry args={[0.05, 0.3, 10]} />
+        <meshStandardMaterial color="#dbeafe" transparent opacity={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A couple of butterflies fluttering over the flower bed. */
+function Butterflies() {
+  const flies = useRef<(Group | null)[]>([]);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (still) return;
+    const t = clock.elapsedTime;
+    flies.current.forEach((f, i) => {
+      if (!f) return;
+      f.position.set(21 + Math.sin(t * 0.5 + i * 3) * 2.6, 0.9 + Math.sin(t * 2.3 + i) * 0.2, 9.5 + Math.cos(t * 0.7 + i) * 0.35);
+      const flap = Math.sin(t * 18 + i);
+      f.children.forEach((w, k) => (w.rotation.z = (k ? -1 : 1) * (0.3 + flap * 0.6)));
+    });
+  });
+  return (
+    <group>
+      {["#f9a8d4", "#fde68a"].map((c, i) => (
+        <group
+          key={c}
+          ref={(g) => {
+            flies.current[i] = g;
+          }}
+        >
+          {[-1, 1].map((sd) => (
+            <mesh key={sd} position={[sd * 0.05, 0, 0]}>
+              <planeGeometry args={[0.1, 0.08]} />
+              <meshBasicMaterial color={c} side={DoubleSide} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function GardenLamp({ p, on }: { p: V3; on: boolean }) {
+  return (
+    <group position={p}>
+      <mesh position={[0, 0.6, 0]}>
+        <cylinderGeometry args={[0.03, 0.04, 1.2, 8]} />
+        <meshStandardMaterial color="#2b2f33" />
+      </mesh>
+      <Bulb p={[0, 1.25, 0]} r={0.09} on={on} />
+    </group>
+  );
+}
+
+function Garden({ decor }: { decor: FloorDecor }) {
+  const grass = useDisposable(() => grassTexture([5, 3.6]), "garden-grass");
+  const { x0, gardenZ } = EAST;
+  const glow = decor.phase !== "day";
+  const flowers = ["#f472b6", "#fde047", "#f97316", "#c084fc", "#f43f5e", "#38bdf8"];
+  return (
+    <group>
+      <Floor x0={x0} x1={FLOOR.x1} z0={gardenZ} z1={FLOOR.z1} map={grass} />
+      {/* stone paths */}
+      <Floor x0={x0} x1={23.6} z0={13.15} z1={14.05} color="#d6cfc2" y={0.006} />
+      <Floor x0={17.05} x1={17.95} z0={gardenZ} z1={13.15} color="#d6cfc2" y={0.006} />
+      <Hedge a={[x0, gardenZ]} b={[17.0, gardenZ]} />
+      <Hedge a={[18.0, gardenZ]} b={[FLOOR.x1, gardenZ]} />
+      <Hedge a={[x0, gardenZ]} b={[x0, 13.0]} />
+      <Hedge a={[x0, 14.2]} b={[x0, FLOOR.z1]} />
+      {/* flower bed along the hedge */}
+      <B s={[6.0, 0.22, 0.45]} p={[22, 0.11, 9.375]} c="#7a5a3a" />
+      {Array.from({ length: 18 }, (_, i) => (
+        <mesh key={i} position={[19.2 + i * 0.33, 0.3 + (i % 3) * 0.04, 9.3 + (i % 2) * 0.15]}>
+          <sphereGeometry args={[0.07, 8, 6]} />
+          <meshStandardMaterial color={flowers[i % flowers.length]} />
+        </mesh>
+      ))}
+      <Butterflies />
+      {/* picnic table */}
+      <group position={[19.8, 0, 11.3]}>
+        <B s={[1.4, 0.06, 0.8]} p={[0, 0.74, 0]} c="#c08850" />
+        {[-0.55, 0.55].map((x) => (
+          <B key={x} s={[0.08, 0.72, 0.6]} p={[x, 0.36, 0]} c="#8a5a32" />
+        ))}
+        {[-0.7, 0.7].map((z) => (
+          <group key={z}>
+            <B s={[1.4, 0.06, 0.3]} p={[0, 0.44, z]} c="#c08850" />
+            {[-0.55, 0.55].map((x) => (
+              <B key={x} s={[0.06, 0.42, 0.06]} p={[x, 0.21, z]} c="#8a5a32" />
+            ))}
+          </group>
+        ))}
+      </group>
+      <Pond />
+      {/* sun loungers (head end to the north) */}
+      {[21.6, 23.0].map((x) => (
+        <group key={x} position={[x, 0, 15.0]}>
+          <B s={[0.6, 0.22, 1.6]} p={[0, 0.2, 0]} c="#f8fafc" />
+          <group position={[0, 0.3, -0.6]} rotation-x={-0.6}>
+            <B s={[0.6, 0.06, 0.6]} p={[0, 0, 0.2]} c={decor.accent} />
+          </group>
+          <B s={[0.56, 0.04, 1.0]} p={[0, 0.33, 0.25]} c={decor.accent} />
+        </group>
+      ))}
+      {/* hammock between two posts */}
+      <group>
+        {[24.0, 25.8].map((x) => (
+          <B key={x} s={[0.12, 1.3, 0.12]} p={[x, 0.65, 14.6]} c="#8a5a32" />
+        ))}
+        <B s={[1.4, 0.05, 0.6]} p={[24.9, 0.52, 14.6]} c="#f97316" />
+        <B s={[1.4, 0.052, 0.12]} p={[24.9, 0.525, 14.6]} c="#fde68a" />
+        {[24.05, 25.75].map((x) => (
+          <mesh key={x} position={[x + (x < 24.9 ? 0.12 : -0.12), 0.85, 14.6]} rotation-z={x < 24.9 ? -0.9 : 0.9}>
+            <cylinderGeometry args={[0.01, 0.01, 0.75, 4]} />
+            <meshStandardMaterial color="#e5e7eb" />
+          </mesh>
+        ))}
+      </group>
+      <Tree p={[25.5, 0, 10.3]} />
+      <Tree p={[25.4, 0, 12.5]} s={0.85} />
+      <Tree p={[16.8, 0, 15.3]} s={0.9} />
+      {decor.items.lamps && (
+        <>
+          <GardenLamp p={[18.3, 0, 14.6]} on={glow} />
+          <GardenLamp p={[24.3, 0, 9.95]} on={glow} />
+        </>
+      )}
+    </group>
+  );
+}
+
+function EastWing({ decor }: { decor: FloorDecor }) {
+  return (
+    <group>
+      <Lobby decor={decor} />
+      <TownHall />
+      <Garden decor={decor} />
+    </group>
+  );
+}
+
+function PicnicBasket() {
+  return (
+    <group position={[19.8, 0.77, 11.3]}>
+      <B s={[0.36, 0.2, 0.26]} p={[0, 0.1, 0]} c="#b5835a" />
+      <B s={[0.38, 0.02, 0.28]} p={[0, 0.21, 0]} c="#ef4444" />
+      <mesh position={[0, 0.3, 0]} rotation-x={Math.PI / 2}>
+        <torusGeometry args={[0.12, 0.012, 6, 16, Math.PI]} />
+        <meshStandardMaterial color="#8a5a32" />
+      </mesh>
+    </group>
+  );
+}
+
 /** Slab, floors, walls, rooms and furniture. Re-renders only when the decoration settings change. */
 export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDecor }) {
   const sky = useDisposable(() => skyTexture(decor.phase), `sky-${decor.phase}`);
@@ -1369,7 +1751,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
     <group>
       {/* building slab with a white edge, like a cut-away model */}
       <B s={[x1 - x0 + 0.3, 0.3, z1 - z0 + 0.3]} p={[(x0 + x1) / 2, -0.15, (z0 + z1) / 2]} c="#f5f5f4" />
-      <Floor x0={x0} x1={x1} z0={CORRIDOR.z0} z1={CORRIDOR.z1} color={YELLOW} />
+      <Floor x0={x0} x1={EAST.x0} z0={CORRIDOR.z0} z1={CORRIDOR.z1} color={YELLOW} />
 
       <MeetingRoom sky={sky} />
       <Kitchen />
@@ -1383,7 +1765,6 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[x0, z0]} b={[x0, LIFT.z0]} h={EXT_H} />
       <Wall a={[x0, LIFT.z1]} b={[x0, z1]} h={EXT_H} />
       <Elevator />
-      <TimeClock />
       <Wall a={[x0, z1]} b={[x1, z1]} h={0.3} />
       <Wall a={[x1, z0]} b={[x1, z1]} h={0.3} />
       {/* room dividers */}
@@ -1407,7 +1788,8 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[-4.6, CORRIDOR.z1]} b={[-3.3, CORRIDOR.z1]} h={1.0} />
       <Wall a={[-2.3, CORRIDOR.z1]} b={[4.6, CORRIDOR.z1]} h={1.0} />
       <Wall a={[5.6, CORRIDOR.z1]} b={[13.4, CORRIDOR.z1]} h={1.0} />
-      <Wall a={[14.4, CORRIDOR.z1]} b={[x1, CORRIDOR.z1]} h={1.0} />
+      <Wall a={[14.4, CORRIDOR.z1]} b={[EAST.x0, CORRIDOR.z1]} h={1.0} />
+      <EastWing decor={decor} />
     </group>
   );
 });
@@ -1416,7 +1798,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
 
 const LIFT = { z0: -0.25, z1: 0.85 };
 
-/** Elevator in the west wall; its doors slide open while someone steps in or out. */
+/** Elevator in the west wall; its doors slide open while someone is standing at it. */
 function Elevator() {
   const left = useRef<Mesh>(null);
   const right = useRef<Mesh>(null);
@@ -1426,8 +1808,7 @@ function Elevator() {
   useFrame((_, dt) => {
     let near = false;
     for (const w of walkers.values()) {
-      if (!w.isHere() || (w.trip !== "arrive" && w.trip !== "exit")) continue;
-      if (Math.hypot(w.x + 7.6, w.z - 0.3) < 1.4) near = true;
+      if (w.phase.kind !== "seated" && Math.hypot(w.x + 7.4, w.z - 0.3) < 1.0) near = true;
     }
     open.current += ((near ? 1 : 0) - open.current) * Math.min(1, dt * 5);
     const w = half * (1 - open.current * 0.92);
@@ -1467,30 +1848,6 @@ function Elevator() {
         <meshBasicMaterial ref={lamp} color="#3f3f46" toneMapped={false} />
       </mesh>
       <B s={[0.03, 0.22, 0.1]} p={[x + 0.09, 1.1, LIFT.z0 - 0.22]} c="#d1d5db" metal={0.5} />
-    </group>
-  );
-}
-
-/** Punch clock where agents clock in and out. */
-function TimeClock() {
-  return (
-    <group position={[-6.35, 0, -0.13]}>
-      <B s={[0.06, 1.0, 0.06]} p={[0, 0.5, 0]} c="#4b5563" />
-      <B s={[0.36, 0.42, 0.18]} p={[0, 1.15, 0]} c="#f2c14e" />
-      <mesh position={[0, 1.22, 0.095]}>
-        <circleGeometry args={[0.1, 24]} />
-        <meshBasicMaterial color="#fffdf5" />
-      </mesh>
-      <B s={[0.012, 0.07, 0.01]} p={[0, 1.24, 0.1]} c="#2a1d1d" />
-      <B s={[0.06, 0.012, 0.01]} p={[0.025, 1.22, 0.1]} c="#2a1d1d" />
-      <B s={[0.2, 0.03, 0.02]} p={[0, 1.02, 0.095]} c="#2a1d1d" />
-      {/* time cards in a rack */}
-      <group position={[0.34, 1.1, 0]}>
-        <B s={[0.24, 0.36, 0.06]} p={[0, 0, 0]} c="#9ca3af" />
-        {[0.1, 0, -0.1].map((y) => (
-          <B key={y} s={[0.06, 0.1, 0.012]} p={[-0.05 + (y + 0.1) * 0.5, y + 0.03, 0.035]} c="#fdf6e3" />
-        ))}
-      </group>
     </group>
   );
 }
@@ -1573,6 +1930,7 @@ function Beacons() {
     });
   });
   const spots: V3[] = [
+    [21, 2.2, -5.9],
     [-7.9, 2.2, -1.5],
     [-7.9, 2.2, 5.6],
     [-7.9, 2.2, 14.3],
@@ -1714,7 +2072,7 @@ function Parcels() {
   );
 }
 
-/** A film plays on the meeting-room screen. */
+/** A film plays on the town hall screen. */
 function MovieScreen() {
   const screen = useRef<MeshBasicMaterial>(null);
   const blobs = useRef<(Mesh | null)[]>([]);
@@ -1722,13 +2080,13 @@ function MovieScreen() {
     const t = clock.elapsedTime;
     screen.current?.color.setHSL((0.6 + Math.sin(t * 0.3) * 0.1 + 1) % 1, 0.55, 0.28);
     blobs.current.forEach((m, i) => {
-      if (m) m.position.x = Math.sin(t * (0.6 + i * 0.25) + i * 2) * 0.9;
+      if (m) m.position.x = Math.sin(t * (0.6 + i * 0.25) + i * 2) * 1.4;
     });
   });
   return (
-    <group position={[PROJECTOR.x, 1.35, PROJECTOR.z + 0.13]}>
+    <group position={[21, 1.75, 1.45]}>
       <mesh>
-        <planeGeometry args={[2.7, 1.52]} />
+        <planeGeometry args={[4.1, 1.6]} />
         <meshBasicMaterial ref={screen} color="#1e3a8a" toneMapped={false} />
       </mesh>
       {["#fde68a", "#f9a8d4", "#a7f3d0"].map((c, i) => (
@@ -1766,5 +2124,6 @@ export function EventProps({ kind }: { kind: string | null }) {
   if (kind === "icecream") return <IceCreamCart />;
   if (kind === "delivery") return <Parcels />;
   if (kind === "movie") return <MovieScreen />;
+  if (kind === "picnic") return <PicnicBasket />;
   return null;
 }
