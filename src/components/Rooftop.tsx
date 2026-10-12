@@ -2,10 +2,23 @@
 
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
-import { CanvasTexture, DoubleSide, type Group, type MeshBasicMaterial, RepeatWrapping, SRGBColorSpace, type Texture } from "three";
+import {
+  CanvasTexture,
+  DoubleSide,
+  type Group,
+  type Mesh,
+  type MeshBasicMaterial,
+  type PointLight,
+  Quaternion,
+  RepeatWrapping,
+  SRGBColorSpace,
+  type Texture,
+  Vector3,
+} from "three";
 import type { Phase } from "@/lib/office-custom";
 import { useStill } from "@/lib/motion";
-import { COURTYARD, ROOF_Y } from "./office-nav";
+import { COURTYARD, isPresent, ROOF_Y } from "./office-nav";
+import { rgbMaterials } from "./rgb";
 import { seeded, useDisposable } from "./scene-utils";
 import { DYNAMIC, StaticMerge } from "./static-merge";
 
@@ -356,12 +369,243 @@ function Sky({ phase }: { phase: Phase }) {
   );
 }
 
+/** Raised rooftop pool: tiled walls with a white coping, steps on the south side, rippling water. */
+function Pool() {
+  const water = useRef<MeshBasicMaterial>(null);
+  const still = useStill();
+  const tiles = useDisposable(
+    () =>
+      texture((g, n) => {
+        g.fillStyle = "#7dd3fc";
+        g.fillRect(0, 0, n, n);
+        g.strokeStyle = "#e0f2fe";
+        g.lineWidth = 2;
+        for (let i = 0; i <= 8; i++) {
+          g.beginPath();
+          g.moveTo((i * n) / 8, 0);
+          g.lineTo((i * n) / 8, n);
+          g.moveTo(0, (i * n) / 8);
+          g.lineTo(n, (i * n) / 8);
+          g.stroke();
+        }
+      }, [3, 2]),
+    "pool-tiles",
+  );
+  const ripple = useDisposable(
+    () =>
+      texture((g, n) => {
+        g.fillStyle = "#38bdf8";
+        g.fillRect(0, 0, n, n);
+        const rnd = seeded(3);
+        g.strokeStyle = "rgba(255,255,255,0.45)";
+        g.lineWidth = 2;
+        for (let i = 0; i < 14; i++) {
+          const x = rnd() * n;
+          const y = rnd() * n;
+          g.beginPath();
+          g.ellipse(x, y, 10 + rnd() * 14, 3, rnd(), 0, Math.PI * 1.2);
+          g.stroke();
+        }
+      }, [3, 2]),
+    "pool-ripple",
+  );
+  useFrame(({ clock }) => {
+    const m = water.current;
+    if (!m?.map || still) return;
+    m.map.offset.set(Math.sin(clock.elapsedTime * 0.3) * 0.05, clock.elapsedTime * 0.02);
+  });
+  const x0 = 18;
+  const x1 = 24;
+  const z0 = 1.5;
+  const z1 = 6;
+  const h = 0.6;
+  const wall = (s: V3, p: V3) => <B s={s} p={p} c="#e0f2fe" rough={0.4} />;
+  return (
+    <group>
+      {/* pool deck */}
+      <Plane x0={15.8} x1={25.8} z0={0.6} z1={7.2} color="#efe9df" y={0.012} />
+      <mesh rotation-x={-Math.PI / 2} position={[(x0 + x1) / 2, Y + 0.02, (z0 + z1) / 2]}>
+        <planeGeometry args={[x1 - x0, z1 - z0]} />
+        <meshStandardMaterial map={tiles} roughness={0.3} />
+      </mesh>
+      {wall([0.15, h, z1 - z0], [x0, Y + h / 2, (z0 + z1) / 2])}
+      {wall([0.15, h, z1 - z0], [x1, Y + h / 2, (z0 + z1) / 2])}
+      {wall([x1 - x0, h, 0.15], [(x0 + x1) / 2, Y + h / 2, z0])}
+      {wall([20.6 - x0, h, 0.15], [(x0 + 20.6) / 2, Y + h / 2, z1])}
+      {wall([x1 - 21.4, h, 0.15], [(21.4 + x1) / 2, Y + h / 2, z1])}
+      {/* white coping round the top */}
+      <B s={[x1 - x0 + 0.3, 0.05, 0.3]} p={[(x0 + x1) / 2, Y + h + 0.02, z0]} c="#ffffff" rough={0.5} />
+      <B s={[0.3, 0.05, z1 - z0]} p={[x0, Y + h + 0.02, (z0 + z1) / 2]} c="#ffffff" rough={0.5} />
+      <B s={[0.3, 0.05, z1 - z0]} p={[x1, Y + h + 0.02, (z0 + z1) / 2]} c="#ffffff" rough={0.5} />
+      {/* steps in and out */}
+      <B s={[0.8, 0.2, 0.35]} p={[21, Y + 0.1, z1 + 0.32]} c="#f1f5f9" />
+      <B s={[0.8, 0.4, 0.2]} p={[21, Y + 0.2, z1 + 0.05]} c="#f1f5f9" />
+      {[20.55, 21.45].map((x) => (
+        <mesh key={x} position={[x, Y + 0.7, z1]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.6, 6]} />
+          <meshStandardMaterial color="#cbd5e1" metalness={0.8} roughness={0.2} />
+        </mesh>
+      ))}
+      <mesh rotation-x={-Math.PI / 2} position={[(x0 + x1) / 2, Y + 0.5, (z0 + z1) / 2]} userData={DYNAMIC}>
+        <planeGeometry args={[x1 - x0 - 0.15, z1 - z0 - 0.15]} />
+        <meshBasicMaterial ref={water} map={ripple} transparent opacity={0.6} depthWrite={false} toneMapped={false} />
+      </mesh>
+      <Lounger x={16.9} z={2.6} color="#22d3ee" />
+      <Lounger x={16.9} z={4.4} color="#fbbf24" />
+      <PottedTree p={[25.3, Y, 1.0]} s={0.85} />
+    </group>
+  );
+}
+
+/** A kite looping in the wind while someone holds its string in the roof garden. */
+function Kite() {
+  const kite = useRef<Group>(null);
+  const line = useRef<Mesh>(null);
+  const still = useStill();
+  const tmp = useRef({ a: new Vector3(), b: new Vector3(), up: new Vector3(0, 1, 0), q: new Quaternion() });
+  useFrame(({ clock }) => {
+    const k = kite.current;
+    const l = line.current;
+    if (!k || !l) return;
+    const flying = isPresent("roof-kite");
+    k.visible = l.visible = flying;
+    if (!flying) return;
+    const t = still ? 0 : clock.elapsedTime;
+    const { a, b, up, q } = tmp.current;
+    k.position.set(-9.8 + Math.sin(t * 0.7) * 1.2, Y + 5.2 + Math.sin(t * 1.4) * 0.6, 18.6 + Math.cos(t * 0.7) * 0.9);
+    k.rotation.z = Math.sin(t * 1.4) * 0.35;
+    // the string runs from the flyer's raised hand to the kite
+    a.set(-6.15, Y + 1.45, 19.0);
+    b.copy(k.position);
+    l.position.copy(a).add(b).multiplyScalar(0.5);
+    l.scale.set(1, a.distanceTo(b), 1);
+    l.quaternion.copy(q.setFromUnitVectors(up, b.clone().sub(a).normalize()));
+  });
+  return (
+    <group userData={DYNAMIC}>
+      <group ref={kite} visible={false}>
+        <mesh rotation-y={Math.PI / 2}>
+          <circleGeometry args={[0.55, 4]} />
+          <meshStandardMaterial color="#ef4444" side={DoubleSide} />
+        </mesh>
+        <mesh rotation-y={Math.PI / 2} position={[0.01, 0, 0]} scale={[0.5, 0.5, 1]}>
+          <circleGeometry args={[0.55, 4]} />
+          <meshStandardMaterial color="#facc15" side={DoubleSide} />
+        </mesh>
+        {[0, 1, 2].map((i) => (
+          <mesh key={i} position={[0, -0.75 - i * 0.28, 0]} rotation-x={i * 0.5}>
+            <boxGeometry args={[0.03, 0.08, 0.16]} />
+            <meshStandardMaterial color={["#22d3ee", "#a78bfa", "#f472b6"][i]} />
+          </mesh>
+        ))}
+      </group>
+      <mesh ref={line} visible={false}>
+        <cylinderGeometry args={[0.006, 0.006, 1, 4]} />
+        <meshBasicMaterial color="#f8fafc" />
+      </mesh>
+    </group>
+  );
+}
+
+/** DJ booth with turntables and speakers, a disco ball on a pole, and the party lights (on during the party). */
+function PartyStage({ party }: { party: boolean }) {
+  const ball = useRef<Group>(null);
+  const lasers = useRef<Group>(null);
+  const lights = useRef<(PointLight | null)[]>([]);
+  const strobe = useRef<PointLight>(null);
+  const still = useStill();
+  const m = rgbMaterials();
+  useFrame(({ clock }, dt) => {
+    const t = clock.elapsedTime;
+    if (ball.current && !still) ball.current.rotation.y += dt * (party ? 1.4 : 0.3);
+    if (!party) return;
+    lights.current.forEach((l, i) => {
+      if (!l) return;
+      l.color.setHSL((t * 0.25 + i / 3) % 1, 1, 0.55);
+      l.position.set(15.0 + Math.sin(t * 1.3 + i * 2) * 2.2, Y + 2.2, 22.3 + Math.cos(t * 1.1 + i * 2) * 1.2);
+    });
+    if (strobe.current) strobe.current.intensity = !still && t % 0.5 < 0.06 ? 14 : 0;
+    lasers.current?.children.forEach((b, i) => {
+      b.rotation.y = Math.sin(t * 1.6 + i * 1.3) * 0.9;
+      b.rotation.z = 0.35 + Math.sin(t * 2.2 + i) * 0.2;
+    });
+  });
+  return (
+    <group>
+      {/* booth */}
+      <B s={[1.4, 0.9, 0.5]} p={[15.2, Y + 0.45, 21.7]} c="#111827" />
+      <B s={[1.45, 0.04, 0.55]} p={[15.2, Y + 0.92, 21.7]} c="#1f2937" />
+      {[14.8, 15.6].map((x) => (
+        <mesh key={x} position={[x, Y + 0.96, 21.7]}>
+          <cylinderGeometry args={[0.16, 0.16, 0.03, 20]} />
+          <meshStandardMaterial color="#0b0d12" />
+        </mesh>
+      ))}
+      <B s={[0.22, 0.04, 0.3]} p={[15.2, Y + 0.96, 21.7]} c="#374151" />
+      <mesh position={[15.2, Y + 0.6, 21.452]} material={m.strip} userData={DYNAMIC}>
+        <planeGeometry args={[1.3, 0.06]} />
+      </mesh>
+      {[14.3, 16.15].map((x) => (
+        <group key={x} position={[x, Y, 21.75]}>
+          <B s={[0.4, 1.1, 0.4]} p={[0, 0.55, 0]} c="#0b0d12" />
+          {[0.35, 0.8].map((y) => (
+            <mesh key={y} position={[0, y, -0.205]} rotation-y={Math.PI}>
+              <circleGeometry args={[y > 0.5 ? 0.09 : 0.14, 16]} />
+              <meshStandardMaterial color="#374151" />
+            </mesh>
+          ))}
+        </group>
+      ))}
+      {/* disco ball hanging from a pole over the dance floor */}
+      <mesh position={[12.9, Y + 1.45, 22.9]}>
+        <cylinderGeometry args={[0.04, 0.05, 2.9, 8]} />
+        <meshStandardMaterial color="#374151" />
+      </mesh>
+      <B s={[2.2, 0.05, 0.05]} p={[13.95, Y + 2.88, 22.9]} c="#374151" />
+      <mesh position={[15.0, Y + 2.73, 22.9]}>
+        <cylinderGeometry args={[0.005, 0.005, 0.3, 4]} />
+        <meshStandardMaterial color="#9ca3af" />
+      </mesh>
+      <group ref={ball} position={[15.0, Y + 2.45, 22.9]} userData={DYNAMIC}>
+        <mesh>
+          <icosahedronGeometry args={[0.22, 1]} />
+          <meshStandardMaterial color="#e5e7eb" metalness={1} roughness={0.15} flatShading />
+        </mesh>
+      </group>
+      {party && (
+        <group userData={DYNAMIC}>
+          {[0, 1, 2].map((i) => (
+            <pointLight
+              key={i}
+              ref={(l) => {
+                lights.current[i] = l;
+              }}
+              intensity={9}
+              distance={7}
+              decay={1.5}
+            />
+          ))}
+          <pointLight ref={strobe} position={[15.0, Y + 2.2, 22.6]} color="#ffffff" intensity={0} distance={8} decay={1.5} />
+          <group ref={lasers} position={[15.2, Y + 1.0, 21.6]}>
+            {["#22d3ee", "#f472b6", "#a3e635", "#facc15"].map((c, i) => (
+              <mesh key={c} rotation-y={i}>
+                <boxGeometry args={[6, 0.015, 0.015]} />
+                <meshBasicMaterial color={c} transparent opacity={0.8} toneMapped={false} />
+              </mesh>
+            ))}
+          </group>
+        </group>
+      )}
+    </group>
+  );
+}
+
 /**
  * The rooftop, one floor up: a sky deck with a fire pit, loungers, a BBQ and a telescope behind glass
  * railings, a roof garden with raised beds and a greenhouse, solar panels and HVAC units, and the
  * open courtyard over the garden below. Shown when the view switches to the roof.
  */
-export function Rooftop({ visible, phase }: { visible: boolean; phase: Phase }) {
+export function Rooftop({ visible, phase, party = false }: { visible: boolean; phase: Phase; party?: boolean }) {
   const gravelTex = useDisposable(() => gravel([14, 12]), "roof-gravel");
   const deckTex = useDisposable(() => planks([8, 4]), "roof-deck");
   const grassTex = useDisposable(() => turf([8, 5]), "roof-turf");
@@ -427,11 +671,11 @@ export function Rooftop({ visible, phase }: { visible: boolean; phase: Phase }) 
         <Hvac p={[19, Y, -4]} s={[1.4, 1.4]} />
         <Hvac p={[22, Y, -4]} s={[1.4, 1.4]} />
         {/* water tank and satellite dish */}
-        <mesh position={[23.5, Y + 0.9, 4.5]} castShadow>
+        <mesh position={[13.5, Y + 0.9, 4.5]} castShadow>
           <cylinderGeometry args={[0.9, 0.9, 1.8, 20]} />
           <meshStandardMaterial color="#94a3b8" metalness={0.4} roughness={0.5} />
         </mesh>
-        <group position={[19.5, Y, 3]}>
+        <group position={[11, Y, 8]}>
           <B s={[0.1, 0.8, 0.1]} p={[0, 0.4, 0]} c="#6b7280" />
           <mesh position={[0, 0.95, 0]} rotation-x={-0.9}>
             <sphereGeometry args={[0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 3]} />
@@ -439,6 +683,8 @@ export function Rooftop({ visible, phase }: { visible: boolean; phase: Phase }) 
           </mesh>
         </group>
         <Antenna />
+        <Pool />
+        <PartyStage party={party} />
         {/* roof garden */}
         <RaisedBed x={-1} z={15.8} colors={["#4ade80", "#22c55e", "#16a34a"]} />
         <RaisedBed x={3} z={15.8} colors={["#ef4444", "#22c55e", "#f97316"]} />
@@ -537,6 +783,7 @@ export function Rooftop({ visible, phase }: { visible: boolean; phase: Phase }) 
         })}
       </StaticMerge>
       <Sky phase={phase} />
+      <Kite />
     </group>
   );
 }

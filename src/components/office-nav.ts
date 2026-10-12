@@ -105,6 +105,11 @@ const NODES: Record<string, P2> = {
   RT1: [13.5, 16.4],
   RT: [18.0, 17.2],
   RE: [24.0, 17.2],
+  // the pool deck over the lobby
+  RP0: [13.5, 10.5],
+  RP1: [15.2, 7.8],
+  RP2: [21.0, 7.8],
+  RP3: [24.8, 7.8],
   // lobby café: in front of the counter, and between the tables
   CF: [20.85, -3.0],
   CT: [18.4, -1.2],
@@ -206,6 +211,10 @@ const EDGES: [string, string][] = [
   ["RS", "RT1"],
   ["RT1", "RT"],
   ["RT", "RE"],
+  ["RS", "RP0"],
+  ["RP0", "RP1"],
+  ["RP1", "RP2"],
+  ["RP2", "RP3"],
   ["LO1", "CT"],
   ["LO1", "TH1"],
   ["TH1", "TA1"],
@@ -259,7 +268,12 @@ export type Activity =
   | "game"
   | "guitar"
   | "piano"
-  | "pet";
+  | "pet"
+  | "lean"
+  | "kite"
+  | "swim"
+  | "dance"
+  | "dj";
 
 /** What kind of break a spot is; the user can switch whole categories off. */
 export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas" | "focus" | "music" | "pets";
@@ -369,10 +383,10 @@ const onRoof = (s: SpotInit): Spot => spot({ ...s, roof: true });
 
 /** The rooftop: a sky deck with a fire pit, loungers, a BBQ and a telescope; a garden; views over the railings. */
 export const ROOF_SPOTS: Spot[] = [
-  onRoof({ id: "roof-view-1", at: [11.0, 23.3], node: "RT1", approach: [[11.0, 18.0]], face: 0, activity: "look", cat: "nature", say: "Fresh air!", where: "on the roof", emoji: ["🌤️", "😌"] }),
-  onRoof({ id: "roof-view-2", at: [16.5, 23.3], node: "RT", approach: [[16.5, 18.0]], face: 0, activity: "look", cat: "nature", say: "What a view!", where: "on the roof", emoji: ["🏙️", "✨"] }),
-  onRoof({ id: "roof-view-3", at: [25.3, 20.6], node: "RE", approach: [[24.0, 20.6]], face: PI / 2, activity: "look", cat: "nature", say: "Breathe in that sky", where: "on the roof", emoji: ["☁️", "🕊️"] }),
-  onRoof({ id: "roof-koi", at: [21.0, 16.6], node: "RT", face: PI, activity: "look", cat: "nature", say: "I can see the koi!", where: "at the courtyard railing", emoji: ["🐟", "👀"] }),
+  onRoof({ id: "roof-view-1", at: [11.0, 23.3], node: "RT1", approach: [[11.0, 18.0]], face: 0, activity: "lean", cat: "nature", say: "Fresh air!", where: "on the roof", emoji: ["🌤️", "😌"] }),
+  onRoof({ id: "roof-view-2", at: [16.5, 23.3], node: "RT", approach: [[16.5, 18.0]], face: 0, activity: "lean", cat: "nature", say: "What a view!", where: "on the roof", emoji: ["🏙️", "✨"] }),
+  onRoof({ id: "roof-view-3", at: [25.3, 20.6], node: "RE", approach: [[24.0, 20.6]], face: PI / 2, activity: "lean", cat: "nature", say: "Breathe in that sky", where: "on the roof", emoji: ["☁️", "🕊️"] }),
+  onRoof({ id: "roof-koi", at: [21.0, 16.6], node: "RT", face: PI, activity: "lean", cat: "nature", say: "I can see the koi!", where: "at the courtyard railing", emoji: ["🐟", "👀"] }),
   onRoof({ id: "roof-courtyard", at: [15.4, 12.0], node: "RS", face: PI / 2, activity: "look", cat: "nature", say: "The garden looks tiny", where: "at the courtyard railing", emoji: ["🌳", "😮"] }),
   onRoof({ id: "roof-telescope", at: [24.8, 22.8], node: "RE", approach: [[24.0, 21.8]], face: PI / 4, activity: "look", cat: "nature", say: "Spotting planes", where: "at the roof telescope", emoji: ["🔭", "✈️"] }),
   onRoof({ id: "roof-lounger-1", at: [12.0, 20.0], node: "RT1", approach: [[12.0, 18.4]], face: 0, seat: 0.3, activity: "nap", cat: "rest", say: "Sunbathing on the roof", where: "on a roof lounger", emoji: ["😎", "☀️"] }),
@@ -386,6 +400,25 @@ export const ROOF_SPOTS: Spot[] = [
   onRoof({ id: "roof-bench-1", at: [-4.0, 23.0], node: "RW", approach: [[-4.0, 14.0]], face: 0, seat: 0.45, activity: "rest", cat: "rest", say: "Quiet time up here", where: "on a roof bench", emoji: ["🌤️", "😌"] }),
   onRoof({ id: "roof-bench-2", at: [1.0, 23.0], node: "RG", approach: [[1.0, 14.0]], face: 0, seat: 0.45, activity: "read", cat: "reading", say: "Reading in the sun", where: "on a roof bench", emoji: ["📖", "☀️"] }),
   onRoof({ id: "roof-solar", at: [-3.4, 3.0], node: "RN", face: PI / 2, activity: "look", cat: "ideas", say: "Checking the solar panels", where: "on the roof", emoji: ["☀️", "🔋"] }),
+  // more railings to lean on
+  onRoof({ id: "roof-rail-g", at: [-1.5, 23.4], node: "RW", approach: [[-2.5, 14.0], [-2.5, 22.0]], face: 0, activity: "lean", cat: "nature", say: "Watching the city", where: "at the roof railing", emoji: ["🏙️", "🌬️"] }),
+  onRoof({ id: "roof-rail-e", at: [25.4, -1.5], node: "RP3", approach: [[24.8, -1.5]], face: PI / 2, activity: "lean", cat: "nature", say: "Watching the street below", where: "at the roof railing", emoji: ["🚕", "👀"] }),
+  // flying a kite in the roof garden
+  onRoof({ id: "roof-kite", at: [-6.0, 19.0], node: "RW", approach: [[-5.0, 19.0]], face: -PI / 2, activity: "kite", cat: "nature", say: "Look at my kite!", where: "flying a kite on the roof", emoji: ["🪁", "🌬️"] }),
+  // the rooftop pool: swimmers, and loungers beside it
+  onRoof({ id: "roof-swim-1", at: [19.5, 3.0], node: "RP2", approach: [[21.0, 6.6], [21.0, 5.4]], face: -2.6, seat: 0.05, activity: "swim", cat: "exercise", say: "The water's perfect!", where: "in the rooftop pool", emoji: ["🏊", "💦"] }),
+  onRoof({ id: "roof-swim-2", at: [21.0, 4.2], node: "RP2", approach: [[21.0, 6.6], [21.0, 5.4]], face: PI, seat: 0.05, activity: "swim", cat: "exercise", say: "Doing laps", where: "in the rooftop pool", emoji: ["🏊", "⏱️"] }),
+  onRoof({ id: "roof-swim-3", at: [22.6, 2.6], node: "RP2", approach: [[21.0, 6.6], [21.0, 5.4]], face: 2.6, seat: 0.05, activity: "swim", cat: "exercise", say: "Cannonball!", where: "in the rooftop pool", emoji: ["💦", "😆"] }),
+  onRoof({ id: "roof-pool-1", at: [16.9, 2.25], node: "RP1", approach: [[16.2, 2.25]], face: 0, seat: 0.3, activity: "nap", cat: "rest", say: "Poolside nap", where: "by the rooftop pool", emoji: ["😎", "🌴"] }),
+  onRoof({ id: "roof-pool-2", at: [16.9, 4.05], node: "RP1", approach: [[16.2, 4.05]], face: 0, seat: 0.3, activity: "rest", cat: "rest", say: "Drying off in the sun", where: "by the rooftop pool", emoji: ["☀️", "🧴"] }),
+];
+
+/** The rooftop party: a DJ booth and a dance floor in front of it (used by the party event only). */
+export const PARTY_SPOTS: Spot[] = [
+  onRoof({ id: "roof-dj", at: [15.2, 21.05], node: "RT1", approach: [[15.2, 18.0]], face: 0, activity: "dj", cat: "chat", say: "Drop the beat!", where: "at the DJ booth", emoji: ["🎧", "🔊"] }),
+  onRoof({ id: "dance-1", at: [13.9, 22.7], node: "RT1", approach: [[13.9, 18.4]], face: PI, activity: "dance", cat: "chat", say: "Woo!", where: "on the rooftop dance floor", emoji: ["💃", "🕺"] }),
+  onRoof({ id: "dance-2", at: [14.9, 23.1], node: "RT1", approach: [[13.9, 18.4], [13.9, 22.4]], face: PI, activity: "dance", cat: "chat", say: "Best party ever!", where: "on the rooftop dance floor", emoji: ["🪩", "🎉"] }),
+  onRoof({ id: "dance-3", at: [15.9, 22.7], node: "RT", approach: [[16.5, 18.0], [16.5, 22.4]], face: PI, activity: "dance", cat: "chat", say: "This song!", where: "on the rooftop dance floor", emoji: ["🎶", "🕺"] }),
 ];
 
 /** Places idle agents wander to on their own. */
@@ -564,6 +597,7 @@ export const EVENT_SPOTS = {
   ],
   townHall: TOWN_HALL_SEATS,
   hub: HUB_SEATS,
+  roofParty: PARTY_SPOTS,
   delivery: [
     spot({ id: "parcel-pickup", at: [-7.0, 0.3], node: "EL", face: 0, activity: "look", cat: "ideas", say: "Signing for a parcel", where: "at the elevator", emoji: ["📦", "✍️"], gives: "box" }),
     spot({ id: "parcel-drop", at: [-6.2, 14.85], node: "PB", approach: [[-6.2, 14.0]], face: 0, activity: "look", cat: "ideas", say: "Unpacking supplies", where: "at the supply cabinet", emoji: ["📦", "✨"], takes: true }),

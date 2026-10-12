@@ -30,7 +30,8 @@ export type EventKind =
   | "strategy"
   | "hackathon"
   | "cafe"
-  | "rooftop";
+  | "rooftop"
+  | "roofparty";
 
 export type ActiveEvent = {
   id: number;
@@ -187,6 +188,8 @@ type EventDef = {
   when?: (hour: number) => boolean;
   /** false: only started on purpose (e.g. the welcome party for a new hire) */
   random?: false;
+  /** happens only now and then, even when the time is right */
+  rare?: true;
   plan: (idle: string[], everyone: string[], hero?: string) => Plan | null;
 };
 
@@ -519,6 +522,27 @@ const EVENTS: EventDef[] = [
     }),
   },
   {
+    kind: "roofparty",
+    icon: "🪩",
+    // a rare night: lights out downstairs, a DJ and a dance floor on the roof
+    seconds: 75,
+    xp: 15,
+    rare: true,
+    when: (h) => between(h, 19, 24) || between(h, 0, 1),
+    plan: (idle) => ({
+      orders: gather(idle, [
+        // the first agent picked plays the records
+        fix(spotById("roof-dj"), "Drop the beat!", ["🎧", "🔊", "🎶"], "DJing the rooftop party", "dj"),
+        ...EVENT_SPOTS.roofParty.slice(1),
+        ...["roof-view-2", "roof-fire-a", "roof-fire-b", "roof-view-1", "roof-koi", "roof-rail-g", "roof-lounger-1", "roof-lounger-2"].map((id) =>
+          fix(spotById(id), "Party time!", ["🪩", "💃", "🕺"], "at the rooftop party", "dance"),
+        ),
+      ]),
+      dwell: 4,
+      text: { key: "ge.roofparty.text" },
+    }),
+  },
+  {
     kind: "welcome",
     icon: "🎉",
     seconds: 26,
@@ -645,7 +669,7 @@ export function tickEvents(t: number) {
 
 /** Events that fit the time of day (stand-ups in the morning, movies at night). */
 function eligible() {
-  return EVENTS.filter((e) => e.random !== false && (!e.when || e.when(eventHour)));
+  return EVENTS.filter((e) => e.random !== false && (!e.when || e.when(eventHour)) && (!e.rare || Math.random() < 0.12));
 }
 
 export const EVENT_KINDS = EVENTS.filter((e) => e.random !== false).map((e) => ({

@@ -21,7 +21,7 @@ import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { getFollow, getLevel, releaseFocus, setFollow, showLevel, useCameraFocus, ZONE_LOOK } from "./camera-focus";
+import { focusZone, getFollow, getLevel, releaseFocus, setFollow, showLevel, useCameraFocus, ZONE_LOOK } from "./camera-focus";
 import { ROOF_SKY, Rooftop } from "./Rooftop";
 import { currentEventKind, setAutoEvents, setEventHour, tickEvents, triggerEvent, useGame } from "./office-events";
 import {
@@ -130,7 +130,12 @@ type Action =
   | "game"
   | "stretch"
   | "guitar"
-  | "pet";
+  | "pet"
+  | "lean"
+  | "kite"
+  | "swim"
+  | "dance"
+  | "dj";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -488,6 +493,8 @@ function Mochi({
       y = Math.sin(t * 2) * 0.015 + (hop < 0.45 ? Math.sin((hop / 0.45) * Math.PI) * 0.1 : 0);
     } else if (action === "nap" || action === "read" || action === "yoga") y = 0;
     else if (action === "meditate") y = Math.sin(t * 0.9) * 0.012;
+    else if (action === "dance") y = Math.abs(Math.sin(t * 6)) * 0.13;
+    else if (action === "swim") y = Math.sin(t * 3) * 0.03;
     else y = Math.abs(Math.sin(t * 8)) * 0.012;
     root.current.position.y = y;
     root.current.rotation.z = walking
@@ -563,6 +570,25 @@ function Mochi({
     } else if (action === "carry") {
       L.set(-1.35, 0, 0.3);
       R.set(-1.35, 0, -0.3);
+    } else if (action === "lean") {
+      // forearms resting on the railing
+      L.set(-1.35, 0, 0.3);
+      R.set(-1.35, 0, -0.3);
+    } else if (action === "kite") {
+      // holding the string up high, tugging now and then
+      R.set(-2.6 + Math.sin(t * 1.5) * 0.15, 0, 0.3);
+      L.set(-1.5 + Math.sin(t * 1.5 + 1) * 0.1, 0, 0.2);
+    } else if (action === "swim") {
+      // front crawl
+      L.set(-1.6 + Math.sin(t * 4) * 1.3, 0, -0.5);
+      R.set(-1.6 - Math.sin(t * 4) * 1.3, 0, 0.5);
+    } else if (action === "dance") {
+      L.set(-2.4 + Math.sin(t * 6) * 0.6, 0, -0.45);
+      R.set(-2.4 - Math.sin(t * 6) * 0.6, 0, 0.45);
+    } else if (action === "dj") {
+      // one hand on the headphones, the other scratching
+      L.set(-2.5, 0, -0.95);
+      R.set(-1.0 + Math.sin(t * 8) * 0.2, 0, -0.3 + Math.sin(t * 8) * 0.25);
     } else if (action === "guitar") {
       // left hand on the neck, right hand strumming
       L.set(-1.2, 0, 0.55);
@@ -601,6 +627,13 @@ function Mochi({
     } else root.current.rotation.x = 0;
     if (action === "game" && !cheering) head.current.rotation.x = 0.12 + Math.sin(t * 9) * 0.03;
     if (action === "guitar" && !cheering) head.current.rotation.z = Math.sin(t * 2.2) * 0.12;
+    if (action === "lean" && !cheering) {
+      root.current.rotation.x = 0.22;
+      head.current.rotation.y = Math.sin(t * 0.5) * 0.4;
+    }
+    if (action === "kite" && !cheering) head.current.rotation.x = -0.4;
+    if (action === "dance" && !cheering) root.current.rotation.z = Math.sin(t * 3) * 0.15;
+    if (action === "dj" && !cheering) head.current.rotation.x = Math.max(0, Math.sin(t * 8)) * 0.2;
     if (action === "pet" && !cheering) {
       root.current.rotation.x = 0.28;
       head.current.rotation.x = 0.3;
@@ -1385,6 +1418,11 @@ const ACTIVITY_ACTION: Record<Activity, Action> = {
   guitar: "guitar",
   piano: "game",
   pet: "pet",
+  lean: "lean",
+  kite: "kite",
+  swim: "swim",
+  dance: "dance",
+  dj: "dj",
 };
 
 // ---------- Floating emoji emotes ----------
@@ -1870,13 +1908,17 @@ const ROOM_LIGHTS: V3[] = [
   [21.5, 2.4, 20.6],
 ];
 
+/** Rooftop party: the lights go off everywhere; the party lights do the rest. */
+const PARTY_DARK: LightSet = { ambient: ["#7c6cf0", 0.22], hemi: ["#3b2f7a", "#120f22", 0.28], sun: ["#8f9cff", 0.15, [-6, 14, 8]], lamps: 0 };
+
 /** Power cut: almost dark, red emergency lights. */
 const OUTAGE: LightSet = { ambient: ["#8090c0", 0.16], hemi: ["#33405f", "#151320", 0.18], sun: ["#9fb0ff", 0.12, [-6, 14, 8]], lamps: 0 };
 
 function Lights({ phase }: { phase: Phase }) {
   const game = useGame();
   const outage = game.event?.kind === "outage";
-  const set = outage ? OUTAGE : LIGHTS[phase];
+  const roofParty = game.event?.kind === "roofparty";
+  const set = outage ? OUTAGE : roofParty ? PARTY_DARK : LIGHTS[phase];
   // the sun aims at the middle of the floor; the target has to be in the scene for that
   const [target] = useState(() => new Object3D());
   const sun: V3 = [TARGET[0] + set.sun[2][0], set.sun[2][1], TARGET[2] + set.sun[2][2]];
@@ -2374,6 +2416,11 @@ export default function OfficeScene({
   useEffect(() => setAgentHobbies(Object.fromEntries(agents.map((a) => [a.id, a.hobbies]))), [agents]);
   useEffect(() => setFollow(selectedId ?? null), [selectedId]);
   const roofView = useCameraFocus().level === 1;
+  // the rare rooftop party: take everyone up to see it
+  const roofParty = useGame().event?.kind === "roofparty";
+  useEffect(() => {
+    if (roofParty) focusZone("roof");
+  }, [roofParty]);
   // drop the resolution a little on slow devices so the animation stays smooth
   const [dpr, setDpr] = useState(1.5);
 
@@ -2394,8 +2441,8 @@ export default function OfficeScene({
       <Lights phase={phase} />
       <OfficeFloor decor={decor} />
       <ZoneSigns lang={lang} accent={decor.accent} />
-      <Rooftop visible={roofView} phase={phase} />
-      {roofView && <color attach="background" args={[ROOF_SKY[phase]]} />}
+      <Rooftop visible={roofView} phase={roofParty ? "night" : phase} party={roofParty} />
+      {roofView && <color attach="background" args={[ROOF_SKY[roofParty ? "night" : phase]]} />}
       <EventDirector />
       <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
