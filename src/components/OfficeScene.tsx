@@ -44,6 +44,7 @@ import {
 } from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, hash, useDisposable } from "./scene-utils";
+import { StaticMerge } from "./static-merge";
 
 export type { BoardLine } from "./OfficeFloor";
 export type DeskState = { working: string[]; lastDoneAt?: number; screen: ScreenState };
@@ -1206,16 +1207,19 @@ type DeskProps = {
 function AgentDeskImpl({ agent, look, state, seed, position, lang, desk }: DeskProps) {
   return (
     <group position={position} scale={DESK_SCALE}>
-      <DeskFrame look={desk} />
-      {/* mug in the owner's colour */}
-      <mesh position={[-0.55, 0.815, 0.05]} castShadow>
-        <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
-        <meshStandardMaterial color={look.inner} />
-      </mesh>
-      {desk.items && <DeskItems seed={seed} />}
-      {desk.lamp && <DeskLamp glow={desk.glow} />}
+      {/* the furniture is drawn as a few merged meshes; the live screen stays separate */}
+      <StaticMerge>
+        <DeskFrame look={desk} />
+        {/* mug in the owner's colour */}
+        <mesh position={[-0.55, 0.815, 0.05]} castShadow>
+          <cylinderGeometry args={[0.05, 0.045, 0.1, 12]} />
+          <meshStandardMaterial color={look.inner} />
+        </mesh>
+        {desk.items && <DeskItems seed={seed} />}
+        {desk.lamp && <DeskLamp glow={desk.glow} />}
+        <OfficeChair p={[0, 0, 0.62]} />
+      </StaticMerge>
       <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
-      <OfficeChair p={[0, 0, 0.62]} />
     </group>
   );
 }
@@ -1259,9 +1263,11 @@ const EmptyDesk = memo(
   function EmptyDesk({ position, desk }: { position: V3; desk: DeskLook }) {
     return (
       <group position={position} scale={DESK_SCALE}>
-        <DeskFrame look={desk} />
-        <DarkMonitor />
-        <OfficeChair p={[0, 0, 0.45]} />
+        <StaticMerge>
+          <DeskFrame look={desk} />
+          <DarkMonitor />
+          <OfficeChair p={[0, 0, 0.45]} />
+        </StaticMerge>
       </group>
     );
   },

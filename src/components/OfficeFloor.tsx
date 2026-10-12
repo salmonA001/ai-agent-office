@@ -22,6 +22,7 @@ import type { ZoneId } from "./camera-focus";
 import { walkers } from "./office-nav";
 import { useStill } from "@/lib/motion";
 import { clip, seeded, useDisposable } from "./scene-utils";
+import { DYNAMIC, StaticMerge } from "./static-merge";
 
 export type BoardLine = { text: string; status: "queued" | "working" | "done" | "error" };
 type V3 = [number, number, number];
@@ -502,7 +503,7 @@ export function PalmPlant({ p, s = 1 }: { p: V3; s?: number }) {
     leaves.current.rotation.x = Math.sin(t * 0.7) * 0.04;
   });
   return (
-    <group position={p} scale={s}>
+    <group userData={DYNAMIC} position={p} scale={s}>
       <mesh position={[0, 0.22, 0]} castShadow>
         <cylinderGeometry args={[0.22, 0.17, 0.44, 20]} />
         <meshStandardMaterial color="#f5f5f4" />
@@ -543,7 +544,7 @@ function Steam({ p }: { p: V3 }) {
     });
   });
   return (
-    <group position={p}>
+    <group userData={DYNAMIC} position={p}>
       {[0, 1, 2].map((i) => (
         <group
           key={i}
@@ -996,7 +997,7 @@ function Aquarium() {
   });
   const colors = ["#ff8c42", "#ffd166", "#ef476f", "#4cc9f0", "#f72585", "#06d6a0"];
   return (
-    <group position={[15.675, 0, 12.0]}>
+    <group userData={DYNAMIC} position={[15.675, 0, 12.0]}>
       <B s={[0.45, 0.7, 2.2]} p={[0, 0.35, 0]} c="#2b2f33" />
       <B s={[0.4, 0.06, 2.12]} p={[0, 0.73, 0]} c="#d6c7a1" />
       {[-0.7, -0.2, 0.45, 0.85].map((z, i) => (
@@ -1262,7 +1263,7 @@ function Arcade({ p, hue }: { p: V3; hue: number }) {
     screen.current.color.setHSL((hue + Math.sin(t) * 0.08 + 1) % 1, 0.8, 0.45 + Math.sin(t * 3) * 0.1);
   });
   return (
-    <group position={p}>
+    <group userData={DYNAMIC} position={p}>
       <B s={[0.7, 1.7, 0.7]} p={[0, 0.85, 0]} c="#1e1b4b" />
       <B s={[0.72, 0.08, 0.4]} p={[0, 0.95, 0.3]} c="#312e81" />
       <mesh position={[0, 1.3, 0.355]} rotation-x={-0.15}>
@@ -1331,7 +1332,7 @@ function ServerRack({ p, seed }: { p: V3; seed: number }) {
     });
   });
   return (
-    <group position={p}>
+    <group userData={DYNAMIC} position={p}>
       <B s={[0.7, 2.0, 0.9]} p={[0, 1.0, 0]} c="#111827" rough={0.4} metal={0.3} />
       {Array.from({ length: 12 }, (_, i) => (
         <mesh key={i} position={[-0.22 + (i % 3) * 0.22, 0.4 + Math.floor(i / 3) * 0.4, 0.455]}>
@@ -1555,7 +1556,7 @@ function Pond() {
     if (jet.current) jet.current.scale.y = 1 + Math.sin(t * 6) * 0.15;
   });
   return (
-    <group position={[22.8, 0, 11.4]}>
+    <group userData={DYNAMIC} position={[22.8, 0, 11.4]}>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]} scale={[1.85, 1.25, 1]}>
         <circleGeometry args={[1, 40]} />
         <meshStandardMaterial color="#9a8f80" roughness={1} />
@@ -1614,7 +1615,7 @@ function Butterflies() {
     });
   });
   return (
-    <group>
+    <group userData={DYNAMIC}>
       {["#f9a8d4", "#fde68a"].map((c, i) => (
         <group
           key={c}
@@ -2277,7 +2278,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
   const sky = useDisposable(() => skyTexture(decor.phase), `sky-${decor.phase}`);
   const { x0, x1, z0, z1 } = FLOOR;
   return (
-    <group>
+    <StaticMerge>
       {/* building slab with a white edge, like a cut-away model */}
       <B s={[x1 - x0 + 0.3, 0.3, z1 - z0 + 0.3]} p={[(x0 + x1) / 2, -0.15, (z0 + z1) / 2]} c="#f5f5f4" />
       <Floor x0={x0} x1={EAST.x0} z0={CORRIDOR.z0} z1={CORRIDOR.z1} color={YELLOW} />
@@ -2320,7 +2321,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[14.4, CORRIDOR.z1]} b={[EAST.x0, CORRIDOR.z1]} h={1.0} />
       <EastWing decor={decor} />
       <SouthWing decor={decor} sky={sky} />
-    </group>
+    </StaticMerge>
   );
 });
 
@@ -2354,7 +2355,7 @@ function Elevator() {
   });
   const x = FLOOR.x0;
   return (
-    <group>
+    <group userData={DYNAMIC}>
       {/* the car behind the doors, lit warm */}
       <mesh position={[x - 0.06, 1.02, (LIFT.z0 + LIFT.z1) / 2]} rotation-y={Math.PI / 2}>
         <planeGeometry args={[LIFT.z1 - LIFT.z0, 2.05]} />

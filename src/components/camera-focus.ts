@@ -5,7 +5,7 @@ export type ZoneId = "engine" | "social" | "labs" | "pods" | "fitness" | "hub";
 export const ZONE_IDS: ZoneId[] = ["engine", "social", "labs", "pods", "fitness", "hub"];
 export const ZONE_LOOK: Record<ZoneId, [number, number]> = {
   engine: [5, 7.5],
-  social: [2, 6],
+  social: [1.5, 12.5],
   labs: [12.8, 20.6],
   pods: [4.7, 20.6],
   fitness: [-3.5, 20.6],

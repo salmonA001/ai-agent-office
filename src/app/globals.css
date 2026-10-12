@@ -417,6 +417,17 @@ html[data-motion="reduced"] *::after {
   }
 }
 
+/* Panels over the 3D office: the canvas changes every frame, so a backdrop blur would be
+   recomputed 60 times a second. They are nearly opaque anyway, so skip the blur there. */
+[data-stage] .glass,
+[data-stage] .glass-strong {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-stage] .glass {
+  background: var(--glass-strong);
+}
+
 /* Rendered agent output */
 .md {
   line-height: 1.6;

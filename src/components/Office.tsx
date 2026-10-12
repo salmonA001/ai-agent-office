@@ -335,12 +335,38 @@ export function Office() {
     if (loaded) save(STORE.agents, agents);
   }, [agents, loaded]);
 
+  const unsaved = useRef<Task[] | null>(null);
   useEffect(() => {
-    if (loaded) save(STORE.tasks, tasks.slice(0, 30));
+    if (!loaded) return;
+    // saving every streamed token would stall the page: save at most once a second
+    unsaved.current = tasks;
+    const timer = setTimeout(() => {
+      save(STORE.tasks, tasks.slice(0, 30));
+      unsaved.current = null;
+    }, 1000);
+    return () => clearTimeout(timer);
   }, [tasks, loaded]);
+  useEffect(() => {
+    // ...and never lose the last second when the tab closes
+    const flush = () => {
+      if (unsaved.current) save(STORE.tasks, unsaved.current.slice(0, 30));
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
 
+  // Streamed tokens arrive many times a second; apply them in one render every ~80 ms.
+  const pending = useRef<{ id: string; fn: (t: Task) => Task }[]>([]);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateTask = useCallback((id: string, fn: (t: Task) => Task) => {
-    setTasks((all) => all.map((t) => (t.id === id ? fn(t) : t)));
+    pending.current.push({ id, fn });
+    if (flushTimer.current) return;
+    flushTimer.current = setTimeout(() => {
+      flushTimer.current = null;
+      const batch = pending.current;
+      pending.current = [];
+      setTasks((all) => all.map((t) => batch.reduce((cur, u) => (u.id === cur.id ? u.fn(cur) : cur), t)));
+    }, 80);
   }, []);
 
   const start = useCallback(
@@ -589,6 +615,7 @@ export function Office() {
 
             <div
               ref={stage}
+              data-stage
               className={
                 isFull
                   ? "fixed inset-0 z-[70] flex flex-col bg-surface p-2 sm:p-3"
