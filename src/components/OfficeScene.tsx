@@ -21,7 +21,8 @@ import { type Key, type Lang, phrase, translate } from "@/lib/i18n";
 import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
-import { getFollow, releaseFocus, setFollow, useCameraFocus, ZONE_LOOK } from "./camera-focus";
+import { getFollow, getLevel, releaseFocus, setFollow, showLevel, useCameraFocus, ZONE_LOOK } from "./camera-focus";
+import { ROOF_SKY, Rooftop } from "./Rooftop";
 import { currentEventKind, setAutoEvents, setEventHour, tickEvents, triggerEvent, useGame } from "./office-events";
 import {
   type Activity,
@@ -34,6 +35,7 @@ import {
   ManagerWalker,
   MAX_DESKS,
   registerWalker,
+  ROOF_Y,
   setAgentZones,
   setBreakRules,
   setOfficeHour,
@@ -1436,6 +1438,8 @@ function AgentAvatarImpl(props: AvatarProps) {
   const [partnerHere, setPartnerHere] = useState(false);
   // saying hello to a colleague passing by
   const [greeting, setGreeting] = useState(false);
+  // in the elevator between the floors
+  const [riding, setRiding] = useState(false);
   // something to do while sitting at the desk with nothing to work on
   const [fidget, setFidget] = useState<Action>("idle");
   useEffect(() => {
@@ -1449,14 +1453,16 @@ function AgentAvatarImpl(props: AvatarProps) {
     const p = live.current;
     walker.setWorking(p.assigned);
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
-    g.position.set(walker.x + walker.offX, walker.y, walker.z + walker.offZ);
+    g.position.set(walker.x + walker.offX, walker.y + walker.level * ROOF_Y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
+    g.visible = !walker.hidden && walker.level === getLevel();
     if (ring.current) ring.current.position.y = -walker.y / DESK_SCALE + 0.02;
     const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
     const here = pair ? isPresent(pair) : false;
     if (here !== partnerHere) setPartnerHere(here);
     const hello = walker.greetT > 0;
     if (hello !== greeting) setGreeting(hello);
+    if (walker.hidden !== riding) setRiding(walker.hidden);
     // every few seconds pick a new little thing to do at the desk
     const slot = Math.floor(clock.elapsedTime / 7 + seed * 0.37);
     const next = FIDGETS[Math.floor(hash(slot * 1.31 + seed) * FIDGETS.length)];
@@ -1512,7 +1518,9 @@ function AgentAvatarImpl(props: AvatarProps) {
           : undefined;
   else say = alone ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner") : phrase(props.lang, phase.spot.say);
 
-  const status = workingAway
+  const status = riding
+    ? translate(props.lang, walker.level ? "act.liftDown" : "act.liftUp")
+    : workingAway
     ? translate(props.lang, "act.workingAt", { where: phrase(props.lang, phase.spot.where), title: bubble ?? "" })
     : headingToWork && walker.workAt
       ? translate(props.lang, "act.headingTo", { where: phrase(props.lang, walker.workAt.where) })
@@ -1740,6 +1748,7 @@ function Pacer({
     if (!g) return;
     const { onDuty, still } = live.current;
     if (walker.update(delta, onDuty, !still)) onPhase(walker.phase);
+    g.visible = getLevel() === 0;
     if (!walker.atBase()) {
       g.position.set(walker.x, 0, walker.z);
       g.rotation.y = walker.yaw;
@@ -2048,6 +2057,10 @@ function CameraFly() {
   const [spot] = useState(() => new Vector3());
   useEffect(() => {
     if (!focus.n || focus.id === null) return;
+    if (focus.id === "roof") {
+      goal.current = { target: new Vector3(TARGET[0], TARGET[1] + ROOF_Y, TARGET[2]), zoom: fitZoom };
+      return;
+    }
     const look = focus.id === "all" ? null : ZONE_LOOK[focus.id];
     goal.current = {
       target: look ? new Vector3(look[0], TARGET[1], look[1]) : new Vector3(...TARGET),
@@ -2082,9 +2095,12 @@ function CameraFly() {
       const w = id === "max" ? managerRef.walker : walkers.get(id);
       if (!w) return;
       const off = w instanceof Wanderer ? [w.offX, w.offZ] : [0, 0];
+      // follow them up to the roof and back down
+      const level = w instanceof Wanderer ? w.level : 0;
+      if (level !== getLevel() && !(w instanceof Wanderer && w.hidden)) showLevel(level);
       const k = still ? 1 : 1 - Math.exp(-delta * 3);
       const offset = camera.position.clone().sub(orbit.target);
-      orbit.target.lerp(spot.set(w.x + off[0], TARGET[1], w.z + off[1]), k);
+      orbit.target.lerp(spot.set(w.x + off[0], TARGET[1] + level * ROOF_Y, w.z + off[1]), k);
       camera.position.copy(orbit.target).add(offset);
       const z = followZoom.current;
       if (z !== null) {
@@ -2200,6 +2216,7 @@ export default function OfficeScene({
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
   useEffect(() => setAgentZones(Object.fromEntries(agents.map((a) => [a.id, a.zone]))), [agents]);
   useEffect(() => setFollow(selectedId ?? null), [selectedId]);
+  const roofView = useCameraFocus().level === 1;
   // drop the resolution a little on slow devices so the animation stays smooth
   const [dpr, setDpr] = useState(1.5);
 
@@ -2220,6 +2237,8 @@ export default function OfficeScene({
       <Lights phase={phase} />
       <OfficeFloor decor={decor} />
       <ZoneSigns lang={lang} accent={decor.accent} />
+      <Rooftop visible={roofView} phase={phase} />
+      {roofView && <color attach="background" args={[ROOF_SKY[phase]]} />}
       <EventDirector />
       <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>

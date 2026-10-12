@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { type Key, type Msg, translate } from "@/lib/i18n";
-import { type Activity, CAFE_SEATS, EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
+import { type Activity, CAFE_SEATS, EVENT_SPOTS, ROOF_SPOTS, type Spot, spotById, walkers } from "./office-nav";
 
 /**
  * Game layer: random office events that idle agents react to, plus XP and levels.
@@ -29,7 +29,8 @@ export type EventKind =
   | "picnic"
   | "strategy"
   | "hackathon"
-  | "cafe";
+  | "cafe"
+  | "rooftop";
 
 export type ActiveEvent = {
   id: number;
@@ -499,6 +500,22 @@ const EVENTS: EventDef[] = [
       ),
       dwell: 4,
       text: { key: "ge.cafe.text" },
+    }),
+  },
+  {
+    kind: "rooftop",
+    icon: "🌇",
+    // the elevator ride makes it a longer trip
+    seconds: 50,
+    xp: 8,
+    when: (h) => between(h, 12, 13.5) || between(h, 17, 19.5),
+    plan: (idle) => ({
+      orders: gather(
+        idle,
+        ROOF_SPOTS.filter((s) => s.id !== "roof-solar").map((s) => fix(s, "Rooftop hangout!", ["🌇", "🍔", "😎"], "at the rooftop hangout")),
+      ),
+      dwell: 4,
+      text: { key: "ge.rooftop.text" },
     }),
   },
   {

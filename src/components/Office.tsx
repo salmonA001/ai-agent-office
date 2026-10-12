@@ -5,6 +5,7 @@ import {
   BarbellIcon,
   BrainIcon,
   CheckIcon,
+  CloudSunIcon,
   CoffeeIcon,
   CopyIcon,
   CornersInIcon,
@@ -238,9 +239,10 @@ const ZONE_ICON: Record<ZoneId, Icon> = {
 function ZonePicker() {
   const { t } = useI18n();
   const focus = useCameraFocus();
-  const items: { id: ZoneId | "all"; label: string; I: Icon }[] = [
+  const items: { id: ZoneId | "all" | "roof"; label: string; I: Icon }[] = [
     { id: "all", label: t("zones.all"), I: MapTrifoldIcon },
     ...ZONE_IDS.map((id) => ({ id, label: t(`zone.${id}` as Key), I: ZONE_ICON[id] })),
+    { id: "roof", label: t("zones.roof"), I: CloudSunIcon },
   ];
   return (
     <div
@@ -249,7 +251,7 @@ function ZonePicker() {
       className="glass-strong flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full p-1 [scrollbar-width:none]"
     >
       {items.map(({ id, label, I }) => {
-        const on = focus.id === id;
+        const on = id === "roof" ? focus.level === 1 : focus.id === id;
         return (
           <button
             key={id}

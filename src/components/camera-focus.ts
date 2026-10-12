@@ -12,10 +12,13 @@ export const ZONE_LOOK: Record<ZoneId, [number, number]> = {
   hub: [21.5, 20.6],
 };
 
-/** Which zone the camera flies to; `n` counts requests so the same zone can be picked twice. null = the user moved the camera. */
-export type CameraFocus = { id: ZoneId | "all" | null; n: number };
+/**
+ * Which zone the camera flies to ("roof": up to the rooftop); `n` counts requests so the same zone
+ * can be picked twice. null = the user moved the camera. `level` is the floor on show (0 ground, 1 roof).
+ */
+export type CameraFocus = { id: ZoneId | "all" | "roof" | null; n: number; level: 0 | 1 };
 
-let focus: CameraFocus = { id: null, n: 0 };
+let focus: CameraFocus = { id: null, n: 0, level: 0 };
 const listeners = new Set<() => void>();
 
 function emit(next: CameraFocus) {
@@ -23,9 +26,19 @@ function emit(next: CameraFocus) {
   listeners.forEach((l) => l());
 }
 
-export function focusZone(id: ZoneId | "all") {
+export function focusZone(id: ZoneId | "all" | "roof") {
   follow = null;
-  emit({ id, n: focus.n + 1 });
+  emit({ id, n: focus.n + 1, level: id === "roof" ? 1 : 0 });
+}
+
+/** Show the other floor (the camera follows an agent who takes the elevator). */
+export function showLevel(level: 0 | 1) {
+  if (focus.level !== level) emit({ ...focus, id: level ? "roof" : null, level });
+}
+
+/** The floor on show, read every frame by the 3D scene. */
+export function getLevel() {
+  return focus.level;
 }
 
 /** The agent the camera keeps in view (the one clicked), or null. Read every frame, so no re-render. */
@@ -51,7 +64,7 @@ function subscribe(listener: () => void) {
   };
 }
 
-const SERVER: CameraFocus = { id: null, n: 0 };
+const SERVER: CameraFocus = { id: null, n: 0, level: 0 };
 
 export function useCameraFocus() {
   return useSyncExternalStore(subscribe, () => focus, () => SERVER);

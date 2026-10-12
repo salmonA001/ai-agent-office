@@ -2782,8 +2782,8 @@ function StrategyHub({ decor }: { decor: FloorDecor }) {
         <meshBasicMaterial color={glow ? "#ffe2a8" : "#f8fafc"} toneMapped={false} />
       </mesh>
       {[20.0, 23.0].map((x) => (
-        <mesh key={x} position={[x, 2.6, 20.6]}>
-          <cylinderGeometry args={[0.006, 0.006, 0.5, 4]} />
+        <mesh key={x} position={[x, 2.5, 20.6]}>
+          <cylinderGeometry args={[0.006, 0.006, 0.3, 4]} />
           <meshStandardMaterial color="#6b7280" />
         </mesh>
       ))}

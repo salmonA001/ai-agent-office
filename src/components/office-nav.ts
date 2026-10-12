@@ -96,6 +96,15 @@ const NODES: Record<string, P2> = {
   LO1: [17.5, 0.3],
   LO2: [21.5, 0.3],
   LO3: [24.15, 0.3],
+  // ----- the roof (a separate level, reached by the elevator) -----
+  RL: [-5.0, 0.3],
+  RN: [-5.0, 3.0],
+  RW: [-5.0, 13.0],
+  RG: [2.0, 13.0],
+  RS: [10.0, 13.0],
+  RT1: [13.5, 16.4],
+  RT: [18.0, 17.2],
+  RE: [24.0, 17.2],
   // lobby café: in front of the counter, and between the tables
   CF: [20.85, -3.0],
   CT: [18.4, -1.2],
@@ -189,6 +198,14 @@ const EDGES: [string, string][] = [
   ["LO1", "LO2"],
   ["LO2", "LO3"],
   ["LO2", "CF"],
+  // roof
+  ["RL", "RN"],
+  ["RN", "RW"],
+  ["RW", "RG"],
+  ["RG", "RS"],
+  ["RS", "RT1"],
+  ["RT1", "RT"],
+  ["RT", "RE"],
   ["LO1", "CT"],
   ["LO1", "TH1"],
   ["TH1", "TA1"],
@@ -274,7 +291,12 @@ export type Spot = {
   dwell?: number;
   /** where to go next, in a little routine (queue -> order -> pick up -> sit down) */
   next?: string[];
+  /** on the roof (reached by the elevator) */
+  roof?: boolean;
 };
+
+/** Height of the roof deck above the ground floor. */
+export const ROOF_Y = 2.72;
 
 const PI = Math.PI;
 
@@ -325,6 +347,33 @@ const CAFE_SPOTS: Spot[] = [
   spot({ id: "cafe-t1b", at: [18.05, -2.3], node: "CT", face: -PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Best coffee in town", where: "at a café table", emoji: ["☕", "😌"] }),
   spot({ id: "cafe-t2a", at: [18.75, -2.3], node: "CT", face: PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Coffee break", where: "at a café table", emoji: ["☕", "🥐"] }),
   spot({ id: "cafe-t2b", at: [20.05, -2.3], node: "CT", approach: [[20.05, -1.2]], face: -PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Mmm, cold brew", where: "at a café table", emoji: ["🧋", "😋"] }),
+];
+
+/** The elevator, on each level: walk in, ride, walk out on the other floor. */
+export const LIFT_GROUND: Spot = spot({ id: "lift-ground", at: [-7.4, 0.3], node: "EL", face: -PI / 2, activity: "look", cat: "rest", say: "", where: "in the elevator", emoji: [] });
+export const LIFT_ROOF: Spot = spot({ id: "lift-roof", at: [-5.9, 0.3], node: "RL", face: -PI / 2, activity: "look", cat: "rest", say: "", where: "in the elevator", emoji: [], roof: true });
+
+const onRoof = (s: SpotInit): Spot => spot({ ...s, roof: true });
+
+/** The rooftop: a sky deck with a fire pit, loungers, a BBQ and a telescope; a garden; views over the railings. */
+export const ROOF_SPOTS: Spot[] = [
+  onRoof({ id: "roof-view-1", at: [11.0, 23.3], node: "RT1", approach: [[11.0, 18.0]], face: 0, activity: "look", cat: "nature", say: "Fresh air!", where: "on the roof", emoji: ["🌤️", "😌"] }),
+  onRoof({ id: "roof-view-2", at: [16.5, 23.3], node: "RT", approach: [[16.5, 18.0]], face: 0, activity: "look", cat: "nature", say: "What a view!", where: "on the roof", emoji: ["🏙️", "✨"] }),
+  onRoof({ id: "roof-view-3", at: [25.3, 20.6], node: "RE", approach: [[24.0, 20.6]], face: PI / 2, activity: "look", cat: "nature", say: "Breathe in that sky", where: "on the roof", emoji: ["☁️", "🕊️"] }),
+  onRoof({ id: "roof-koi", at: [21.0, 16.6], node: "RT", face: PI, activity: "look", cat: "nature", say: "I can see the koi!", where: "at the courtyard railing", emoji: ["🐟", "👀"] }),
+  onRoof({ id: "roof-courtyard", at: [15.4, 12.0], node: "RS", face: PI / 2, activity: "look", cat: "nature", say: "The garden looks tiny", where: "at the courtyard railing", emoji: ["🌳", "😮"] }),
+  onRoof({ id: "roof-telescope", at: [24.8, 22.8], node: "RE", approach: [[24.0, 21.8]], face: PI / 4, activity: "look", cat: "nature", say: "Spotting planes", where: "at the roof telescope", emoji: ["🔭", "✈️"] }),
+  onRoof({ id: "roof-lounger-1", at: [12.0, 20.0], node: "RT1", approach: [[12.0, 18.4]], face: 0, seat: 0.3, activity: "nap", cat: "rest", say: "Sunbathing on the roof", where: "on a roof lounger", emoji: ["😎", "☀️"] }),
+  onRoof({ id: "roof-lounger-2", at: [13.4, 20.0], node: "RT1", approach: [[13.4, 18.4]], face: 0, seat: 0.3, activity: "rest", cat: "rest", say: "Cloud watching", where: "on a roof lounger", emoji: ["☁️", "😌"] }),
+  onRoof({ id: "roof-fire-a", at: [18.4, 20.5], node: "RT", approach: [[18.4, 18.0]], face: PI / 2, seat: 0.42, activity: "chat", cat: "chat", say: "Roof chat!", where: "by the fire pit", emoji: ["🔥", "💬"], pair: "roof-fire-b" }),
+  onRoof({ id: "roof-fire-b", at: [20.6, 20.5], node: "RT", approach: [[20.6, 18.0]], face: -PI / 2, seat: 0.42, activity: "chat", cat: "chat", say: "Love it up here", where: "by the fire pit", emoji: ["🔥", "😄"], pair: "roof-fire-a" }),
+  onRoof({ id: "roof-bbq", at: [23.9, 19.0], node: "RE", face: PI / 2, activity: "look", cat: "food", say: "Grilling some corn", where: "at the roof BBQ", emoji: ["🌽", "🔥"] }),
+  onRoof({ id: "roof-herbs", at: [-1.0, 15.0], node: "RW", face: 0, activity: "look", cat: "nature", say: "Picking fresh basil", where: "in the roof garden", emoji: ["🌿", "😋"] }),
+  onRoof({ id: "roof-veg", at: [3.0, 15.0], node: "RG", face: 0, activity: "look", cat: "nature", say: "Watering the tomatoes", where: "in the roof garden", emoji: ["🍅", "💧"] }),
+  onRoof({ id: "roof-flowers", at: [7.0, 15.0], node: "RG", face: 0, activity: "look", cat: "nature", say: "Smell these flowers", where: "in the roof garden", emoji: ["🌸", "🐝"] }),
+  onRoof({ id: "roof-bench-1", at: [-4.0, 23.0], node: "RW", approach: [[-4.0, 14.0]], face: 0, seat: 0.45, activity: "rest", cat: "rest", say: "Quiet time up here", where: "on a roof bench", emoji: ["🌤️", "😌"] }),
+  onRoof({ id: "roof-bench-2", at: [1.0, 23.0], node: "RG", approach: [[1.0, 14.0]], face: 0, seat: 0.45, activity: "read", cat: "reading", say: "Reading in the sun", where: "on a roof bench", emoji: ["📖", "☀️"] }),
+  onRoof({ id: "roof-solar", at: [-3.4, 3.0], node: "RN", face: PI / 2, activity: "look", cat: "ideas", say: "Checking the solar panels", where: "on the roof", emoji: ["☀️", "🔋"] }),
 ];
 
 /** Places idle agents wander to on their own. */
@@ -451,6 +500,9 @@ export const SPOTS: Spot[] = [
 
   // ----- zone 6: strategy hub (a few seats used day to day) -----
   ...HUB_SEATS.slice(1, 3),
+
+  // ----- the roof -----
+  ...ROOF_SPOTS,
 ];
 
 /** Places only used by office events (gatherings, chores). */
@@ -605,7 +657,8 @@ function rhythm(cat: SpotCat, hour: number) {
 // ---------- Zones: each agent has a favourite one and spends more of its breaks there ----------
 
 /** Which working zone a point on the floor belongs to (null: rooms outside the six zones). */
-export function zoneAt([x, z]: P2): ZoneId | null {
+export function zoneAt([x, z]: P2, roof = false): ZoneId | null {
+  if (roof) return null;
   if (z > 17.2) return x < 1 ? "fitness" : x < 8.5 ? "pods" : x < 17 ? "labs" : "hub";
   if (x >= 16 || z > 16) return null;
   if (z < -0.3) return x > -2.6 && x < 8 ? "social" : null;
@@ -615,7 +668,7 @@ export function zoneAt([x, z]: P2): ZoneId | null {
 
 const spotZones = new Map<string, ZoneId | null>();
 const zoneOf = (s: Spot) => {
-  if (!spotZones.has(s.id)) spotZones.set(s.id, zoneAt(s.at));
+  if (!spotZones.has(s.id)) spotZones.set(s.id, zoneAt(s.at, s.roof));
   return spotZones.get(s.id)!;
 };
 
@@ -639,6 +692,13 @@ export function setAgentZones(zones: Record<string, ZoneId | undefined>) {
   favourite = new Map(Object.entries(zones).filter((e): e is [string, ZoneId] => Boolean(e[1])));
 }
 
+/** The roof is a lift ride away: visited a bit less, but everyone goes up for lunch in the sun and the sunset. */
+function roofPull(hour: number) {
+  if (hour >= 17 && hour < 19.5) return 3;
+  if (hour >= 12 && hour < 13.5) return 1.5;
+  return hour >= 21 || hour < 7 ? 0.4 : 0.8;
+}
+
 // ---------- Who is where ----------
 
 /** Spots currently claimed, so two agents don't sit in the same chair. */
@@ -652,7 +712,9 @@ export function claimRandomSpot(agentId: string, avoid?: string): Spot | null {
   const fav = favourite.get(agentId);
   while (free.length) {
     // join a colleague who is already waiting at a table; prefer the agent's favourite zone
-    const weights = free.map((s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1) * (fav && zoneOf(s) === fav ? 4 : 1));
+    const weights = free.map(
+      (s) => rhythm(s.cat, hour) * (s.pair && present.has(s.pair) ? 5 : 1) * (fav && zoneOf(s) === fav ? 4 : 1) * (s.roof ? roofPull(hour) : 1),
+    );
     let r = Math.random() * weights.reduce((a, b) => a + b, 0);
     let s = free[free.length - 1];
     for (let i = 0; i < free.length; i++) {
@@ -699,6 +761,12 @@ export function isPresent(spotId: string) {
 
 export type WalkPhase = { kind: "seated" } | { kind: "walking"; rushing: boolean } | { kind: "spot"; spot: Spot };
 
+/** Seconds in the elevator between the floors. */
+const LIFT_RIDE = 2.5;
+
+const levelOf = (a: Anchor): 0 | 1 => ("spot" in a && a.spot.roof ? 1 : 0);
+const liftOn = (level: 0 | 1) => (level ? LIFT_ROOF : LIFT_GROUND);
+
 /** Activities you can do with a coffee in your hand. */
 const CUP_FRIENDLY = new Set<Activity>(["sip", "chat", "talk", "rest", "read", "look", "call"]);
 
@@ -726,6 +794,14 @@ export class Wanderer {
   greetT = 0;
   /** the spot in the agent's favourite zone where they're doing their current job, if not at the desk */
   workAt: Spot | null = null;
+  /** 0: ground floor, 1: the roof */
+  level: 0 | 1 = 0;
+  /** inside the elevator (not drawn) */
+  hidden = false;
+  private ride = 0;
+  private rideTo: 0 | 1 = 0;
+  /** where to go once the elevator arrives */
+  private afterRide: Anchor | null = null;
   private working = false;
   private decidedWork = false;
   private greetCooldown = 10 + Math.random() * 20;
@@ -886,6 +962,10 @@ export class Wanderer {
           this.start({ spot: from }, { home }, STROLL, "home");
         }
       }
+    } else if (this.ride > 0) {
+      // riding the elevator between the floors
+      this.ride -= dt;
+      if (this.ride <= 0) this.leaveLift();
     } else if (this.greetT > 0) {
       // saying hello to a colleague in passing: stop, face them, wave
       this.greetT -= dt;
@@ -907,7 +987,12 @@ export class Wanderer {
           this.z += (dz / d) * step;
         }
       }
-      if (this.greetT <= 0 && this.seg >= this.path.length - 1) {
+      if (this.greetT <= 0 && this.seg >= this.path.length - 1 && this.afterRide) {
+        // at the elevator: step in and ride to the other floor
+        this.hidden = true;
+        this.ride = LIFT_RIDE;
+        this.rideTo = levelOf(this.afterRide);
+      } else if (this.greetT <= 0 && this.seg >= this.path.length - 1) {
         if (this.mode === "out" && this.spot) {
           if (taken.get(this.spot.id) === this.id) present.set(this.spot.id, this.id);
           this.mode = "spot";
@@ -947,6 +1032,24 @@ export class Wanderer {
     walkers.delete(this.id);
   }
 
+  /** Step out of the elevator on the new floor and carry on (or ride back if plans changed on the way). */
+  private leaveLift() {
+    this.level = this.rideTo;
+    const lift = liftOn(this.level);
+    [this.x, this.z] = lift.at;
+    const target = this.afterRide!;
+    if (levelOf(target) !== this.level) {
+      this.rideTo = levelOf(target);
+      this.ride = LIFT_RIDE;
+      return;
+    }
+    this.hidden = false;
+    this.afterRide = null;
+    this.path = route({ spot: lift }, target);
+    this.seg = 0;
+    this.origin = { spot: lift };
+  }
+
   /** A free work spot in the agent's favourite zone, claimed for them. */
   private freeWorkSpot(): Spot | null {
     const zone = favourite.get(this.id);
@@ -973,8 +1076,10 @@ export class Wanderer {
 
   /** Two colleagues strolling past each other sometimes stop to say hello. */
   private lookForColleague() {
+    if (this.hidden) return;
     for (const other of walkers.values()) {
-      if (other === this || other.phase.kind !== "walking" || other.greetT > 0 || other.greetCooldown > 0 || other.speed >= HURRY) continue;
+      if (other === this || other.level !== this.level || other.hidden) continue;
+      if (other.phase.kind !== "walking" || other.greetT > 0 || other.greetCooldown > 0 || other.speed >= HURRY) continue;
       const dx = other.x - this.x;
       const dz = other.z - this.z;
       if (Math.hypot(dx, dz) > 1.1) continue;
@@ -995,7 +1100,7 @@ export class Wanderer {
     let pz = 0;
     if (this.phase.kind === "walking") {
       for (const other of walkers.values()) {
-        if (other === this || other.phase.kind === "seated") continue;
+        if (other === this || other.phase.kind === "seated" || other.level !== this.level || other.hidden) continue;
         const dx = this.x - other.x;
         const dz = this.z - other.z;
         const d = Math.hypot(dx, dz);
@@ -1027,7 +1132,14 @@ export class Wanderer {
   private start(from: Anchor, to: Anchor, speed: number, mode: "out" | "home") {
     if ("spot" in from) present.delete(from.spot.id);
     this.onOrder = false;
-    this.path = route(from, to);
+    // another floor: walk to the elevator first, the rest of the trip follows the ride
+    if (levelOf(to) !== this.level) {
+      this.path = route(from, { spot: liftOn(this.level) });
+      this.afterRide = to;
+    } else {
+      this.path = route(from, to);
+      this.afterRide = null;
+    }
     this.seg = 0;
     this.origin = from;
     this.speed = speed;
@@ -1038,14 +1150,31 @@ export class Wanderer {
   private goHome(home: Home) {
     releaseSpot(this.id);
     this.holding = null;
-    if (this.mode === "spot" && this.spot) {
+    if (this.ride > 0) {
+      // in the elevator: ride on, then come straight back down to the desk
+      this.afterRide = { home };
+      this.speed = RUSH;
+      this.mode = "home";
+      this.phase = { kind: "walking", rushing: true };
+    } else if (this.mode === "spot" && this.spot) {
       this.start({ spot: this.spot }, { home }, RUSH, "home");
     } else if (this.mode === "out") {
-      // retrace the current trip, then continue home if it started at another spot
-      let back: P2[] = [[this.x, this.z], ...this.path.slice(0, this.seg + 1).reverse()];
-      if ("spot" in this.origin) back = back.concat(route(this.origin, { home }).slice(1));
-      this.path = back;
-      this.seg = 0;
+      if (this.level === 1 && this.afterRide) {
+        // already on the way to the elevator down
+        this.afterRide = { home };
+      } else {
+        // retrace the current trip, then continue home (via the elevator from the roof)
+        let back: P2[] = [[this.x, this.z], ...this.path.slice(0, this.seg + 1).reverse()];
+        if (this.level === 0) {
+          if ("spot" in this.origin) back = back.concat(route(this.origin, { home }).slice(1));
+          this.afterRide = null;
+        } else {
+          if ("spot" in this.origin && this.origin.spot !== LIFT_ROOF) back = back.concat(route(this.origin, { spot: LIFT_ROOF }).slice(1));
+          this.afterRide = { home };
+        }
+        this.path = back;
+        this.seg = 0;
+      }
       this.speed = RUSH;
       this.mode = "home";
       this.phase = { kind: "walking", rushing: true };

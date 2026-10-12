@@ -32,6 +32,7 @@
 | 🧠 **Think mode** | Agents write reasoning notes before answering, streamed live onto their desk PCs. |
 | 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
 | 🏙️ **A living office** | 13 animal agents work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
+| 🌤️ **Rooftop** | A second level: switch the view to the roof, where agents ride the elevator up for fresh air, a sky deck, a fire pit and a roof garden. |
 | ☕ **Tap for coffee** | Click the café counter (or Robo the barista) to buy the whole team a round. |
 | 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
 | 🌏 **English and ไทย** | The whole app, the 3D speech bubbles and the AI answers switch language. |
@@ -51,6 +52,9 @@
   <tr>
     <td width="50%"><img src="docs/screenshots/coffee-round.jpg" alt="The lobby café full of agents during a coffee round, Robo the barista behind the counter" /><br /><sub><b>Coffee round</b>: tap the counter and the team heads to the café.</sub></td>
     <td width="50%"><img src="docs/screenshots/gaming-and-servers.jpg" alt="Two agents playing on the RGB gaming PCs next to the server room with its rack rows and cable trays" /><br /><sub><b>Gaming rigs and server room</b>: duo queue on custom RGB PCs.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/rooftop.jpg" alt="The rooftop: solar panels, HVAC units, a roof garden with a greenhouse, a wooden sky deck with a fire pit and loungers, glass railings, and the open courtyard over the garden" width="85%" /><br /><sub><b>Rooftop</b>: a sky deck, roof garden and solar panels, with the courtyard open to the sky.</sub></td>
   </tr>
   <tr>
     <td colspan="2" align="center"><img src="docs/screenshots/task-composer.jpg" alt="The new task box with a picture and a text file attached and Think mode selected" width="70%" /><br /><sub><b>New task</b>: attach pictures and files, and choose Fast or Think.</sub></td>
@@ -77,6 +81,7 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 | ☕ | **Lobby café** | Counter with a pastry case, back bar with an espresso machine, grinder and syrups, chalkboard menus, café tables and a sofa lounge. **Robo the barista** shuttles between the machine, the till and the pickup. Agents queue, order, collect their cup and sit down, or take it back to their desk. **Click the counter or Robo** for a coffee round. |
 | 🖥️ | **Server room** | Two rows of 42U racks with server faces and blinking status LEDs (red during a server alarm), a perforated raised floor with a cold aisle, yellow ladder cable trays, a precision cooling unit, a UPS cabinet and fire-suppression cylinders. |
 | 🎮 | **Game room** | Two high-end custom gaming PCs (glass-sided RGB towers, wide screens where the level scrolls while someone plays, RGB keyboards, racing chairs), an arcade cabinet and foosball. |
+| 🌤️ | **Rooftop** (second level) | The **Rooftop** button on the 3D view lifts the camera to the roof: blue sky (orange at sunset, deep blue at night), drifting clouds and birds. A **sky deck** with glass railings, a fire pit (lit after dark), sun loungers, an umbrella, a BBQ, a telescope and string lights; a **roof garden** with raised beds, a greenhouse and benches; **solar panels**, HVAC units with spinning fans, a water tank, a satellite dish and an antenna with a blinking warning light. The garden courtyard is left open, so you can look down at the koi pond. Agents **take the elevator** up and down (they step in, ride, and walk out on the other floor), go up most around lunch and sunset, and the camera follows a selected agent between floors. |
 | 💻 | **Every desk** | A custom PC tower with a tempered-glass side, RGB fans and a front light strip that cycle through colours. |
 
 ### Life in the office
@@ -87,8 +92,8 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 - **Little routines**: agents queue at the café, order from Robo, collect a cup and carry it around; stop to say hello when they pass a colleague; and stretch, sip from a mug, read or check their phone at their desk between jobs.
 - **Two-person activities need two people.** Ping-pong, foosball, the touch-table brainstorm and café chats start with an invitation: the agent asks the nearest free colleague, both hurry over and play the same game. If nobody's free they pick something else, and if a partner gets called away the other wraps up.
 - **Max makes his rounds.** Between tasks he checks on the desks, reviews the roadmap in the hub, rehearses on the town-hall stage, visits the labs, grabs a coffee and says hi to Robo. He hurries back to the projector when work arrives.
-- **20 office events**, timed to the hour: coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
-- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 32,000+ routes and a 3-hour simulation with zero collisions.
+- **21 office events**, timed to the hour: rooftop hangout, coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
+- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 43,000+ routes (both floors and the elevator trips between them) and a 3-hour simulation with zero collisions.
 - **Smooth**: static furniture is merged into a few big meshes after each render, so the whole office draws in about 2,000 calls a frame, and all PCs share one set of RGB materials.
 
 ## 🤖 The team
