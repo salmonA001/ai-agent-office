@@ -1,11 +1,12 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CanvasTexture,
   DoubleSide,
   type Group,
+  Color,
   type InstancedMesh,
   type Mesh,
   type MeshBasicMaterial,
@@ -19,7 +20,9 @@ import { type Key, type Lang, translate } from "@/lib/i18n";
 import type { DecorItem, FloorStyle, Phase } from "@/lib/office-custom";
 import { currentEventKind } from "./office-events";
 import type { ZoneId } from "./camera-focus";
-import { walkers } from "./office-nav";
+import { isPresent, walkers } from "./office-nav";
+import { PcTower } from "./pc";
+import { rgbMaterials } from "./rgb";
 import { useStill } from "@/lib/motion";
 import { clip, seeded, useDisposable } from "./scene-utils";
 import { DYNAMIC, StaticMerge } from "./static-merge";
@@ -1275,6 +1278,112 @@ function Arcade({ p, hue }: { p: V3; hue: number }) {
   );
 }
 
+/** A side-scrolling game for the gaming PCs: sky, hills, platforms, coins and a score. */
+function gameTexture(seed: number) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 192;
+  const g = c.getContext("2d")!;
+  const rnd = seeded(seed);
+  const sky = g.createLinearGradient(0, 0, 0, 192);
+  sky.addColorStop(0, seed % 2 ? "#1e1b4b" : "#0ea5e9");
+  sky.addColorStop(1, seed % 2 ? "#7c3aed" : "#bae6fd");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 192);
+  g.fillStyle = seed % 2 ? "#312e81" : "#22c55e";
+  for (let x = -40; x < 560; x += 120) {
+    g.beginPath();
+    g.ellipse(x + rnd() * 40, 175, 80, 55 + rnd() * 25, 0, Math.PI, 0);
+    g.fill();
+  }
+  g.fillStyle = "#78350f";
+  g.fillRect(0, 168, 512, 24);
+  for (let i = 0; i < 6; i++) {
+    const x = 20 + i * 85 + rnd() * 20;
+    const y = 70 + rnd() * 60;
+    g.fillStyle = "#f59e0b";
+    g.fillRect(x, y, 50, 10);
+    g.fillStyle = "#fde047";
+    g.beginPath();
+    g.arc(x + 25, y - 14, 6, 0, Math.PI * 2);
+    g.fill();
+  }
+  // the hero and a monster
+  g.fillStyle = "#ef4444";
+  g.fillRect(150, 140, 16, 28);
+  g.fillStyle = "#a855f7";
+  g.beginPath();
+  g.arc(330, 156, 12, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#ffffff";
+  g.font = "bold 18px monospace";
+  g.fillText("SCORE 0" + Math.floor(rnd() * 900 + 100), 12, 24);
+  return finish(c, [1, 1]);
+}
+
+/**
+ * A high-end custom gaming setup: desk with RGB underglow, a big screen (the game scrolls while
+ * someone plays), a glass-sided RGB tower, RGB keyboard and a racing chair.
+ */
+function GamingRig({ x, spot, seed, accent }: { x: number; spot: string; seed: number; accent: string }) {
+  const tex = useDisposable(() => gameTexture(seed), `game-${seed}`);
+  const screen = useRef<MeshBasicMaterial>(null);
+  const still = useStill();
+  const m = rgbMaterials();
+  const z = FLOOR.z0 + 0.4;
+  useFrame((_, dt) => {
+    const mat = screen.current;
+    if (!mat) return;
+    const playing = isPresent(spot);
+    // the level scrolls past while someone plays
+    if (playing && !still && mat.map) mat.map.offset.x = (mat.map.offset.x + dt * 0.09) % 1;
+    mat.color.set(playing ? "#ffffff" : "#4b5263");
+  });
+  return (
+    <group>
+      {/* desk and racing chair (static) */}
+      <B s={[1.1, 0.05, 0.6]} p={[x, 0.75, z]} c="#111827" rough={0.3} />
+      {[-0.5, 0.5].map((dx) => (
+        <B key={dx} s={[0.05, 0.73, 0.5]} p={[x + dx, 0.365, z]} c="#1f2937" />
+      ))}
+      <B s={[0.9, 0.003, 0.32]} p={[x - 0.05, 0.777, z + 0.12]} c="#0b0d12" rough={1} />
+      <group position={[x, 0, -4.85]}>
+        <mesh position={[0, 0.04, 0]}>
+          <cylinderGeometry args={[0.28, 0.28, 0.04, 5]} />
+          <meshStandardMaterial color="#111827" />
+        </mesh>
+        <B s={[0.06, 0.38, 0.06]} p={[0, 0.25, 0]} c="#374151" metal={0.6} />
+        <B s={[0.5, 0.09, 0.5]} p={[0, 0.48, 0]} c="#111827" />
+        <B s={[0.5, 0.8, 0.09]} p={[0, 0.92, 0.23]} c="#111827" />
+        <B s={[0.14, 0.78, 0.095]} p={[0, 0.92, 0.232]} c={accent} />
+        <B s={[0.32, 0.16, 0.1]} p={[0, 1.38, 0.235]} c="#111827" />
+        {[-0.27, 0.27].map((dx) => (
+          <B key={dx} s={[0.05, 0.05, 0.36]} p={[dx, 0.68, 0.02]} c="#1f2937" />
+        ))}
+      </group>
+      {/* the parts that glow and move */}
+      <group userData={DYNAMIC}>
+        <mesh position={[x, 0.735, z + 0.302]} material={m.strip}>
+          <boxGeometry args={[1.04, 0.012, 0.004]} />
+        </mesh>
+        <B s={[0.82, 0.4, 0.035]} p={[x - 0.1, 1.17, z - 0.17]} c="#0b0d12" />
+        <mesh position={[x - 0.1, 1.17, z - 0.151]}>
+          <planeGeometry args={[0.78, 0.36]} />
+          <meshBasicMaterial ref={screen} map={tex} toneMapped={false} />
+        </mesh>
+        <B s={[0.05, 0.2, 0.05]} p={[x - 0.1, 0.87, z - 0.19]} c="#1f2937" />
+        <B s={[0.24, 0.015, 0.16]} p={[x - 0.1, 0.78, z - 0.19]} c="#1f2937" />
+        <PcTower p={[x + 0.4, 0.775, z]} on s={1.4} />
+        <B s={[0.42, 0.02, 0.13]} p={[x - 0.12, 0.79, z + 0.12]} c="#0b0d12" />
+        <mesh position={[x - 0.12, 0.8005, z + 0.12]} rotation-x={-Math.PI / 2} material={m.fans}>
+          <planeGeometry args={[0.38, 0.1]} />
+        </mesh>
+        <B s={[0.06, 0.025, 0.1]} p={[x + 0.18, 0.79, z + 0.12]} c="#111827" />
+      </group>
+    </group>
+  );
+}
+
 function GameRoom() {
   const tiles = useDisposable(() => tileTexture("#2a2340", "#3b3157", [4, 5]), "game-floor");
   const neon = useDisposable(neonTexture, "neon");
@@ -1287,8 +1396,9 @@ function GameRoom() {
         <planeGeometry args={[2.2, 0.55]} />
         <meshBasicMaterial map={neon} transparent toneMapped={false} />
       </mesh>
-      <Arcade p={[9.0, 0, -5.55]} hue={0.78} />
-      <Arcade p={[10.05, 0, -5.55]} hue={0.52} />
+      <GamingRig x={8.75} spot="rig-1" seed={3} accent="#dc2626" />
+      <GamingRig x={9.95} spot="rig-2" seed={8} accent="#2563eb" />
+      <Arcade p={[10.95, 0, -5.55]} hue={0.78} />
       {/* foosball table */}
       <group position={[10.1, 0, -3.2]}>
         <B s={[1.3, 0.25, 0.75]} p={[0, 0.72, 0]} c="#0f766e" />
@@ -1318,51 +1428,170 @@ function GameRoom() {
   );
 }
 
-/** Server racks with blinking LEDs; they flash red during a server alarm. */
-function ServerRack({ p, seed }: { p: V3; seed: number }) {
-  const leds = useRef<(MeshBasicMaterial | null)[]>([]);
+/** Front of a rack: stacked 1U/2U servers with drive bays and vents. */
+function serverFaceTexture() {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 384;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#07080a";
+  g.fillRect(0, 0, 128, 384);
+  let y = 6;
+  let i = 0;
+  while (y < 376) {
+    const h = i % 5 === 2 ? 36 : 18;
+    g.fillStyle = i % 7 === 4 ? "#0b0d10" : "#23272e";
+    g.fillRect(4, y, 120, h - 2);
+    g.fillStyle = "#3a4049";
+    for (let b = 0; b < (h > 20 ? 8 : 4); b++) g.fillRect(8 + b * 13, y + 3, 10, h - 8);
+    g.fillStyle = "#14171c";
+    for (let v = 0; v < 6; v++) g.fillRect(70 + v * 6, y + 4, 3, h - 10);
+    y += h;
+    i++;
+  }
+  return finish(c, [1, 1]);
+}
+
+/** Raised-floor tiles, every other one perforated for the cold air. */
+function perforatedTexture(repeat: [number, number]) {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#c9d0d8";
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = "#9aa4af";
+  for (let yy = 8; yy < 64; yy += 7) for (let xx = 8; xx < 64; xx += 7) g.fillRect(xx, yy, 3, 3);
+  for (let yy = 72; yy < 128; yy += 7) for (let xx = 72; xx < 128; xx += 7) g.fillRect(xx, yy, 3, 3);
+  g.fillStyle = "#8a939d";
+  g.fillRect(0, 63, 128, 2);
+  g.fillRect(63, 0, 2, 128);
+  return finish(c, repeat);
+}
+
+const LEDS_PER_RACK = 18;
+
+/** A 42U rack (front +z before rotation) with server faces and blinking status LEDs; red during a server alarm. */
+function ServerRack({ p, r = 0, seed }: { p: V3; r?: number; seed: number }) {
+  const face = useDisposable(serverFaceTexture, "server-face");
+  const leds = useRef<InstancedMesh>(null);
   const still = useStill();
+  const [color] = useState(() => new Color());
+  useLayoutEffect(() => {
+    const mesh = leds.current;
+    if (!mesh) return;
+    const o = new Object3D();
+    for (let i = 0; i < LEDS_PER_RACK; i++) {
+      o.position.set(i % 2 ? 0.255 : 0.225, 0.14 + Math.floor(i / 2) * 0.2 + (i % 2) * 0.05, 0.456);
+      o.updateMatrix();
+      mesh.setMatrixAt(i, o.matrix);
+      mesh.setColorAt(i, color.set("#34d399"));
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }, [color]);
   useFrame(({ clock }) => {
+    const mesh = leds.current;
+    if (!mesh?.instanceColor) return;
     const alarm = currentEventKind() === "server";
     const t = clock.elapsedTime;
-    leds.current.forEach((m, i) => {
-      if (!m) return;
-      const on = still ? true : Math.sin(t * (alarm ? 12 : 3 + (i % 4)) + i * 1.7 + seed) > (alarm ? -0.2 : 0.1);
-      m.color.set(alarm ? (on ? "#ef4444" : "#450a0a") : on ? (i % 3 ? "#34d399" : "#60a5fa") : "#052e16");
-    });
+    for (let i = 0; i < LEDS_PER_RACK; i++) {
+      const on = still || Math.sin(t * (alarm ? 12 : 3 + (i % 5)) + i * 1.7 + seed * 3) > (alarm ? -0.2 : 0.1);
+      color.set(alarm ? (on ? "#ef4444" : "#450a0a") : on ? (i % 5 === 0 ? "#f59e0b" : i % 3 ? "#34d399" : "#60a5fa") : "#052e16");
+      mesh.setColorAt(i, color);
+    }
+    mesh.instanceColor.needsUpdate = true;
   });
   return (
-    <group userData={DYNAMIC} position={p}>
-      <B s={[0.7, 2.0, 0.9]} p={[0, 1.0, 0]} c="#111827" rough={0.4} metal={0.3} />
-      {Array.from({ length: 12 }, (_, i) => (
-        <mesh key={i} position={[-0.22 + (i % 3) * 0.22, 0.4 + Math.floor(i / 3) * 0.4, 0.455]}>
-          <planeGeometry args={[0.12, 0.04]} />
-          <meshBasicMaterial
-            ref={(m) => {
-              leds.current[i] = m;
-            }}
-            color="#34d399"
-            toneMapped={false}
-          />
-        </mesh>
+    <group position={p} rotation-y={r}>
+      <B s={[0.66, 2.0, 0.9]} p={[0, 1.0, 0]} c="#111317" rough={0.45} metal={0.35} />
+      <B s={[0.68, 0.05, 0.92]} p={[0, 2.02, 0]} c="#1f2329" />
+      <mesh position={[0, 1.0, 0.452]}>
+        <planeGeometry args={[0.6, 1.88]} />
+        <meshStandardMaterial map={face} roughness={0.5} metalness={0.2} />
+      </mesh>
+      <instancedMesh ref={leds} args={[undefined, undefined, LEDS_PER_RACK]} userData={DYNAMIC}>
+        <planeGeometry args={[0.04, 0.02]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
+    </group>
+  );
+}
+
+/** Yellow ladder cable tray along x (or z with `alongZ`) just above the racks. */
+function CableTray({ a, b, at, alongZ = false }: { a: number; b: number; at: number; alongZ?: boolean }) {
+  const len = b - a;
+  const mid = (a + b) / 2;
+  const rungs = Math.round(len / 0.3);
+  const P = (u: number, w: number, y: number): V3 => (alongZ ? [at + w, y, u] : [u, y, at + w]);
+  const S = (l: number, w: number, h: number): V3 => (alongZ ? [w, h, l] : [l, h, w]);
+  return (
+    <group>
+      {[-0.18, 0.18].map((w) => (
+        <B key={w} s={S(len, 0.03, 0.05)} p={P(mid, w, 2.2)} c="#eab308" metal={0.3} />
       ))}
+      {Array.from({ length: rungs + 1 }, (_, i) => (
+        <B key={i} s={S(0.03, 0.36, 0.02)} p={P(a + (i * len) / rungs, 0, 2.19)} c="#ca8a04" />
+      ))}
+      {/* bundles of network cable in the tray */}
+      <B s={S(len, 0.12, 0.05)} p={P(mid, -0.06, 2.22)} c="#2563eb" rough={0.9} />
+      <B s={S(len, 0.1, 0.05)} p={P(mid, 0.07, 2.22)} c="#f59e0b" rough={0.9} />
     </group>
   );
 }
 
 function ServerRoom() {
-  const tiles = useDisposable(() => tileTexture("#d6dbe1", "#b8c0c9", [4, 5]), "server-floor");
+  const tiles = useDisposable(() => perforatedTexture([6, 9]), "server-floor-perf");
   const { x0, x1 } = SERVER;
+  const north = [12.75, 13.45, 14.15, 14.85, 15.55];
+  const west = [-4.2, -3.5, -2.8];
   return (
     <group>
       <Floor x0={x0} x1={x1} z0={FLOOR.z0} z1={CORRIDOR.z0} map={tiles} />
-      <ServerRack p={[13.0, 0, -5.45]} seed={1} />
-      <ServerRack p={[14.0, 0, -5.45]} seed={2} />
-      <ServerRack p={[15.0, 0, -5.45]} seed={3} />
-      {/* cooling unit */}
-      <B s={[0.5, 1.6, 0.6]} p={[15.6, 0.8, -2.0]} c="#e5e7eb" />
-      <B s={[0.02, 1.2, 0.45]} p={[15.34, 0.9, -2.0]} c="#9ca3af" />
-      <Art p={[x0 + 0.09, 1.45, -2.4]} r={Math.PI / 2} seed={5} w={0.6} h={0.45} />
+      {/* cold aisle: a strip of blue light on the floor in front of the racks */}
+      <Floor x0={12.4} x1={15.9} z0={-4.95} z1={-4.85} color="#60a5fa" y={0.006} />
+      {north.map((x, i) => (
+        <ServerRack key={x} p={[x, 0, -5.45]} seed={i} />
+      ))}
+      {west.map((z, i) => (
+        <ServerRack key={z} p={[12.65, 0, z]} r={Math.PI / 2} seed={i + 5} />
+      ))}
+      <CableTray a={12.42} b={15.88} at={-5.45} />
+      <CableTray a={-4.6} b={-2.45} at={12.65} alongZ />
+      {/* cables dropping into each rack */}
+      {north.map((x) => (
+        <mesh key={x} position={[x - 0.15, 2.1, -5.55]}>
+          <cylinderGeometry args={[0.025, 0.025, 0.2, 6]} />
+          <meshStandardMaterial color="#2563eb" />
+        </mesh>
+      ))}
+      {/* precision cooling unit (CRAC) */}
+      <B s={[0.6, 1.9, 1.0]} p={[15.6, 0.95, -2.6]} c="#e5e7eb" rough={0.5} />
+      {Array.from({ length: 8 }, (_, i) => (
+        <B key={i} s={[0.02, 0.04, 0.8]} p={[15.29, 0.4 + i * 0.14, -2.6]} c="#9ca3af" />
+      ))}
+      <mesh position={[15.288, 1.65, -2.85]} rotation-y={-Math.PI / 2}>
+        <planeGeometry args={[0.22, 0.14]} />
+        <meshBasicMaterial color="#22d3ee" toneMapped={false} />
+      </mesh>
+      {/* UPS battery cabinet */}
+      <B s={[0.5, 1.25, 0.6]} p={[15.65, 0.625, -3.75]} c="#1f2937" rough={0.5} />
+      <mesh position={[15.398, 1.0, -3.75]} rotation-y={-Math.PI / 2}>
+        <planeGeometry args={[0.16, 0.1]} />
+        <meshBasicMaterial color="#84cc16" toneMapped={false} />
+      </mesh>
+      {/* fire suppression cylinders */}
+      {[-0.75, -1.05].map((z) => (
+        <group key={z} position={[15.72, 0, z]}>
+          <mesh position={[0, 0.55, 0]} castShadow>
+            <cylinderGeometry args={[0.12, 0.12, 1.1, 16]} />
+            <meshStandardMaterial color="#dc2626" roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 1.15, 0]}>
+            <cylinderGeometry args={[0.04, 0.06, 0.1, 10]} />
+            <meshStandardMaterial color="#9ca3af" metalness={0.7} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -1385,15 +1614,219 @@ function grassTexture(repeat: [number, number]) {
 }
 
 /** Company name on the lobby wall. */
-function LogoWall({ text }: { text: string }) {
-  const tex = useDisposable(() => neonTexture(text.trim() || "AI AGENT OFFICE", "#34d399"), `logo:${text}`);
+/** The café's neon name over the back bar. */
+function CafeSign({ text }: { text: string }) {
+  const name = `${(text.trim() || "AGENT HQ").toUpperCase()} CAFÉ`;
+  const tex = useDisposable(() => neonTexture(name, "#fbbf24"), `cafe:${name}`);
   return (
-    <group position={[18.5, 1.65, FLOOR.z0 + 0.1]}>
-      <B s={[3.3, 1.1, 0.06]} p={[0, 0, 0]} c="#2b2f33" />
-      <mesh position={[0, 0, 0.035]}>
-        <planeGeometry args={[3.1, 0.78]} />
+    <group position={[19.3, 1.98, FLOOR.z0 + 0.1]}>
+      <B s={[2.5, 0.62, 0.05]} p={[0, 0, 0]} c="#1c1410" />
+      <mesh position={[0, 0, 0.03]}>
+        <planeGeometry args={[2.4, 0.56]} />
         <meshBasicMaterial map={tex} transparent toneMapped={false} />
       </mesh>
+    </group>
+  );
+}
+
+/** Chalkboard menu. */
+function menuTexture(side: number) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 224;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#1f2d26";
+  g.fillRect(0, 0, 256, 224);
+  g.strokeStyle = "#a16207";
+  g.lineWidth = 10;
+  g.strokeRect(5, 5, 246, 214);
+  g.fillStyle = "#fef3c7";
+  g.font = "bold 30px Georgia, serif";
+  g.textAlign = "center";
+  g.fillText(side ? "PASTRY" : "COFFEE", 128, 46);
+  g.font = "20px Georgia, serif";
+  const items = side
+    ? [["Croissant", "55"], ["Muffin", "50"], ["Donut", "45"], ["Banana bread", "60"], ["Matcha", "70"]]
+    : [["Espresso", "55"], ["Latte", "65"], ["Mocha", "70"], ["Cold brew", "75"], ["Flat white", "65"]];
+  items.forEach(([name, price], i) => {
+    g.textAlign = "left";
+    g.fillText(name, 24, 86 + i * 28);
+    g.textAlign = "right";
+    g.fillText(price, 232, 86 + i * 28);
+  });
+  return finish(c, [1, 1]);
+}
+
+function MenuBoard({ x, side }: { x: number; side: number }) {
+  const tex = useDisposable(() => menuTexture(side), `menu${side}`);
+  return (
+    <group position={[x, 1.85, FLOOR.z0 + 0.1]}>
+      <mesh>
+        <planeGeometry args={[0.92, 0.8]} />
+        <meshStandardMaterial map={tex} roughness={0.95} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Round café table with a chair on each side (the seats face the table). */
+function CafeTable({ x, z }: { x: number; z: number }) {
+  return (
+    <group>
+      <group position={[x, 0, z]}>
+        <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[0.4, 0.4, 0.04, 28]} />
+          <meshStandardMaterial color="#f5f5f4" roughness={0.3} />
+        </mesh>
+        <mesh position={[0, 0.37, 0]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.74, 8]} />
+          <meshStandardMaterial color="#2b2f33" />
+        </mesh>
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[0.22, 0.22, 0.04, 16]} />
+          <meshStandardMaterial color="#2b2f33" />
+        </mesh>
+        <mesh position={[0.05, 0.79, 0.12]}>
+          <cylinderGeometry args={[0.035, 0.035, 0.06, 10]} />
+          <meshStandardMaterial color="#fde68a" />
+        </mesh>
+      </group>
+      <WoodChair p={[x - 0.65, 0, z]} r={-Math.PI / 2} />
+      <WoodChair p={[x + 0.65, 0, z]} r={Math.PI / 2} />
+    </group>
+  );
+}
+
+/** Pastries in the glass case: croissants, muffins and donuts. */
+function Pastries() {
+  const colors = ["#d97706", "#92400e", "#f9a8d4", "#fbbf24"];
+  return (
+    <group>
+      {Array.from({ length: 8 }, (_, i) => {
+        const x = 17.6 + (i % 4) * 0.26;
+        const y = i < 4 ? 1.12 : 1.31;
+        const kind = (i + Math.floor(i / 4)) % 3;
+        return kind === 0 ? (
+          <mesh key={i} position={[x, y, -4.5]} rotation-x={Math.PI / 2}>
+            <torusGeometry args={[0.06, 0.03, 8, 12, Math.PI]} />
+            <meshStandardMaterial color={colors[0]} />
+          </mesh>
+        ) : kind === 1 ? (
+          <mesh key={i} position={[x, y + 0.02, -4.5]}>
+            <sphereGeometry args={[0.06, 12, 8]} />
+            <meshStandardMaterial color={colors[1]} />
+          </mesh>
+        ) : (
+          <mesh key={i} position={[x, y, -4.5]} rotation-x={Math.PI / 2}>
+            <torusGeometry args={[0.055, 0.025, 8, 14]} />
+            <meshStandardMaterial color={colors[2 + (i % 2)]} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+/** The lobby café: counter with a pastry case, back bar with the espresso machine, menus and tables. */
+function LobbyCafe({ decor }: { decor: FloorDecor }) {
+  const planks = useDisposable(() => plankTexture(28, 38, 42, [6, 4], 21), "cafe-floor");
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      <Floor x0={EAST.x0} x1={22.4} z0={FLOOR.z0} z1={-1.4} map={planks} y={0.004} />
+      <CafeSign text={decor.sign} />
+      <MenuBoard x={17.4} side={0} />
+      <MenuBoard x={21.2} side={1} />
+      {/* back bar */}
+      <B s={[4.7, 0.95, 0.6]} p={[19.3, 0.475, -5.65]} c="#3b2a20" />
+      <B s={[4.75, 0.04, 0.62]} p={[19.3, 0.97, -5.65]} c="#d6d3cf" rough={0.3} />
+      {/* espresso machine */}
+      <group position={[19.3, 0.99, -5.62]}>
+        <B s={[0.78, 0.42, 0.42]} p={[0, 0.21, 0]} c="#c0c4c9" metal={0.7} rough={0.25} />
+        <B s={[0.78, 0.03, 0.42]} p={[0, 0.43, 0]} c="#8b9096" metal={0.6} />
+        {[-0.2, 0.2].map((x) => (
+          <group key={x}>
+            <mesh position={[x, 0.16, 0.24]}>
+              <cylinderGeometry args={[0.05, 0.05, 0.06, 14]} />
+              <meshStandardMaterial color="#6b7280" metalness={0.8} roughness={0.2} />
+            </mesh>
+            <B s={[0.04, 0.03, 0.16]} p={[x, 0.13, 0.33]} c="#111827" />
+          </group>
+        ))}
+        <B s={[0.7, 0.03, 0.14]} p={[0, 0.015, 0.25]} c="#4b5563" metal={0.6} />
+        {[-0.24, -0.08, 0.08].map((x) => (
+          <mesh key={x} position={[x, 0.48, 0]}>
+            <cylinderGeometry args={[0.04, 0.035, 0.07, 10]} />
+            <meshStandardMaterial color="#ffffff" />
+          </mesh>
+        ))}
+      </group>
+      <Steam p={[19.1, 1.46, -5.42]} />
+      {/* grinder */}
+      <group position={[18.45, 0.99, -5.65]}>
+        <B s={[0.2, 0.3, 0.24]} p={[0, 0.15, 0]} c="#111827" />
+        <mesh position={[0, 0.39, 0]}>
+          <cylinderGeometry args={[0.1, 0.06, 0.18, 14]} />
+          <meshStandardMaterial color="#5b3a22" />
+        </mesh>
+      </group>
+      {/* syrups */}
+      {["#b91c1c", "#d97706", "#65a30d", "#7c3aed", "#0e7490"].map((c, i) => (
+        <mesh key={c} position={[20.45 + i * 0.16, 1.11, -5.7]}>
+          <cylinderGeometry args={[0.04, 0.04, 0.24, 10]} />
+          <meshStandardMaterial color={c} roughness={0.2} />
+        </mesh>
+      ))}
+      {/* counter: wood slats under a white top */}
+      <B s={[4.7, 1.0, 0.7]} p={[19.3, 0.5, -4.5]} c="#8a5a3a" />
+      {Array.from({ length: 16 }, (_, i) => (
+        <B key={i} s={[0.06, 0.92, 0.02]} p={[17.1 + i * 0.29, 0.48, -4.145]} c="#6f4529" />
+      ))}
+      <B s={[4.8, 0.05, 0.8]} p={[19.3, 1.025, -4.5]} c="#f5f5f4" rough={0.3} />
+      {/* pastry case */}
+      <B s={[1.12, 0.02, 0.58]} p={[18.0, 1.22, -4.5]} c="#e5e7eb" />
+      <Pastries />
+      <mesh position={[18.0, 1.26, -4.5]}>
+        <boxGeometry args={[1.14, 0.42, 0.6]} />
+        <meshStandardMaterial color="#e0f2fe" transparent opacity={0.28} depthWrite={false} roughness={0.05} />
+      </mesh>
+      {/* till and pickup cups */}
+      <group position={[20.4, 1.05, -4.62]} rotation-x={-0.35}>
+        <B s={[0.3, 0.2, 0.03]} p={[0, 0.14, 0]} c="#111827" />
+        <mesh position={[0, 0.14, 0.016]}>
+          <planeGeometry args={[0.26, 0.16]} />
+          <meshBasicMaterial color="#34d399" toneMapped={false} />
+        </mesh>
+      </group>
+      {[21.15, 21.35, 21.55].map((x) => (
+        <group key={x} position={[x, 1.05, -4.35]}>
+          <mesh position={[0, 0.06, 0]}>
+            <cylinderGeometry args={[0.045, 0.035, 0.12, 12]} />
+            <meshStandardMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[0, 0.125, 0]}>
+            <cylinderGeometry args={[0.048, 0.048, 0.015, 12]} />
+            <meshStandardMaterial color="#5b3a22" />
+          </mesh>
+        </group>
+      ))}
+      {/* pendant lights over the counter */}
+      {[18.2, 19.3, 20.4].map((x) => (
+        <group key={x} position={[x, 0, -4.5]}>
+          <mesh position={[0, 2.3, 0]}>
+            <cylinderGeometry args={[0.006, 0.006, 0.3, 4]} />
+            <meshStandardMaterial color="#111827" />
+          </mesh>
+          <mesh position={[0, 2.1, 0]}>
+            <coneGeometry args={[0.14, 0.14, 16, 1, true]} />
+            <meshStandardMaterial color="#1f2937" side={DoubleSide} />
+          </mesh>
+          <Bulb p={[0, 2.03, 0]} r={0.05} on={glow} />
+        </group>
+      ))}
+      <CafeTable x={17.4} z={-2.3} />
+      <CafeTable x={19.4} z={-2.3} />
+      <PalmPlant p={[22.2, 0, -5.4]} />
     </group>
   );
 }
@@ -1420,25 +1853,10 @@ function Lobby({ decor }: { decor: FloorDecor }) {
     <group>
       <Floor x0={x0} x1={FLOOR.x1} z0={FLOOR.z0} z1={lobbyZ} map={marble} />
       {decor.items.rugs && <Rug x0={22.9} x1={25.6} z0={-3.8} z1={-1.2} color={decor.accent} />}
-      <LogoWall text={decor.sign} />
+      <LobbyCafe decor={decor} />
       <LobbyLift x={23.2} />
       <LobbyLift x={24.8} />
-      {/* reception desk with a monitor, a bell and a plant */}
-      <group position={[20.5, 0, -2.6]}>
-        <B s={[3.0, 1.05, 0.7]} p={[0, 0.525, 0]} c="#f8fafc" />
-        <B s={[3.1, 0.05, 0.82]} p={[0, 1.075, 0]} c="#2b2f33" rough={0.3} />
-        <B s={[3.0, 0.85, 0.03]} p={[0, 0.5, 0.36]} c={decor.accent} />
-        <B s={[0.45, 0.3, 0.03]} p={[0.9, 1.3, -0.15]} c="#111827" />
-        <mesh position={[-0.9, 1.13, 0.1]}>
-          <sphereGeometry args={[0.06, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#f2c14e" metalness={0.7} roughness={0.3} />
-        </mesh>
-        <mesh position={[-1.25, 1.17, -0.15]}>
-          <icosahedronGeometry args={[0.1, 0]} />
-          <meshStandardMaterial color="#52b788" flatShading />
-        </mesh>
-      </group>
-      {/* waiting area */}
+      {/* café lounge: coffee table and sofa */}
       <group position={[23.6, 0, -2.5]}>
         <B s={[0.6, 0.04, 0.6]} p={[0, 0.42, 0]} c="#c08850" />
         <B s={[0.08, 0.4, 0.08]} p={[0, 0.2, 0]} c="#2b2f33" />
@@ -1446,7 +1864,6 @@ function Lobby({ decor }: { decor: FloorDecor }) {
         <B s={[0.22, 0.02, 0.3]} p={[0.1, 0.47, -0.05]} c="#2e86de" r={-0.2} />
       </group>
       <Sofa p={[24.8, 0, -2.5]} r={-Math.PI / 2} color="#cbd5e1" />
-      <PalmPlant p={[16.8, 0, -5.3]} s={1.1} />
       <PalmPlant p={[25.3, 0, -5.3]} s={1.1} />
       {decor.items.plants && <PalmPlant p={[25.3, 0, 0.6]} />}
       {/* glass entrance doors in the east wall */}

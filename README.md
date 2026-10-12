@@ -31,7 +31,8 @@
 | 🧑‍💼 **A real team** | Max the manager splits each task, picks the right agent for each part and explains why, then merges the results and double-checks the answer. |
 | 🧠 **Think mode** | Agents write reasoning notes before answering, streamed live onto their desk PCs. |
 | 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
-| 🏙️ **A living office** | 13 animal agents work, take breaks, play ping-pong in pairs, meditate and hold strategy meetings across six working zones. |
+| 🏙️ **A living office** | 13 animal agents work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
+| ☕ **Tap for coffee** | Click the café counter (or Robo the barista) to buy the whole team a round. |
 | 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
 | 🌏 **English and ไทย** | The whole app, the 3D speech bubbles and the AI answers switch language. |
 | 🎨 **Make it yours** | 5 themes, floors, desks, decorations, your office name in neon, break rules and time of day. |
@@ -46,6 +47,10 @@
   <tr>
     <td width="50%"><img src="docs/screenshots/fitness-and-pods.jpg" alt="Fitness studio with treadmills, bike, weights, yoga mats and meditation cushions, next to four glass focus pods" /><br /><sub><b>Fitness & Meditation</b> and <b>Deep Focus Pods</b>.</sub></td>
     <td width="50%"><img src="docs/screenshots/follow-agent.jpg" alt="The camera following Kai the wellness coach, with his info panel open" /><br /><sub><b>Follow cam</b>: click an agent to follow them and see what they're up to.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/coffee-round.jpg" alt="The lobby café full of agents during a coffee round, Robo the barista behind the counter" /><br /><sub><b>Coffee round</b>: tap the counter and the team heads to the café.</sub></td>
+    <td width="50%"><img src="docs/screenshots/gaming-and-servers.jpg" alt="Two agents playing on the RGB gaming PCs next to the server room with its rack rows and cable trays" /><br /><sub><b>Gaming rigs and server room</b>: duo queue on custom RGB PCs.</sub></td>
   </tr>
   <tr>
     <td colspan="2" align="center"><img src="docs/screenshots/task-composer.jpg" alt="The new task box with a picture and a text file attached and Think mode selected" width="70%" /><br /><sub><b>New task</b>: attach pictures and files, and choose Fast or Think.</sub></td>
@@ -65,15 +70,24 @@ Six working zones, each with a name board. The toolbar on the 3D view flies the 
 | 🧘 | **Fitness & Meditation** | Treadmills, an exercise bike and dumbbells on a rubber floor; yoga mats with a mirror wall; a tatami corner with cushions and candles. |
 | 📊 | **Strategy Hub** | A formal conference room: table for ten, walnut wall, video-call screen, speakers and a pendant light. |
 
-Beyond the zones there's a meeting room with a live projector, a lounge, a game room, a server room, a reception **lobby** with Robo the robot, a **town hall** and a **garden** with a koi pond, picnic table, loungers and a hammock.
+Beyond the zones there's a meeting room with a live projector, a lounge, a **game room** with two custom gaming rigs, a **server room**, a **lobby café**, a **town hall** and a **garden** with a koi pond, picnic table, loungers and a hammock.
+
+| | Room | What's there |
+|---|---|---|
+| ☕ | **Lobby café** | Counter with a pastry case, back bar with an espresso machine, grinder and syrups, chalkboard menus, café tables and a sofa lounge. **Robo the barista** shuttles between the machine, the till and the pickup. Agents queue, order, collect their cup and sit down, or take it back to their desk. **Click the counter or Robo** for a coffee round. |
+| 🖥️ | **Server room** | Two rows of 42U racks with server faces and blinking status LEDs (red during a server alarm), a perforated raised floor with a cold aisle, yellow ladder cable trays, a precision cooling unit, a UPS cabinet and fire-suppression cylinders. |
+| 🎮 | **Game room** | Two high-end custom gaming PCs (glass-sided RGB towers, wide screens where the level scrolls while someone plays, RGB keyboards, racing chairs), an arcade cabinet and foosball. |
+| 💻 | **Every desk** | A custom PC tower with a tempered-glass side, RGB fans and a front light strip that cycle through colours. |
 
 ### Life in the office
 
 - **Breaks follow the clock**: coffee in the morning, a lunch rush at noon, games after five. Each agent spends most breaks in their favourite zone.
+- **Little routines**: agents queue at the café, order from Robo, collect a cup and carry it around; stop to say hello when they pass a colleague; and stretch, sip from a mug, read or check their phone at their desk between jobs.
 - **Two-person activities need two people.** Ping-pong, foosball, the touch-table brainstorm and café chats start with an invitation: the agent asks the nearest free colleague, both hurry over and play the same game. If nobody's free they pick something else, and if a partner gets called away the other wraps up.
 - **Max makes his rounds.** Between tasks he checks on the desks, reviews the roadmap in the hub, rehearses on the town-hall stage, visits the labs, grabs a coffee and says hi to Robo. He hurries back to the projector when work arrives.
-- **19 office events**, timed to the hour: strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
-- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 29,000+ routes and a 3-hour simulation with zero collisions.
+- **20 office events**, timed to the hour: coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
+- Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 32,000+ routes and a 3-hour simulation with zero collisions.
+- **Smooth**: static furniture is merged into a few big meshes after each render, so the whole office draws in about 2,000 calls a frame, and all PCs share one set of RGB materials.
 
 ## 🤖 The team
 

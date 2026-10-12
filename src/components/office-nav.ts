@@ -96,6 +96,9 @@ const NODES: Record<string, P2> = {
   LO1: [17.5, 0.3],
   LO2: [21.5, 0.3],
   LO3: [24.15, 0.3],
+  // lobby café: in front of the counter, and between the tables
+  CF: [20.85, -3.0],
+  CT: [18.4, -1.2],
   TH1: [17.5, 2.9],
   TA1: [17.5, 3.7],
   TA2: [17.5, 5.1],
@@ -185,6 +188,8 @@ const EDGES: [string, string][] = [
   ["CE", "LO1"],
   ["LO1", "LO2"],
   ["LO2", "LO3"],
+  ["LO2", "CF"],
+  ["LO1", "CT"],
   ["LO1", "TH1"],
   ["TH1", "TA1"],
   ["TA1", "TA2"],
@@ -233,7 +238,8 @@ export type Activity =
   | "type"
   | "draw"
   | "lift"
-  | "meditate";
+  | "meditate"
+  | "game";
 
 /** What kind of break a spot is; the user can switch whole categories off. */
 export type SpotCat = "food" | "games" | "rest" | "reading" | "exercise" | "chat" | "calls" | "nature" | "ideas" | "focus";
@@ -261,9 +267,13 @@ export type Spot = {
   pair?: string;
   /** decoration that has to be switched on for this spot to exist */
   needs?: string;
-  /** hands the agent something to carry (a parcel), or takes it back */
+  /** hands the agent something to carry (a parcel, a coffee), or takes it back */
   gives?: string;
   takes?: boolean;
+  /** seconds to stay (default: a normal break of 10-24 s) */
+  dwell?: number;
+  /** where to go next, in a little routine (queue -> order -> pick up -> sit down) */
+  next?: string[];
 };
 
 const PI = Math.PI;
@@ -302,6 +312,21 @@ const HUB_SEATS: Spot[] = [
   spot({ id: "hub-e", at: [24.0, 20.6], node: "FD5", approach: [[24.8, 20.6]], face: -PI / 2, seat: 0.5, activity: "type", cat: "ideas", say: "Crunching the numbers", where: "in the strategy hub", emoji: ["📈", "🧮"] }),
 ];
 
+/** Café seats you can take a coffee to. */
+export const CAFE_SEATS = ["cafe-t1a", "cafe-t1b", "cafe-t2a", "cafe-t2b", "waiting-1", "waiting-2"];
+
+/** The lobby café: queue, order from Robo, pick up the cup, then sit down with it (or take it back to the desk). */
+const CAFE_SPOTS: Spot[] = [
+  spot({ id: "cafe-queue", at: [20.4, -2.95], node: "CF", face: PI, activity: "look", cat: "food", say: "Waiting in line", where: "in the café queue", emoji: ["☕", "⏳"], dwell: 3, next: ["cafe-order"] }),
+  spot({ id: "cafe-order", at: [20.4, -3.75], node: "CF", face: PI, activity: "talk", cat: "food", say: "One oat latte, please!", where: "at the café counter", emoji: ["☕", "🤖"], dwell: 4, next: ["cafe-pickup"] }),
+  spot({ id: "cafe-pickup", at: [21.35, -3.75], node: "CF", face: PI, activity: "look", cat: "food", say: "Thanks, Robo!", where: "at the café pickup", emoji: ["☕", "😋"], dwell: 3, gives: "cup", next: CAFE_SEATS }),
+  spot({ id: "cafe-pastry", at: [18.0, -3.75], node: "CF", face: PI, activity: "look", cat: "food", say: "Ooh, croissants!", where: "at the pastry case", emoji: ["🥐", "😍"], dwell: 5, next: ["cafe-queue"] }),
+  spot({ id: "cafe-t1a", at: [16.75, -2.3], node: "CT", approach: [[16.75, -1.2]], face: PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Latte art!", where: "at a café table", emoji: ["☕", "🎨"] }),
+  spot({ id: "cafe-t1b", at: [18.05, -2.3], node: "CT", face: -PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Best coffee in town", where: "at a café table", emoji: ["☕", "😌"] }),
+  spot({ id: "cafe-t2a", at: [18.75, -2.3], node: "CT", face: PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Coffee break", where: "at a café table", emoji: ["☕", "🥐"] }),
+  spot({ id: "cafe-t2b", at: [20.05, -2.3], node: "CT", approach: [[20.05, -1.2]], face: -PI / 2, seat: 0.45, activity: "sip", cat: "food", say: "Mmm, cold brew", where: "at a café table", emoji: ["🧋", "😋"] }),
+];
+
 /** Places idle agents wander to on their own. */
 export const SPOTS: Spot[] = [
   // ----- north rooms -----
@@ -317,13 +342,15 @@ export const SPOTS: Spot[] = [
   spot({ id: "sofa-a", at: [5.2, -4.3], node: "L1", approach: [[4.7, -3.65], [5.2, -3.65]], face: 0, seat: 0.46, activity: "nap", cat: "rest", say: "Power nap", where: "on the lounge sofa", emoji: ["💤", "🛋️"] }),
   spot({ id: "sofa-b", at: [6.0, -4.3], node: "L1", approach: [[4.7, -3.65], [6.0, -3.65]], face: 0, seat: 0.46, activity: "rest", cat: "rest", say: "Chilling", where: "on the lounge sofa", emoji: ["😌", "🎧"] }),
   spot({ id: "vending", at: [6.65, -4.95], node: "L4", face: 2.3, activity: "look", cat: "food", say: "Hmm, which snack?", where: "at the vending machine", emoji: ["🍫", "🥤", "🤔"] }),
-  spot({ id: "arcade-1", at: [9.0, -4.85], node: "G1", approach: [[9.15, -1.6], [9.15, -4.3]], face: PI, activity: "play", cat: "games", say: "High score!", where: "at the arcade machine", emoji: ["🕹️", "👾", "😆"] }),
-  spot({ id: "arcade-2", at: [10.05, -4.85], node: "G1", approach: [[11.05, -2.3], [11.05, -4.3]], face: PI, activity: "play", cat: "games", say: "One more go", where: "at the arcade machine", emoji: ["🕹️", "👾", "🎮"] }),
+  spot({ id: "rig-1", at: [8.75, -4.85], node: "G1", approach: [[9.15, -1.6], [8.75, -4.3]], face: PI, seat: 0.5, activity: "game", cat: "games", say: "Duo queue!", where: "at the gaming PCs", emoji: ["🎮", "🔥", "😆"], pair: "rig-2" }),
+  spot({ id: "rig-2", at: [9.95, -4.85], node: "G1", approach: [[9.15, -1.6], [9.15, -4.3], [9.95, -4.3]], face: PI, seat: 0.5, activity: "game", cat: "games", say: "GG, well played!", where: "at the gaming PCs", emoji: ["🎮", "🏆", "😎"], pair: "rig-1" }),
+  spot({ id: "arcade-2", at: [10.95, -4.85], node: "G1", approach: [[11.05, -2.3], [11.05, -4.3]], face: PI, activity: "play", cat: "games", say: "One more go", where: "at the arcade machine", emoji: ["🕹️", "👾", "🎮"] }),
   spot({ id: "foos-a", at: [9.15, -3.2], node: "G1", approach: [[9.15, -1.6]], face: PI / 2, activity: "play", cat: "games", say: "Foosball!", where: "at the foosball table", emoji: ["⚽", "😆"], pair: "foos-b" }),
   spot({ id: "foos-b", at: [11.05, -3.2], node: "G1", approach: [[11.05, -2.3]], face: -PI / 2, activity: "play", cat: "games", say: "Goal!", where: "at the foosball table", emoji: ["⚽", "🙌"], pair: "foos-a" }),
   spot({ id: "game-beanbag", at: [11.5, -1.4], node: "G1", face: -2.48, seat: 0.32, activity: "rest", cat: "games", say: "Gaming break", where: "in the game room", emoji: ["🎮", "😌"] }),
   spot({ id: "server-check", at: [14.0, -4.55], node: "S0", face: PI, activity: "look", cat: "ideas", say: "Checking the servers", where: "in the server room", emoji: ["🖥️", "🔧"] }),
   spot({ id: "server-2", at: [15.0, -4.55], node: "S0", approach: [[15.0, -1.6]], face: PI, activity: "look", cat: "ideas", say: "Cables everywhere", where: "in the server room", emoji: ["🔌", "🤓"] }),
+  spot({ id: "server-west", at: [13.6, -3.5], node: "S0", approach: [[13.6, -1.6]], face: -PI / 2, activity: "type", cat: "ideas", say: "Swapping a hot drive", where: "in the server room", emoji: ["💾", "🛠️"] }),
 
   // ----- library nook (west) -----
   spot({ id: "read-a", at: [-6.6, 3.2], node: "W1", approach: [[-6.2, 2.3]], face: PI / 2, seat: 0.42, activity: "read", cat: "reading", say: "Good book", where: "in the library armchair", emoji: ["📖", "🤓", "☕"] }),
@@ -375,10 +402,9 @@ export const SPOTS: Spot[] = [
   }),
 
   // ----- east wing: lobby -----
-  spot({ id: "reception", at: [20.5, -1.7], node: "LO2", face: PI, activity: "talk", cat: "chat", say: "Hi, Robo!", where: "at the reception desk", emoji: ["🤖", "👋"] }),
-  spot({ id: "waiting-1", at: [24.65, -2.9], node: "LO3", approach: [[24.15, -1.2], [24.15, -2.9]], face: -PI / 2, seat: 0.46, activity: "rest", cat: "rest", say: "Waiting for a visitor", where: "in the lobby", emoji: ["⏳", "🙂"] }),
-  spot({ id: "waiting-2", at: [24.65, -2.1], node: "LO3", approach: [[24.15, -1.2]], face: -PI / 2, seat: 0.46, activity: "read", cat: "reading", say: "Reading a magazine", where: "in the lobby", emoji: ["📰", "😌"] }),
-  spot({ id: "lobby-logo", at: [18.5, -4.6], node: "LO1", approach: [[18.5, -1.0]], face: PI, activity: "look", cat: "nature", say: "Office selfie!", where: "at the logo wall", emoji: ["🤳", "✨"] }),
+  ...CAFE_SPOTS,
+  spot({ id: "waiting-1", at: [24.65, -2.9], node: "LO3", approach: [[24.15, -1.2], [24.15, -2.9]], face: -PI / 2, seat: 0.46, activity: "sip", cat: "food", say: "Coffee on the sofa", where: "in the café lounge", emoji: ["☕", "🛋️"] }),
+  spot({ id: "waiting-2", at: [24.65, -2.1], node: "LO3", approach: [[24.15, -1.2]], face: -PI / 2, seat: 0.46, activity: "read", cat: "reading", say: "Reading the news", where: "in the café lounge", emoji: ["📰", "☕"] }),
 
   // ----- east wing: town hall (front row) -----
   ...TOWN_HALL_SEATS.slice(1, 4),
@@ -454,7 +480,7 @@ export const EVENT_SPOTS = {
     spot({ id: "plant-w", at: [-6.85, 10.35], node: "WN", approach: [[-5.6, 10.3]], face: -PI / 2, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌱"] }),
     spot({ id: "plant-e", at: [15.0, 5.6], node: "RE1", approach: [[13.0, 5.6]], face: PI / 2, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌿"] }),
     spot({ id: "plant-l", at: [3.95, -5.0], node: "L1", approach: [[4.7, -3.65], [4.45, -4.5]], face: -2.36, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌱"] }),
-    spot({ id: "plant-g", at: [11.35, -4.95], node: "G1", approach: [[11.05, -2.3], [11.05, -4.3]], face: 2.51, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌿"] }),
+    spot({ id: "plant-g", at: [11.75, -4.85], node: "G1", approach: [[11.05, -2.3], [11.05, -4.3]], face: PI, activity: "look", cat: "nature", say: "Watering plants", where: "watering the plants", emoji: ["💧", "🌿"] }),
   ],
   meeting: [
     spot({ id: "mc-s1", at: [-6.4, -2.25], node: "M1", approach: [[-6.4, -1.3]], face: PI, seat: 0.5, activity: "rest", cat: "ideas", say: "Morning, team!", where: "at the stand-up", emoji: ["📋", "☕"] }),
@@ -660,6 +686,9 @@ export function isPresent(spotId: string) {
 
 export type WalkPhase = { kind: "seated" } | { kind: "walking"; rushing: boolean } | { kind: "spot"; spot: Spot };
 
+/** Activities you can do with a coffee in your hand. */
+const CUP_FRIENDLY = new Set<Activity>(["sip", "chat", "talk", "rest", "read", "look", "call"]);
+
 export const STROLL = 0.9;
 export const HURRY = 1.6;
 export const RUSH = 4;
@@ -678,8 +707,12 @@ export class Wanderer {
   /** sideways nudge so passing agents step around each other (visual only) */
   offX = 0;
   offZ = 0;
-  /** what the agent is carrying, e.g. a parcel during a delivery */
+  /** what the agent is carrying, e.g. a parcel during a delivery or a coffee */
   holding: string | null = null;
+  /** seconds left of a hello with a colleague passing by (both stop and wave) */
+  greetT = 0;
+  private greetCooldown = 10 + Math.random() * 20;
+  private greetYaw = 0;
   readonly id: string;
   readonly seatY: number;
   private mode: "seated" | "out" | "spot" | "home" = "seated";
@@ -756,6 +789,7 @@ export class Wanderer {
     dt = Math.min(dt, 0.1);
     this.home = home;
     this.busy = busy;
+    this.greetCooldown -= dt;
     this.canWander = canWander;
     if ((busy || !canWander) && this.mode !== "seated") {
       this.orders = [];
@@ -799,7 +833,9 @@ export class Wanderer {
       } else if (!this.ordered && this.timer <= 0) {
         const from = this.spot;
         const homeChance = breakScale > 1 ? 0.65 : breakScale < 1 ? 0.15 : 0.35;
-        const next = Math.random() < homeChance ? null : claimRandomSpot(this.id, from.id);
+        // routines (the café queue) lead on to the next step; a coffee is sometimes taken back to the desk
+        const step = from.next ? this.claimNext(from) : null;
+        const next = step ?? (Math.random() < homeChance ? null : claimRandomSpot(this.id, from.id));
         if (next) {
           this.spot = next;
           this.start({ spot: from }, { spot: next }, next.pair ? HURRY : STROLL, "out");
@@ -808,9 +844,14 @@ export class Wanderer {
           this.start({ spot: from }, { home }, STROLL, "home");
         }
       }
+    } else if (this.greetT > 0) {
+      // saying hello to a colleague in passing: stop, face them, wave
+      this.greetT -= dt;
+      targetYaw = this.greetYaw;
     } else {
+      if (this.speed < HURRY && this.greetCooldown <= 0) this.lookForColleague();
       const target = this.path[this.seg + 1];
-      if (target) {
+      if (target && this.greetT <= 0) {
         const dx = target[0] - this.x;
         const dz = target[1] - this.z;
         const d = Math.hypot(dx, dz);
@@ -824,12 +865,12 @@ export class Wanderer {
           this.z += (dz / d) * step;
         }
       }
-      if (this.seg >= this.path.length - 1) {
+      if (this.greetT <= 0 && this.seg >= this.path.length - 1) {
         if (this.mode === "out" && this.spot) {
           if (taken.get(this.spot.id) === this.id) present.set(this.spot.id, this.id);
           this.mode = "spot";
           // under orders: short stops along a route, then stay until the event ends
-          this.timer = this.ordered ? (this.orders.length ? this.dwellEach : 1e9) : 10 + Math.random() * 14;
+          this.timer = this.ordered ? (this.orders.length ? this.dwellEach : 1e9) : (this.spot.dwell ?? 10 + Math.random() * 14);
           // the second player has arrived: both play the same length of game
           const mate = this.spot.pair && !this.ordered ? present.get(this.spot.pair) : undefined;
           if (mate) {
@@ -840,6 +881,8 @@ export class Wanderer {
           this.phase = { kind: "spot", spot: this.spot };
           if (this.spot.gives) this.holding = this.spot.gives;
           if (this.spot.takes) this.holding = null;
+          // a coffee goes along to chats and quiet spots, but not to the gym or the arcade
+          if (this.holding === "cup" && !this.spot.gives && !CUP_FRIENDLY.has(this.spot.activity)) this.holding = null;
         } else {
           this.mode = "seated";
           this.spot = null;
@@ -860,6 +903,36 @@ export class Wanderer {
   dispose() {
     releaseSpot(this.id);
     walkers.delete(this.id);
+  }
+
+  /** The next step of a routine, if that spot is free. */
+  private claimNext(from: Spot): Spot | null {
+    const options = from
+      .next!.map((id) => spotById(id))
+      .filter((s) => s && usable(s) && (!taken.has(s.id) || taken.get(s.id) === this.id));
+    // with a coffee in hand, sometimes just head back to the desk with it
+    if (!options.length || (from.gives === "cup" && Math.random() < 0.3)) return null;
+    const s = options[Math.floor(Math.random() * options.length)];
+    claimSpot(this.id, s);
+    return s;
+  }
+
+  /** Two colleagues strolling past each other sometimes stop to say hello. */
+  private lookForColleague() {
+    for (const other of walkers.values()) {
+      if (other === this || other.phase.kind !== "walking" || other.greetT > 0 || other.greetCooldown > 0 || other.speed >= HURRY) continue;
+      const dx = other.x - this.x;
+      const dz = other.z - this.z;
+      if (Math.hypot(dx, dz) > 1.1) continue;
+      // whatever happens, neither asks again for a while
+      this.greetCooldown = other.greetCooldown = 25 + Math.random() * 20;
+      if (Math.random() < 0.45) {
+        this.greetT = other.greetT = 1.8;
+        this.greetYaw = Math.atan2(dx, dz);
+        other.greetYaw = Math.atan2(-dx, -dz);
+      }
+      return;
+    }
   }
 
   /** Walking agents ease sideways away from anyone close by, so two people in an aisle pass instead of merging. */
@@ -942,7 +1015,7 @@ export const MAX_ROUNDS: Spot[] = [
   spot({ id: "max-stage", at: [21.0, 3.05], node: "TH1", approach: [], face: 0, activity: "talk", cat: "ideas", say: "Rehearsing the all-hands", where: "on the town hall stage", emoji: ["🎤", "📣"] }),
   spot({ id: "max-labs", at: [14.3, 20.2], node: "FC1", approach: [[13.6, 20.2]], face: -PI / 2, activity: "look", cat: "ideas", say: "Love these ideas!", where: "in the creative labs", emoji: ["💡", "👏"] }),
   spot({ id: "max-coffee", at: [-2.4, 14.6], node: "RW3", approach: [[-2.4, 13.8]], face: 0, activity: "sip", cat: "food", say: "Coffee with the team", where: "at the café bar", emoji: ["☕", "😊"] }),
-  spot({ id: "max-lobby", at: [21.7, -1.7], node: "LO2", approach: [[21.7, 0.3]], face: PI, activity: "talk", cat: "chat", say: "Morning, Robo!", where: "at the reception desk", emoji: ["🤖", "👋"] }),
+  spot({ id: "max-lobby", at: [19.6, -3.75], node: "CF", approach: [], face: PI, activity: "talk", cat: "chat", say: "Morning, Robo! The usual.", where: "at the café counter", emoji: ["🤖", "☕"] }),
 ];
 
 export type ManagerPhase = { kind: "base" } | { kind: "walking"; rushing: boolean } | { kind: "visit"; spot: Spot };

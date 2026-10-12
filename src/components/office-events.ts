@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { type Key, type Msg, translate } from "@/lib/i18n";
-import { type Activity, EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
+import { type Activity, CAFE_SEATS, EVENT_SPOTS, type Spot, spotById, walkers } from "./office-nav";
 
 /**
  * Game layer: random office events that idle agents react to, plus XP and levels.
@@ -28,7 +28,8 @@ export type EventKind =
   | "allhands"
   | "picnic"
   | "strategy"
-  | "hackathon";
+  | "hackathon"
+  | "cafe";
 
 export type ActiveEvent = {
   id: number;
@@ -305,7 +306,7 @@ const EVENTS: EventDef[] = [
     seconds: 28,
     xp: 10,
     plan: (idle) => ({
-      orders: gather(idle, ["arcade-1", "arcade-2", "foos-a", "foos-b"].map((id) => spotById(id))),
+      orders: gather(idle, ["rig-1", "rig-2", "arcade-2", "foos-a", "foos-b"].map((id) => spotById(id))),
       dwell: 4,
       text: { key: "ge.arcade.text" },
     }),
@@ -478,6 +479,26 @@ const EVENTS: EventDef[] = [
       ),
       dwell: 4,
       text: { key: "ge.hackathon.text" },
+    }),
+  },
+  {
+    kind: "cafe",
+    icon: "☕",
+    // the café is a long walk from the south wing
+    seconds: 45,
+    xp: 8,
+    when: (h) => between(h, 7.5, 11) || between(h, 14, 16.5),
+    plan: (idle) => ({
+      // everyone free gets a coffee from Robo and takes it to a café seat
+      orders: gather(
+        idle,
+        [...CAFE_SEATS, "cafe-pickup", "cafe-order", "cafe-queue", "cafe-pastry"].map((id) => ({
+          ...fix(spotById(id), "Thanks for the coffee!", ["☕", "😋", "🤖"], "at the coffee round in the café", "sip"),
+          gives: "cup",
+        })),
+      ),
+      dwell: 4,
+      text: { key: "ge.cafe.text" },
     }),
   },
   {

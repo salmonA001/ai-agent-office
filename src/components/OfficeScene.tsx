@@ -22,7 +22,7 @@ import { phaseAt, useOfficeMinutes } from "@/lib/office-clock";
 import { ACCENT_COLORS, DECOR_ITEMS, DESK_COLORS, type Phase, useOfficeCustom } from "@/lib/office-custom";
 import { setAgentActivity } from "./agent-activity";
 import { getFollow, releaseFocus, setFollow, useCameraFocus, ZONE_LOOK } from "./camera-focus";
-import { currentEventKind, setAutoEvents, setEventHour, tickEvents, useGame } from "./office-events";
+import { currentEventKind, setAutoEvents, setEventHour, tickEvents, triggerEvent, useGame } from "./office-events";
 import {
   type Activity,
   DESK_SCALE,
@@ -45,6 +45,8 @@ import {
 import { useStill } from "@/lib/motion";
 import { clip, hash, useDisposable } from "./scene-utils";
 import { StaticMerge } from "./static-merge";
+import { PcTower } from "./pc";
+import { tickRgb } from "./rgb";
 
 export type { BoardLine } from "./OfficeFloor";
 export type DeskState = { working: string[]; lastDoneAt?: number; screen: ScreenState };
@@ -118,7 +120,9 @@ type Action =
   | "nap"
   | "carry"
   | "lift"
-  | "meditate";
+  | "meditate"
+  | "game"
+  | "stretch";
 type Look = { species: Species; color: string; inner: string };
 
 const LOOKS: Look[] = [
@@ -415,6 +419,7 @@ function Mochi({
   lastDoneAt,
   seed,
   scale = 1,
+  cup = false,
 }: {
   look: Look;
   accessory: Accessory;
@@ -423,6 +428,8 @@ function Mochi({
   lastDoneAt?: number;
   seed: number;
   scale?: number;
+  /** carrying a coffee in the right hand */
+  cup?: boolean;
 }) {
   const { species, color, inner } = look;
   const root = useRef<Group>(null);
@@ -541,6 +548,15 @@ function Mochi({
     } else if (action === "carry") {
       L.set(-1.35, 0, 0.3);
       R.set(-1.35, 0, -0.3);
+    } else if (action === "game") {
+      // fingers flying over keyboard and mouse
+      L.set(-1.0 + Math.sin(t * 17) * 0.08, 0, 0.14);
+      R.set(-1.05 + Math.sin(t * 23 + 1) * 0.12, 0, -0.06 + Math.sin(t * 4.5) * 0.12);
+    } else if (action === "stretch") {
+      // arms up over the head, swaying
+      const k = Math.sin(t * 1.3) * 0.2;
+      L.set(-2.85 + k, 0, -0.25);
+      R.set(-2.85 - k, 0, 0.25);
     } else if (action === "lift") {
       // alternating bicep curls
       L.set(-0.4 - Math.max(0, Math.sin(t * 3)) * 1.6, 0, -0.2);
@@ -554,6 +570,13 @@ function Mochi({
       L.set(-0.15 + Math.sin(t * 1.5) * 0.06, 0, -0.3);
       R.set(-0.15 - Math.sin(t * 1.5) * 0.06, 0, 0.3);
     }
+    // a coffee in hand: hold it up in front instead of swinging that arm
+    if (cup && !cheering && action !== "sip") R.set(-1.0, 0, -0.25);
+    if (action === "stretch" && !cheering) {
+      root.current.rotation.x = -0.12;
+      head.current.rotation.x = -0.25;
+    } else root.current.rotation.x = 0;
+    if (action === "game" && !cheering) head.current.rotation.x = 0.12 + Math.sin(t * 9) * 0.03;
     eyes.current.scale.y = (action === "nap" || action === "meditate") && !cheering ? 0.12 : t % 3.7 < 0.13 ? 0.12 : 1;
   });
 
@@ -604,7 +627,7 @@ function Mochi({
             <Ink />
           </mesh>
           <PomPom color="#ffb3d1" />
-          {action === "sip" && (
+          {(action === "sip" || cup) && (
             <mesh position={[0, -0.22, 0.06]}>
               <cylinderGeometry args={[0.055, 0.045, 0.11, 12]} />
               <Toon color="#ffffff" />
@@ -1220,6 +1243,7 @@ function AgentDeskImpl({ agent, look, state, seed, position, lang, desk }: DeskP
         <OfficeChair p={[0, 0, 0.62]} />
       </StaticMerge>
       <Workstation screen={state.screen} name={agent.name} seed={seed} lang={lang} />
+      <PcTower p={[0.6, 0.765, 0.02]} on />
     </group>
   );
 }
@@ -1266,6 +1290,7 @@ const EmptyDesk = memo(
         <StaticMerge>
           <DeskFrame look={desk} />
           <DarkMonitor />
+          <PcTower p={[0.6, 0.765, 0.02]} on={false} />
           <OfficeChair p={[0, 0, 0.45]} />
         </StaticMerge>
       </group>
@@ -1295,6 +1320,9 @@ type AvatarProps = {
   onSelect?: (id: string) => void;
 };
 
+/** Little things agents do at their desk between jobs (mostly just sitting, now and then something else). */
+const FIDGETS: Action[] = ["idle", "idle", "idle", "stretch", "sip", "phone", "idle", "read"];
+
 const ACTIVITY_ACTION: Record<Activity, Action> = {
   look: "idle",
   sip: "sip",
@@ -1311,6 +1339,7 @@ const ACTIVITY_ACTION: Record<Activity, Action> = {
   draw: "chalk",
   lift: "lift",
   meditate: "meditate",
+  game: "game",
 };
 
 // ---------- Floating emoji emotes ----------
@@ -1403,12 +1432,16 @@ function AgentAvatarImpl(props: AvatarProps) {
   const [phase, setPhase] = useState<WalkPhase>(walker.phase);
   // whether the person across the table has arrived, for chats
   const [partnerHere, setPartnerHere] = useState(false);
+  // saying hello to a colleague passing by
+  const [greeting, setGreeting] = useState(false);
+  // something to do while sitting at the desk with nothing to work on
+  const [fidget, setFidget] = useState<Action>("idle");
   useEffect(() => {
     registerWalker(walker);
     return () => walker.dispose();
   }, [walker]);
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     const g = group.current;
     if (!g) return;
     const p = live.current;
@@ -1419,6 +1452,12 @@ function AgentAvatarImpl(props: AvatarProps) {
     const pair = walker.phase.kind === "spot" ? walker.phase.spot.pair : undefined;
     const here = pair ? isPresent(pair) : false;
     if (here !== partnerHere) setPartnerHere(here);
+    const hello = walker.greetT > 0;
+    if (hello !== greeting) setGreeting(hello);
+    // every few seconds pick a new little thing to do at the desk
+    const slot = Math.floor(clock.elapsedTime / 7 + seed * 0.37);
+    const next = FIDGETS[Math.floor(hash(slot * 1.31 + seed) * FIDGETS.length)];
+    if (next !== fidget) setFidget(next);
   });
 
   // the parcel changes together with the phase, which re-renders this component
@@ -1428,14 +1467,19 @@ function AgentAvatarImpl(props: AvatarProps) {
   // two-person spots: chat or play only once the partner has arrived
   const alone = phase.kind === "spot" && !!phase.spot.pair && !partnerHere;
   const chatAlone = alone && phase.kind === "spot" && phase.spot.activity === "chat";
+  const cup = holding === "cup";
   const action: Action = seated
     ? working
       ? "write"
-      : "idle"
+      : attentive
+        ? "idle"
+        : fidget
     : phase.kind === "walking"
-      ? holding
-        ? "carry"
-        : "walk"
+      ? greeting
+        ? "wave"
+        : holding === "box"
+          ? "carry"
+          : "walk"
       : alone
         ? chatAlone
           ? "sip"
@@ -1448,9 +1492,11 @@ function AgentAvatarImpl(props: AvatarProps) {
     : phase.kind === "walking"
       ? phase.rushing
         ? translate(props.lang, "bubble.onMyWay")
-        : holding
-          ? translate(props.lang, "bubble.parcel")
-          : undefined
+        : greeting
+          ? translate(props.lang, `greet.${Math.floor(hash(seed * 3.7 + Math.floor(walker.x)) * 5)}` as Key)
+          : holding === "box"
+            ? translate(props.lang, "bubble.parcel")
+            : undefined
       : alone
         ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner")
         : phrase(props.lang, phase.spot.say);
@@ -1491,6 +1537,7 @@ function AgentAvatarImpl(props: AvatarProps) {
         action={action}
         lastDoneAt={lastDoneAt}
         seed={seed}
+        cup={cup}
       />
       <Label name={`${agent.name} · Lv${props.level}`} bubble={say} position={[0, 1.55, 0]} scale={LABEL_SCALE} lift={lift} />
     </group>
@@ -1795,22 +1842,64 @@ function EventDirector() {
   return <EventProps kind={game.event?.kind ?? currentEventKind()} />;
 }
 
-/** Robo, the robot receptionist behind the lobby desk; looks around and waves now and then. */
-function Receptionist({ lang }: { lang: Lang }) {
+/** Where Robo goes behind the counter, and which way he faces there (0: towards the café). */
+const BARISTA_STOPS: { x: number; yaw: number }[] = [
+  { x: 19.3, yaw: Math.PI },
+  { x: 21.3, yaw: 0 },
+  { x: 20.4, yaw: 0 },
+  { x: 19.3, yaw: Math.PI },
+  { x: 18.1, yaw: 0 },
+];
+
+/**
+ * Robo the barista: shuttles between the espresso machine, the till, the pickup and the pastry
+ * case, waving at customers. Click him (or the counter) to buy the whole team a coffee.
+ */
+function Barista({ lang }: { lang: Lang }) {
+  const body = useRef<Group>(null);
   const arm = useRef<Group>(null);
   const head = useRef<Group>(null);
   const eyes = useRef<Group>(null);
   const still = useStill();
-  useFrame(({ clock }) => {
-    if (still) return;
+  const [hover, setHover] = useState(false);
+  useFrame(({ clock }, dt) => {
+    const g = body.current;
+    if (!g) return;
     const t = clock.elapsedTime;
-    const waving = t % 8 < 1.6;
-    if (arm.current) arm.current.rotation.z = waving ? 2.5 + Math.sin(t * 10) * 0.35 : 0.15;
-    if (head.current) head.current.rotation.y = Math.sin(t * 0.6) * 0.35;
+    const rush = currentEventKind() === "cafe";
+    const stop = BARISTA_STOPS[Math.floor(t / (rush ? 3 : 5.5)) % BARISTA_STOPS.length];
+    const k = still ? 1 : Math.min(1, dt * 3);
+    const moving = Math.abs(stop.x - g.position.x) > 0.05;
+    g.position.x += (stop.x - g.position.x) * k;
+    const yaw = moving ? (stop.x > g.position.x ? Math.PI / 2 : -Math.PI / 2) : stop.yaw;
+    g.rotation.y += Math.atan2(Math.sin(yaw - g.rotation.y), Math.cos(yaw - g.rotation.y)) * Math.min(1, dt * 6);
+    if (still) return;
+    const serving = !moving && stop.yaw === 0;
+    if (arm.current) arm.current.rotation.z = serving && t % 5.5 < 1.4 ? 2.5 + Math.sin(t * 10) * 0.35 : moving ? 0.15 : 0.9 + Math.sin(t * 6) * 0.15;
+    if (head.current) head.current.rotation.y = serving ? Math.sin(t * 0.8) * 0.3 : 0;
     if (eyes.current) eyes.current.scale.y = t % 4 < 0.12 ? 0.15 : 1;
   });
+  const treat = (e: { stopPropagation(): void }) => {
+    e.stopPropagation();
+    triggerEvent("cafe");
+  };
+  const over = (e: { stopPropagation(): void }) => {
+    e.stopPropagation();
+    document.body.style.cursor = "pointer";
+    setHover(true);
+  };
+  const out = () => {
+    document.body.style.cursor = "";
+    setHover(false);
+  };
   return (
-    <group position={[20.5, 0, -3.5]}>
+    <group>
+      {/* invisible click target over the counter */}
+      <mesh position={[19.3, 0.6, -4.5]} onClick={treat} onPointerOver={over} onPointerOut={out}>
+        <boxGeometry args={[4.8, 1.2, 0.9]} />
+        <meshBasicMaterial visible={false} />
+      </mesh>
+      <group ref={body} position={[19.3, 0, -5.05]} onClick={treat} onPointerOver={over} onPointerOut={out}>
       <mesh position={[0, 0.12, 0]}>
         <cylinderGeometry args={[0.24, 0.3, 0.24, 24]} />
         <meshStandardMaterial color="#9ca3af" metalness={0.5} roughness={0.4} />
@@ -1818,9 +1907,14 @@ function Receptionist({ lang }: { lang: Lang }) {
       <RoundedBox args={[0.52, 0.6, 0.4]} radius={0.1} position={[0, 0.6, 0]} castShadow>
         <meshStandardMaterial color="#e5e7eb" roughness={0.35} />
       </RoundedBox>
-      <mesh position={[0, 0.66, 0.205]}>
-        <circleGeometry args={[0.07, 20]} />
-        <meshBasicMaterial color="#34d399" toneMapped={false} />
+      {/* barista apron */}
+      <mesh position={[0, 0.55, 0.205]}>
+        <planeGeometry args={[0.4, 0.42]} />
+        <meshStandardMaterial color="#5b3a22" />
+      </mesh>
+      <mesh position={[0, 0.66, 0.21]}>
+        <circleGeometry args={[0.05, 20]} />
+        <meshBasicMaterial color="#fbbf24" toneMapped={false} />
       </mesh>
       <mesh position={[-0.32, 0.62, 0]} rotation-z={-0.15}>
         <capsuleGeometry args={[0.055, 0.28, 6, 12]} />
@@ -1830,6 +1924,10 @@ function Receptionist({ lang }: { lang: Lang }) {
         <mesh position={[0, -0.18, 0]}>
           <capsuleGeometry args={[0.055, 0.28, 6, 12]} />
           <meshStandardMaterial color="#cbd5e1" />
+        </mesh>
+        <mesh position={[0, -0.36, 0.04]}>
+          <cylinderGeometry args={[0.045, 0.035, 0.1, 10]} />
+          <meshStandardMaterial color="#ffffff" />
         </mesh>
       </group>
       <group ref={head} position={[0, 1.13, 0]}>
@@ -1848,19 +1946,32 @@ function Receptionist({ lang }: { lang: Lang }) {
             </mesh>
           ))}
         </group>
-        <mesh position={[0, 0.3, 0]}>
-          <cylinderGeometry args={[0.012, 0.012, 0.2, 6]} />
-          <meshStandardMaterial color="#6b7280" />
-        </mesh>
-        <mesh position={[0, 0.42, 0]}>
-          <sphereGeometry args={[0.045, 12, 10]} />
-          <meshBasicMaterial color="#f472b6" toneMapped={false} />
+        {/* paper barista cap */}
+        <mesh position={[0, 0.24, 0]}>
+          <cylinderGeometry args={[0.2, 0.24, 0.1, 20]} />
+          <meshStandardMaterial color="#5b3a22" />
         </mesh>
       </group>
-      <Label name={translate(lang, "robo.label")} position={[0, 1.95, 0]} scale={LABEL_SCALE} />
+      <Label
+        name={translate(lang, "robo.label")}
+        bubble={hover ? translate(lang, "cafe.tap") : undefined}
+        position={[0, 1.95, 0]}
+        scale={LABEL_SCALE}
+      />
+      </group>
     </group>
   );
 }
+
+/** Cycles the RGB lighting of every custom PC in the office. */
+function RgbDriver() {
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (!still) tickRgb(clock.elapsedTime);
+  });
+  return null;
+}
+
 
 function townHallTexture(lang: Lang, allHands: boolean) {
   const c = document.createElement("canvas");
@@ -2100,7 +2211,8 @@ export default function OfficeScene({
       </group>
       <Presenter state={manager} board={board} lang={lang} selected={selectedId === "max"} onSelect={onSelectAgent} />
       <PingPongBall />
-      <Receptionist lang={lang} />
+      <Barista lang={lang} />
+      <RgbDriver />
       <TownHallScreen lang={lang} />
       {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {
         const d = deskSlot(seated.length + k);

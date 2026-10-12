@@ -64,7 +64,7 @@ export function StaticMerge({ children }: { children: ReactNode }) {
 
     const groups = new Map<string, Mesh[]>();
     const walk = (obj: Object3D) => {
-      if (obj === out || obj.userData.dynamic) return;
+      if (obj === out || obj.userData?.dynamic) return;
       if (mergeable(obj) && (obj.visible || hidden.current.has(obj))) {
         const key = keyOf(obj);
         const list = groups.get(key);
