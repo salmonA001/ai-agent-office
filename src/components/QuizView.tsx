@@ -1,10 +1,36 @@
 "use client";
 
-import { ArrowCounterClockwiseIcon, CheckCircleIcon, ExamIcon, GraduationCapIcon, ListChecksIcon, TrophyIcon, XCircleIcon } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwiseIcon,
+  CheckCircleIcon,
+  ExamIcon,
+  GraduationCapIcon,
+  ListChecksIcon,
+  TimerIcon,
+  TrophyIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import type { Quiz } from "@/lib/run-task";
 
 const LETTERS = "ABCDEF";
+
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/** Seconds left on a timed quiz (ticking once a second), or null when it isn't timed. */
+function useTimeLeft(quiz: Quiz) {
+  const [now, setNow] = useState(() => Date.now());
+  const running = !!quiz.timeLimit && !!quiz.startedAt && !quiz.checked;
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+  if (!quiz.timeLimit || !quiz.startedAt) return null;
+  const limit = quiz.only ? Math.round((quiz.timeLimit * quiz.only.length) / quiz.questions.length) : quiz.timeLimit;
+  return Math.max(0, limit - (now - quiz.startedAt) / 1000);
+}
 
 /**
  * The practice quiz: pick an answer for each question, check them all at once, and see the score
@@ -30,19 +56,37 @@ export function QuizView({
   const missed = shown.filter((i) => picked[i] !== questions[i].answer);
   const pct = shown.length ? Math.round((right.length / shown.length) * 100) : 0;
   const message = pct >= 90 ? t("quiz.great") : pct >= 60 ? t("quiz.good") : t("quiz.keep");
+  const left = useTimeLeft(quiz);
 
   const pick = (i: number, option: number) => {
     if (checked) return;
     onChange({ ...quiz, picked: picked.map((p, j) => (j === i ? option : p)) });
   };
-  const check = () => {
+  const check = (timedOut = false) => {
     const attempts = (quiz.attempts ?? 0) + 1;
     // the best score counts full runs only
     const best = quiz.only ? quiz.best : Math.max(quiz.best ?? 0, pct);
-    onChange({ ...quiz, checked: true, attempts, best });
+    onChange({ ...quiz, checked: true, attempts, best, timedOut });
   };
   const again = (only?: number[]) =>
-    onChange({ ...quiz, checked: false, only, picked: picked.map((p, j) => ((only ?? shown).includes(j) ? null : p)) });
+    onChange({
+      ...quiz,
+      checked: false,
+      timedOut: false,
+      only,
+      picked: picked.map((p, j) => ((only ?? shown).includes(j) ? null : p)),
+      ...(quiz.timeLimit ? { startedAt: Date.now() } : {}),
+    });
+
+  // a timed quiz starts its clock when it is first shown, and is checked when time runs out
+  useEffect(() => {
+    if (quiz.timeLimit && !quiz.startedAt && !quiz.checked) onChange({ ...quiz, startedAt: Date.now() });
+  }, [quiz, onChange]);
+  const timeUp = left !== null && left <= 0 && !checked;
+  useEffect(() => {
+    if (timeUp) check(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeUp]);
 
   return (
     <section aria-labelledby="quiz-heading" className="glass glow enter-pop flex flex-col gap-4 rounded-2xl border-accent/60 p-4">
@@ -51,10 +95,24 @@ export function QuizView({
           <ExamIcon size={20} weight="duotone" aria-hidden />
           {quiz.only ? t("quiz.retryTitle", { n: shown.length }) : t("quiz.title")}
         </h3>
-        <p className="text-xs text-muted tabular-nums" aria-live="polite">
-          {checked ? t("quiz.score", { right: right.length, total: shown.length, pct }) : t("quiz.progress", { n: answered, total: shown.length })}
-          {quiz.best !== undefined && ` · ${t("quiz.best", { pct: quiz.best })}`}
-        </p>
+        <div className="flex items-center gap-2">
+          {left !== null && !checked && (
+            <span
+              role="timer"
+              aria-label={t("quiz.timeLeft", { time: mmss(left) })}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ${
+                left < 60 ? "bg-danger/15 text-error" : "bg-accent/15 text-accent"
+              }`}
+            >
+              <TimerIcon size={14} weight="bold" aria-hidden />
+              {mmss(left)}
+            </span>
+          )}
+          <p className="text-xs text-muted tabular-nums" aria-live="polite">
+            {checked ? t("quiz.score", { right: right.length, total: shown.length, pct }) : t("quiz.progress", { n: answered, total: shown.length })}
+            {quiz.best !== undefined && ` · ${t("quiz.best", { pct: quiz.best })}`}
+          </p>
+        </div>
       </div>
 
       {!checked && (
@@ -70,7 +128,10 @@ export function QuizView({
             <p className="text-lg font-bold tabular-nums">
               {right.length}/{shown.length} <span className="text-sm font-semibold text-muted">({pct}%)</span>
             </p>
-            <p className="text-sm">{message}</p>
+            <p className="text-sm">
+              {quiz.timedOut && <span className="font-semibold text-error">{t("quiz.timeUp")} </span>}
+              {message}
+            </p>
           </div>
         </div>
       )}
@@ -146,7 +207,7 @@ export function QuizView({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={check}
+            onClick={() => check()}
             disabled={answered === 0}
             className="press inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
           >

@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  ArrowSquareOutIcon,
   BrainIcon,
   ExamIcon,
+  FilePdfIcon,
   FileTextIcon,
   GraduationCapIcon,
   LightningIcon,
@@ -16,9 +18,10 @@ import { setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Key, useI18n } from "@/lib/i18n";
 import type { StudyLevel, TaskKind } from "@/lib/run-task";
 import { QUIZ_SIZES } from "@/lib/study";
+import { EXAMS, type ExamGroup, examById, PAST_PAPERS } from "@/lib/exams";
 
 /** A file picked for the next task: pictures are shrunk to a data URL, text files are read as text. */
-export type ComposerFile = { id: string; name: string; kind: "image" | "text"; size: number; dataUrl?: string; text?: string };
+export type ComposerFile = { id: string; name: string; kind: "image" | "text"; size: number; dataUrl?: string; text?: string; pdf?: boolean };
 
 const MAX_FILES = 4;
 const TEXT_FILE = /\.(txt|md|markdown|csv|tsv|json|xml|ya?ml|html?|css|jsx?|tsx?|py|java|c|cpp|h|cs|go|rs|rb|php|sql|sh|log|ini|toml)$/i;
@@ -46,6 +49,16 @@ async function readFile(file: File): Promise<ComposerFile> {
     g.drawImage(bmp, (w - dw) / 2, (h - dh) / 2, dw, dh);
     bmp.close();
     return { ...base, kind: "image", dataUrl: c.toDataURL("image/jpeg", 0.85) };
+  }
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (file.size > 30e6) throw new Error("big");
+    // read in the browser; a scanned paper (pictures of pages) has no text to read
+    const { pdfText } = await import("@/lib/pdf-text");
+    try {
+      return { ...base, kind: "text", pdf: true, text: (await pdfText(file)).text };
+    } catch (err) {
+      throw new Error((err as Error).message === "scanned" ? "scanned" : "pdf");
+    }
   }
   if (file.type.startsWith("text/") || file.type === "application/json" || TEXT_FILE.test(file.name)) {
     if (file.size > 5e6) throw new Error("big");
@@ -105,12 +118,31 @@ export function TaskComposer({
   onSubmit,
 }: {
   composerRef: RefObject<HTMLTextAreaElement | null>;
-  onSubmit: (task: { text: string; files: ComposerFile[]; think: boolean; kind: TaskKind; level: StudyLevel; count: number }) => void;
+  onSubmit: (task: {
+    text: string;
+    files: ComposerFile[];
+    think: boolean;
+    kind: TaskKind;
+    level: StudyLevel;
+    count: number;
+    exam?: string;
+  }) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [kind, setKind] = useState<TaskKind>("team");
   const [level, setLevel] = useState<StudyLevel>("intermediate");
   const [count, setCount] = useState<number>(5);
+  // exam prep: a preset exam to practise for (test mode only)
+  const [examId, setExamId] = useState("");
+  const exam = kind === "test" ? examById(examId) : undefined;
+  const pickExam = (id: string) => {
+    setExamId(id);
+    const e = examById(id);
+    if (e) {
+      setLevel(e.level);
+      setCount(e.count);
+    }
+  };
   const ai = useAiSettings();
   const input = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
@@ -128,16 +160,23 @@ export function TaskComposer({
       try {
         read.push(await readFile(f));
       } catch (err) {
-        setProblem(t((err as Error).message === "big" ? "attach.tooBig" : "attach.unsupported", { name: f.name }));
+        const why = (err as Error).message;
+        setProblem(
+          t(why === "big" ? "attach.tooBig" : why === "scanned" ? "attach.scanned" : why === "pdf" ? "attach.badPdf" : "attach.unsupported", {
+            name: f.name,
+          }),
+        );
       }
     }
     if (read.length) setFiles((cur) => [...cur, ...read].slice(0, MAX_FILES));
   };
 
+  // with an exam picked, the text is only an optional focus
+  const ready = prompt.trim().length >= 3 || !!exam;
   const submit = () => {
     const text = prompt.trim();
-    if (text.length < 3) return;
-    onSubmit({ text, files, think: ai.think, kind, level, count });
+    if (!ready) return;
+    onSubmit({ text: text || (exam ? exam.name[lang] : text), files, think: ai.think, kind, level, count, ...(exam ? { exam: exam.id } : {}) });
     setPrompt("");
     setFiles([]);
     setProblem(null);
@@ -152,7 +191,14 @@ export function TaskComposer({
     { kind: "learn" as const, label: t("purpose.learn"), I: GraduationCapIcon },
     { kind: "test" as const, label: t("purpose.test"), I: ExamIcon },
   ];
-  const placeholder = kind === "learn" ? t("composer.learnPlaceholder") : kind === "test" ? t("composer.testPlaceholder") : t("composer.placeholder");
+  const placeholder = exam
+    ? t("composer.examPlaceholder")
+    : kind === "learn"
+      ? t("composer.learnPlaceholder")
+      : kind === "test"
+        ? t("composer.testPlaceholder")
+        : t("composer.placeholder");
+  const groups: ExamGroup[] = ["m4", "posn", "ijso"];
   const submitLabel = kind === "learn" ? t("composer.submitLearn") : kind === "test" ? t("composer.submitTest") : t("composer.submit");
 
   return (
@@ -206,6 +252,55 @@ export function TaskComposer({
           {t(`purpose.${kind}Hint` as Key)}
         </p>
       </div>
+      {kind === "test" && (
+        <div className="enter-drop flex flex-col gap-1.5 rounded-lg border border-line bg-well/60 p-2.5">
+          <label htmlFor="exam" className="text-xs font-semibold">
+            {t("exam.label")}
+          </label>
+          <select
+            id="exam"
+            value={examId}
+            onChange={(e) => pickExam(e.target.value)}
+            className="min-h-10 rounded-lg border border-line bg-surface px-2 text-sm text-ink transition-colors focus:border-accent/60"
+          >
+            <option value="">{t("exam.none")}</option>
+            {groups.map((g) => (
+              <optgroup key={g} label={t(`exam.group.${g}` as Key)}>
+                {EXAMS.filter((e) => e.group === g).map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name[lang]}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {exam && (
+            <p className="enter-fade text-xs text-muted">
+              {t("exam.hint", { n: count, min: Math.round(count * exam.minutesPerQuestion) })}
+            </p>
+          )}
+          <details className="text-xs">
+            <summary className="cursor-pointer font-semibold text-muted hover:text-ink">{t("exam.papers")}</summary>
+            <p className="enter-fade mt-1.5 text-muted">{t("exam.papersHint")}</p>
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {PAST_PAPERS.map((p) => (
+                <li key={p.url}>
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-8 items-center gap-1.5 text-link underline-offset-2 hover:underline"
+                  >
+                    <ArrowSquareOutIcon size={14} weight="bold" aria-hidden />
+                    {p.name[lang]}
+                    <span className="sr-only"> {t("exam.newTab")}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
       <textarea
         id="task"
         ref={composerRef}
@@ -237,13 +332,15 @@ export function TaskComposer({
               {f.kind === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element -- a local data URL preview, nothing to optimise
                 <img src={f.dataUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
+              ) : f.pdf ? (
+                <FilePdfIcon size={20} weight="duotone" aria-hidden className="shrink-0 text-accent" />
               ) : (
                 <FileTextIcon size={20} weight="duotone" aria-hidden className="shrink-0 text-accent" />
               )}
               <span className="min-w-0">
                 <span className="block max-w-40 truncate font-medium">{f.name}</span>
                 <span className="block text-muted">
-                  {f.kind === "image" ? t("attach.picture") : t("attach.text")} · {sizeText(f.size)}
+                  {f.kind === "image" ? t("attach.picture") : f.pdf ? "PDF" : t("attach.text")} · {sizeText(f.size)}
                 </span>
               </span>
               <button
@@ -312,7 +409,7 @@ export function TaskComposer({
             tabIndex={-1}
             aria-hidden
             multiple
-            accept="image/*,text/*,.md,.csv,.json,.xml,.yaml,.yml,.html,.css,.js,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.sql,.sh,.log"
+            accept="image/*,text/*,application/pdf,.pdf,.md,.csv,.json,.xml,.yaml,.yml,.html,.css,.js,.ts,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.sql,.sh,.log"
             className="sr-only"
             onChange={(e) => {
               if (e.target.files) void add(e.target.files);
@@ -333,7 +430,7 @@ export function TaskComposer({
         </div>
         <button
           type="submit"
-          disabled={prompt.trim().length < 3}
+          disabled={!ready}
           title={t("composer.hint")}
           aria-keyshortcuts="Control+Enter Meta+Enter"
           className="press inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"

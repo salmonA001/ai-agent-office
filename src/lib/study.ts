@@ -1,5 +1,6 @@
 import type { Agent } from "./agents";
 import { chat, currentTier, MODELS } from "./browser-ai";
+import { examById } from "./exams";
 import { type Lang, translate } from "./i18n";
 import { quizItem } from "./schemas";
 import {
@@ -223,6 +224,15 @@ async function quiz(
 ) {
   const n = Math.max(3, Math.min(10, task.count ?? 5));
   const level = task.level ?? "intermediate";
+  const exam = examById(task.exam);
+  const examRule = exam
+    ? `This is practice for an exam. ${exam.style} It covers: ${exam.syllabus}. ` +
+      "Write original questions in that style and at that difficulty, spread across the syllabus; never copy questions from real papers. "
+    : "";
+  const langRule =
+    exam?.questionLang === "en"
+      ? ` Write the questions and options in English (it is an English exam)${lang === "th" ? "; write each explanation in Thai (ภาษาไทย)." : "."}`
+      : LANG_RULE[lang];
   const tutor = pick(team, ["tutor", "researcher", "writer"]);
   const checker = check ? pick(team, ["qa", "analyst", "researcher"], tutor.id) : undefined;
   // a couple of spares, so questions the checker disagrees with can be dropped
@@ -288,14 +298,18 @@ async function quiz(
           content:
             `You are ${tutor.name}, a tutor writing a multiple-choice practice quiz to help a learner check their understanding.\n` +
             `Write exactly ${ask} questions for ${LEVEL[level]}. ` +
-            (notes ? "Base every question on the attached notes. " : "") +
+            examRule +
+            (notes
+              ? "Base every question on the attached files. If a file is an exam paper, use its questions: keep their meaning, make them " +
+                "4-choice where they aren't, and work out the correct answer yourself. "
+              : "") +
             "Rules: each question tests understanding, not tricky wording; 4 options, exactly one correct; wrong options are plausible " +
             "(common misconceptions), never 'all/none of the above'; answer is the index (0-3) of the correct option, and it varies " +
             "between questions; explanation is one short sentence on why the answer is right. Cover different parts of the topic. " +
             "Reply in JSON only." +
-            LANG_RULE[lang],
+            langRule,
         },
-        { role: "user", content: `Quiz me on: ${task.prompt}${notes ? `\n\n${notes}` : ""}` },
+        { role: "user", content: `Quiz me on: ${exam ? `${exam.name.en}. ` : ""}${task.prompt}${notes ? `\n\n${notes}` : ""}` },
       ],
       {
         signal,
@@ -376,9 +390,11 @@ async function quiz(
   }
 
   const final = questions.slice(0, n).map(shuffle);
+  // exam prep is timed like the real thing
+  const timeLimit = exam ? Math.round(final.length * exam.minutesPerQuestion * 60) : undefined;
   update((t) => ({
     ...t,
-    quiz: { questions: final, picked: final.map(() => null), checked: false, attempts: 0 },
+    quiz: { questions: final, picked: final.map(() => null), checked: false, attempts: 0, ...(timeLimit ? { timeLimit } : {}) },
     final: quizMarkdown(task.prompt, final, lang),
   }));
 }

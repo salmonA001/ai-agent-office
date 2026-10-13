@@ -51,6 +51,11 @@ export type Quiz = {
   attempts?: number;
   /** best score so far, in percent */
   best?: number;
+  /** exam mode: seconds allowed, and when the current attempt started */
+  timeLimit?: number;
+  startedAt?: number;
+  /** the last check happened because time ran out */
+  timedOut?: boolean;
 };
 
 export type Task = {
@@ -62,6 +67,8 @@ export type Task = {
   level?: StudyLevel;
   /** how many questions, for a quiz */
   count?: number;
+  /** an exam-prep preset (see exams.ts) */
+  exam?: string;
   quiz?: Quiz;
   createdAt: number;
   status: TaskStatus;

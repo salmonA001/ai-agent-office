@@ -54,6 +54,7 @@ import { type Key, phrase, useI18n } from "@/lib/i18n";
 import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
 import { type Attachment, type Quiz, runTask, type StudyLevel, type Task, type TaskKind, type TaskStatus } from "@/lib/run-task";
+import { examById } from "@/lib/exams";
 import { runStudy } from "@/lib/study";
 import { TaskComposer } from "./TaskComposer";
 import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
@@ -386,6 +387,7 @@ export function Office() {
         kind?: TaskKind;
         level?: StudyLevel;
         count?: number;
+        exam?: string;
       } = {},
     ) => {
       // Max plans with the crew that's on shift right now (everyone, if nobody is)
@@ -398,7 +400,7 @@ export function Office() {
         ...(extra.attachments?.length ? { attachments: extra.attachments } : {}),
         mode: extra.think ? "think" : "fast",
         ...(extra.kind && extra.kind !== "team" ? { kind: extra.kind, level: extra.level ?? "intermediate" } : {}),
-        ...(extra.kind === "test" ? { count: extra.count ?? 5 } : {}),
+        ...(extra.kind === "test" ? { count: extra.count ?? 5, ...(extra.exam ? { exam: extra.exam } : {}) } : {}),
         createdAt: Date.now(),
         status: "planning",
         subtasks: [],
@@ -772,7 +774,7 @@ export function Office() {
             <div className="flex flex-col gap-5">
               <TaskComposer
                 composerRef={composer}
-                onSubmit={({ text, files, think, kind, level, count }) =>
+                onSubmit={({ text, files, think, kind, level, count, exam }) =>
                   start(text, {
                     attachments: files.map((f) => ({ name: f.name, kind: f.kind, ...(f.text ? { text: f.text } : {}) })),
                     images: Object.fromEntries(files.filter((f) => f.dataUrl).map((f) => [f.name, f.dataUrl!])),
@@ -780,6 +782,7 @@ export function Office() {
                     kind,
                     level,
                     count,
+                    exam,
                   })
                 }
               />
@@ -802,6 +805,7 @@ export function Office() {
                       kind: selected.kind,
                       level: selected.level,
                       count: selected.count,
+                      exam: selected.exam,
                     })
                   }
                   onDelete={() => remove(selected.id)}
@@ -836,7 +840,7 @@ function TaskView({
   onRetry: () => void;
   onDelete: () => void;
   /** start a follow-up lesson or quiz */
-  onStudy: (text: string, extra: { kind: TaskKind; level?: StudyLevel; count?: number; attachments?: Attachment[] }) => void;
+  onStudy: (text: string, extra: { kind: TaskKind; level?: StudyLevel; count?: number; exam?: string; attachments?: Attachment[] }) => void;
   onQuiz: (quiz: Quiz) => void;
 }) {
   const { lang, t } = useI18n();
@@ -898,7 +902,7 @@ function TaskView({
                 {task.kind === "test" ? <ExamIcon size={13} weight="fill" aria-hidden /> : <GraduationCapIcon size={13} weight="fill" aria-hidden />}
                 {t(task.kind === "test" ? "task.kindTest" : "task.kindLearn")}
                 {" · "}
-                {t(`study.${task.level ?? "intermediate"}` as Key)}
+                {examById(task.exam)?.name[lang] ?? t(`study.${task.level ?? "intermediate"}` as Key)}
                 {task.kind === "test" && task.count ? ` · ${t("task.questions", { n: task.count })}` : ""}
               </li>
             )}
@@ -981,7 +985,7 @@ function TaskView({
           quiz={task.quiz}
           onChange={onQuiz}
           onLearnMissed={learnMissed}
-          onNewQuiz={() => onStudy(task.prompt, { kind: "test", level: task.level, count: task.count, attachments: task.attachments })}
+          onNewQuiz={() => onStudy(task.prompt, { kind: "test", level: task.level, count: task.count, exam: task.exam, attachments: task.attachments })}
         />
       )}
 
