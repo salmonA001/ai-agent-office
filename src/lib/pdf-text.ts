@@ -13,7 +13,7 @@ const MAX_PAGES = 40;
 const tidy = (text: string) =>
   text
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
-    .replace(/ํ([่-๋]?)า/g, "$1ำ")
+    .replace(/\u0E4D([\u0E48-\u0E4B]?)\u0E32/g, "$1\u0E33")
     .normalize("NFC");
 
 export class ScannedPdfError extends Error {
