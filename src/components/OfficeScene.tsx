@@ -2451,10 +2451,13 @@ export default function OfficeScene({
   useEffect(() => setFollow(selectedId ?? null), [selectedId]);
   const roofView = useCameraFocus().level === 1;
   // the rare rooftop party: take everyone up to see it
-  const roofParty = useGame().event?.kind === "roofparty";
+  const event = useGame().event?.kind;
+  const roofParty = event === "roofparty";
+  const poolParty = event === "poolparty";
   useEffect(() => {
-    if (roofParty) focusZone("roof");
-  }, [roofParty]);
+    // the view flies up to the roof for the parties
+    if (roofParty || poolParty) focusZone("roof");
+  }, [roofParty, poolParty]);
   // drop the resolution a little on slow devices so the animation stays smooth
   const [dpr, setDpr] = useState(1.5);
 
@@ -2486,6 +2489,7 @@ export default function OfficeScene({
         visible={roofView}
         phase={roofParty ? "night" : phase}
         party={roofParty}
+        poolParty={poolParty}
         name={decor.sign.trim() || "AGENT HQ"}
       />
       {roofView && <color attach="background" args={[ROOF_SKY[roofParty ? "night" : phase]]} />}

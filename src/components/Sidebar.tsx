@@ -22,8 +22,8 @@ import { setProfileName, useProfileName } from "@/lib/profile";
 import type { Task, TaskStatus } from "@/lib/run-task";
 import { MODEL_CHOICES, MODELS, setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Motion, MOTIONS, setMotion, useDeviceReducedMotion, useMotion } from "@/lib/motion";
-import { THEMES, useTheme } from "@/lib/theme";
-import { SegmentThumb } from "./chrome";
+import { originOf, THEMES, useTheme } from "@/lib/theme";
+import { HoverPill, SegmentThumb } from "./chrome";
 import { countWords } from "@/lib/words";
 import { useGame } from "./office-events";
 import { teamTotals } from "./OfficeGame";
@@ -175,6 +175,7 @@ function SidebarBody({
           {/* segmented tabs with a sliding highlight */}
           <div className="px-4 pt-4">
             <div role="tablist" aria-label="sidebar" className="relative grid grid-cols-3 rounded-xl bg-well p-1">
+              <HoverPill round="rounded-lg" />
               <SegmentThumb index={index} count={TABS.length} gap={0} round="rounded-lg" />
               {TABS.map(({ id, label, Icon }) => (
                 <button
@@ -604,7 +605,7 @@ function ThemePicker() {
             aria-checked={theme === th.id}
             aria-label={t(`theme.${th.id}` as Key)}
             title={t(`theme.${th.id}` as Key)}
-            onClick={() => setTheme(th.id)}
+            onClick={(e) => setTheme(th.id, originOf(e))}
             className={`press flex flex-col items-center gap-1 rounded-xl border p-1.5 ${
               theme === th.id ? "border-accent ring-2 ring-accent/40" : "border-line hover:border-accent/50"
             }`}
@@ -633,6 +634,7 @@ function MotionPicker() {
         {t("account.motion")}
       </h3>
       <div className="relative grid grid-cols-3 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby={`${uid}-motion`}>
+        <HoverPill round="rounded-lg" />
         <SegmentThumb index={MOTIONS.indexOf(motion)} count={MOTIONS.length} round="rounded-lg" />
         {MOTIONS.map((m: Motion) => (
           <button
@@ -661,6 +663,7 @@ function QuickSettings() {
   return (
     <div className="flex items-center gap-2 border-t border-line p-3">
       <div className="relative grid flex-1 grid-cols-2 gap-1 rounded-lg bg-well p-1">
+        <HoverPill />
         <SegmentThumb index={LANGS.findIndex((l) => l.id === lang)} count={LANGS.length} />
         {LANGS.map((l) => (
           <button
@@ -676,7 +679,7 @@ function QuickSettings() {
       </div>
       <button
         type="button"
-        onClick={() => setTheme(nextTheme.id)}
+        onClick={(e) => setTheme(nextTheme.id, originOf(e))}
         aria-label={`${t("account.theme")}: ${t(`theme.${nextTheme.id}` as Key)}`}
         title={t(`theme.${nextTheme.id}` as Key)}
         className="press grid size-10 place-items-center rounded-lg border border-line bg-well"

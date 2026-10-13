@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { motionOff } from "@/lib/motion";
 
 /**
  * Liquid metal pieces shared by every theme (each theme has its own metal, see globals.css).
@@ -11,6 +12,7 @@ import { useEffect } from "react";
  *   highlight's position is a registered CSS property with a transition, so it glides after the
  *   pointer with a little lag instead of sticking to it. Mouse and trackpad only.
  * - SegmentThumb: the metal pill that slides to the chosen option of a segmented control.
+ * - HoverPill: a soft pill that follows the pointer between the options.
  */
 
 export function LiquidChromeFilter() {
@@ -67,13 +69,39 @@ export function ChromePointer() {
 }
 
 /**
+ * Motion blur for something sliding sideways: a brief blur and a little horizontal stretch that
+ * peak mid-move. It uses the `filter` and `scale` properties, so it layers on top of the CSS
+ * `transform` transition doing the actual move instead of replacing it.
+ */
+function motionBlur(el: HTMLElement, distance: number) {
+  if (motionOff() || distance < 4) return;
+  const stretch = Math.min(1.08, 1 + distance / 1200);
+  el.animate(
+    [
+      { filter: "blur(0px)", scale: "1 1" },
+      { filter: `blur(${Math.min(3, 1 + distance / 120).toFixed(1)}px)`, scale: `${stretch} ${(2 - stretch).toFixed(3)}`, offset: 0.4 },
+      { filter: "blur(0px)", scale: "1 1" },
+    ],
+    { duration: 240, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+  );
+}
+
+/**
  * Sits inside a segmented control with `relative` and `p-1` (options laid out in equal columns,
  * `gap` rem apart); options above it need `relative z-10`.
  */
 export function SegmentThumb({ index, count, gap = 0.25, round = "rounded-md" }: { index: number; count: number; gap?: number; round?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const last = useRef(index);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && last.current !== index && last.current >= 0) motionBlur(el, Math.abs(index - last.current) * el.offsetWidth);
+    last.current = index;
+  }, [index]);
   if (index < 0) return null;
   return (
     <span
+      ref={ref}
       aria-hidden
       className={`segment-thumb pointer-events-none absolute inset-y-1 left-1 ${round}`}
       style={{
@@ -82,4 +110,53 @@ export function SegmentThumb({ index, count, gap = 0.25, round = "rounded-md" }:
       }}
     />
   );
+}
+
+/**
+ * A soft pill that glides to whichever option the pointer is over (with motion blur on the way),
+ * then fades when the pointer leaves. Mouse and trackpad only. Put it inside the segmented
+ * control, before its SegmentThumb, so the chosen option's metal stays on top. Positions are
+ * written straight to the element's style: no React render per pointer move.
+ */
+export function HoverPill({ round = "rounded-md" }: { round?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const pill = ref.current;
+    const group = pill?.parentElement;
+    if (!pill || !group) return;
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
+    let current: HTMLElement | null = null;
+    let x = 0;
+    const over = (e: PointerEvent) => {
+      if (!fine.matches || !(e.target instanceof Element)) return;
+      const option = e.target.closest<HTMLElement>("button");
+      if (!option || !group.contains(option) || option === current) return;
+      const next = option.offsetLeft;
+      pill.style.width = `${option.offsetWidth}px`;
+      if (!current) {
+        // first option under the pointer: appear in place, don't fly in from the side
+        pill.style.transition = "none";
+        pill.style.transform = `translateX(${next}px)`;
+        void pill.offsetWidth;
+        pill.style.transition = "";
+      } else {
+        pill.style.transform = `translateX(${next}px)`;
+        motionBlur(pill, Math.abs(next - x));
+      }
+      pill.style.opacity = "1";
+      current = option;
+      x = next;
+    };
+    const leave = () => {
+      current = null;
+      pill.style.opacity = "0";
+    };
+    group.addEventListener("pointerover", over);
+    group.addEventListener("pointerleave", leave);
+    return () => {
+      group.removeEventListener("pointerover", over);
+      group.removeEventListener("pointerleave", leave);
+    };
+  }, []);
+  return <span ref={ref} aria-hidden className={`hover-pill pointer-events-none absolute inset-y-1 left-0 ${round}`} />;
 }

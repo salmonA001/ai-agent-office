@@ -770,7 +770,7 @@ export function Office() {
             </ul>
           </section>
 
-          <div className="grid flex-1 gap-5 lg:grid-cols-[340px_1fr]">
+          <div className="grid flex-1 gap-5 lg:grid-cols-[400px_1fr] 2xl:grid-cols-[460px_1fr]">
             <div className="flex flex-col gap-5">
               <TaskComposer
                 composerRef={composer}

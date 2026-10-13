@@ -25,6 +25,13 @@ function initial(): Motion {
 
 let motion: Motion = initial();
 
+/** True when animations should be skipped (the Motion setting, or the device asking for less). */
+export function motionOff() {
+  if (typeof document === "undefined") return true;
+  const m = document.documentElement.dataset.motion;
+  return m === "reduced" || (m === "system" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
 export function setMotion(next: Motion) {
   motion = next;
   document.documentElement.dataset.motion = next;

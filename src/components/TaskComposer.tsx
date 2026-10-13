@@ -18,7 +18,7 @@ import { setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Key, useI18n } from "@/lib/i18n";
 import type { StudyLevel, TaskKind } from "@/lib/run-task";
 import { QUIZ_SIZES } from "@/lib/study";
-import { SegmentThumb } from "./chrome";
+import { HoverPill, SegmentThumb } from "./chrome";
 import { EXAMS, type ExamGroup, examById, PAST_PAPERS } from "@/lib/exams";
 
 /** A file picked for the next task: pictures are shrunk to a data URL, text files are read as text. */
@@ -88,6 +88,7 @@ function Segments<T extends string | number>({
     <div className="flex flex-col gap-1">
       <span className="text-xs text-muted">{label}</span>
       <div role="radiogroup" aria-label={label} className="relative flex gap-1 rounded-lg bg-well p-1">
+        <HoverPill />
         <SegmentThumb index={options.findIndex((o) => o.value === value)} count={options.length} />
         {options.map((o) => {
           const on = o.value === value;
@@ -98,7 +99,7 @@ function Segments<T extends string | number>({
               role="radio"
               aria-checked={on}
               onClick={() => onPick(o.value)}
-              className={`press relative z-10 min-h-9 flex-1 basis-0 rounded-md px-2 text-xs font-semibold ${
+              className={`press relative z-10 min-h-10 flex-1 basis-0 rounded-md px-2 text-sm font-semibold ${
                 on ? "text-on-accent" : "text-muted hover:text-ink"
               }`}
             >
@@ -205,7 +206,7 @@ export function TaskComposer({
 
   return (
     <form
-      className={`glass enter flex flex-col gap-2 rounded-2xl p-4 transition-[box-shadow,border-color] duration-200 ${dragging ? "border-accent ring-2 ring-accent/50" : ""}`}
+      className={`glass enter flex flex-col gap-3 rounded-2xl p-5 transition-[box-shadow,border-color] duration-200 ${dragging ? "border-accent ring-2 ring-accent/50" : ""}`}
       style={{ ["--i" as string]: 1 }}
       onSubmit={(e) => {
         e.preventDefault();
@@ -226,11 +227,12 @@ export function TaskComposer({
         void add(e.dataTransfer.files);
       }}
     >
-      <label htmlFor="task" className="font-semibold">
+      <label htmlFor="task" className="text-lg font-semibold">
         {t("composer.title")}
       </label>
       <div className="flex flex-col gap-1">
         <div role="radiogroup" aria-label={t("purpose.label")} className="relative grid grid-cols-3 gap-1 rounded-lg bg-well p-1">
+          <HoverPill />
           <SegmentThumb index={kinds.findIndex((k) => k.kind === kind)} count={kinds.length} />
           {kinds.map(({ kind: k, label, I }) => {
             const on = kind === k;
@@ -241,7 +243,7 @@ export function TaskComposer({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setKind(k)}
-                className={`press relative z-10 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-1 text-sm font-semibold ${
+                className={`press relative z-10 inline-flex min-h-12 items-center justify-center gap-2 rounded-md px-1 text-base font-semibold ${
                   on ? "text-on-accent" : "text-muted hover:text-ink"
                 }`}
               >
@@ -322,10 +324,10 @@ export function TaskComposer({
             void add(pics);
           }
         }}
-        rows={5}
+        rows={8}
         maxLength={4000}
         placeholder={placeholder}
-        className="resize-y rounded-lg border border-line bg-well p-3 text-sm text-ink transition-colors placeholder:text-muted/80 focus:border-accent/60"
+        className="min-h-48 resize-y rounded-xl border border-line bg-well p-4 text-base leading-relaxed text-ink transition-colors placeholder:text-muted/80 focus:border-accent/60"
       />
 
       {files.length > 0 && (
@@ -380,6 +382,7 @@ export function TaskComposer({
 
       <div className={`flex flex-col gap-1 ${kind === "test" ? "hidden" : ""}`}>
         <div role="radiogroup" aria-label={t("mode.label")} className="relative grid grid-cols-2 gap-1 rounded-lg bg-well p-1">
+          <HoverPill />
           <SegmentThumb index={ai.think ? 1 : 0} count={2} />
           {modes.map(({ think, label, I }) => {
             const on = ai.think === think;
@@ -390,7 +393,7 @@ export function TaskComposer({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setAiSettings({ think })}
-                className={`press relative z-10 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md text-sm font-semibold ${
+                className={`press relative z-10 inline-flex min-h-11 items-center justify-center gap-2 rounded-md text-base font-semibold ${
                   on ? "text-on-accent" : "text-muted hover:text-ink"
                 }`}
               >
@@ -426,7 +429,7 @@ export function TaskComposer({
             disabled={files.length >= MAX_FILES}
             title={t("attach.add")}
             aria-label={t("attach.add")}
-            className="press inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-semibold text-muted transition-colors hover:border-accent/60 hover:text-ink disabled:opacity-50"
+            className="press inline-flex min-h-12 items-center gap-1.5 rounded-xl border border-line px-4 text-base font-semibold text-muted transition-colors hover:border-accent/60 hover:text-ink disabled:opacity-50"
           >
             <PaperclipIcon size={16} weight="bold" aria-hidden />
             <span>{t("attach.button")}</span>
@@ -437,7 +440,7 @@ export function TaskComposer({
           disabled={!ready}
           title={t("composer.hint")}
           aria-keyshortcuts="Control+Enter Meta+Enter"
-          className="press inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
+          className="press inline-flex min-h-12 shrink-0 items-center gap-2 rounded-xl bg-primary px-6 text-base font-semibold text-on-primary disabled:opacity-50"
         >
           {kind === "learn" ? (
             <GraduationCapIcon size={16} weight="bold" aria-hidden />

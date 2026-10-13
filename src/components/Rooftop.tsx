@@ -426,6 +426,113 @@ function Pool() {
   );
 }
 
+/** Pool party extras: rings and a flamingo bobbing on the water, a beach ball tossed between the
+ * swimmers, bunting over the pool and a cooler. Only there while the party is on. */
+function PoolParty({ on }: { on: boolean }) {
+  const floats = useRef<Group>(null);
+  const ball = useRef<Group>(null);
+  const still = useStill();
+  useFrame(({ clock }) => {
+    if (!on) return;
+    const t = still ? 0 : clock.elapsedTime;
+    floats.current?.children.forEach((c, i) => {
+      c.position.y = Y + 0.5 + Math.sin(t * 1.6 + i * 1.7) * 0.03;
+      c.rotation.y = t * 0.15 + i * 1.3;
+    });
+    const b = ball.current;
+    if (b) {
+      // swimmer to swimmer, in a high arc
+      const seg = (t * 0.55) % SWIMMERS.length;
+      const i = Math.floor(seg);
+      const u = seg - i;
+      const [ax, az] = SWIMMERS[i];
+      const [bx, bz] = SWIMMERS[(i + 1) % SWIMMERS.length];
+      b.position.set(ax + (bx - ax) * u, Y + 0.95 + Math.sin(u * Math.PI) * 1.3, az + (bz - az) * u);
+      b.rotation.set(t * 3, 0, t * 2);
+    }
+  });
+  const flags = 14;
+  return (
+    <group visible={on} userData={DYNAMIC}>
+      <group ref={floats}>
+        {(
+          [
+            [20.4, 5.0, "#f43f5e"],
+            [18.9, 2.2, "#facc15"],
+            [23.2, 3.6, "#22d3ee"],
+          ] as const
+        ).map(([x, z, c]) => (
+          <group key={c} position={[x, Y + 0.5, z]}>
+            <mesh rotation-x={-Math.PI / 2}>
+              <torusGeometry args={[0.3, 0.1, 10, 22]} />
+              <meshStandardMaterial color={c} roughness={0.35} />
+            </mesh>
+            <mesh rotation-x={-Math.PI / 2} rotation-z={0.8}>
+              <torusGeometry args={[0.3, 0.102, 10, 22, Math.PI / 3]} />
+              <meshStandardMaterial color="#ffffff" roughness={0.35} />
+            </mesh>
+          </group>
+        ))}
+        {/* an inflatable flamingo */}
+        <group position={[22.6, Y + 0.5, 5.0]}>
+          <mesh rotation-x={-Math.PI / 2}>
+            <torusGeometry args={[0.34, 0.15, 10, 22]} />
+            <meshStandardMaterial color="#f9a8d4" roughness={0.3} />
+          </mesh>
+          <mesh position={[0.3, 0.38, 0]} rotation-z={-0.25}>
+            <cylinderGeometry args={[0.06, 0.09, 0.7, 10]} />
+            <meshStandardMaterial color="#f9a8d4" roughness={0.3} />
+          </mesh>
+          <mesh position={[0.4, 0.76, 0]}>
+            <sphereGeometry args={[0.12, 12, 10]} />
+            <meshStandardMaterial color="#f9a8d4" roughness={0.3} />
+          </mesh>
+          <mesh position={[0.54, 0.72, 0]} rotation-z={-Math.PI / 2}>
+            <coneGeometry args={[0.04, 0.14, 8]} />
+            <meshStandardMaterial color="#1f2937" />
+          </mesh>
+        </group>
+      </group>
+      {/* a beach ball in four colours */}
+      <group ref={ball}>
+        {["#ef4444", "#ffffff", "#3b82f6", "#facc15"].map((c, i) => (
+          <mesh key={c}>
+            <sphereGeometry args={[0.17, 16, 12, (i * Math.PI) / 2, Math.PI / 2]} />
+            <meshStandardMaterial color={c} roughness={0.4} />
+          </mesh>
+        ))}
+      </group>
+      {/* bunting across the pool */}
+      {[17.6, 24.4].map((x) => (
+        <mesh key={x} position={[x, Y + 1.1, 1.0]}>
+          <cylinderGeometry args={[0.03, 0.03, 2.2, 6]} />
+          <meshStandardMaterial color="#e5e7eb" />
+        </mesh>
+      ))}
+      {Array.from({ length: flags }, (_, i) => {
+        const u = (i + 0.5) / flags;
+        return (
+          <mesh key={i} position={[17.6 + u * 6.8, Y + 2.05 - Math.sin(u * Math.PI) * 0.35, 1.0]} rotation-x={Math.PI} scale={[1, 1, 0.12]}>
+            <coneGeometry args={[0.13, 0.28, 3]} />
+            <meshStandardMaterial color={["#f43f5e", "#facc15", "#22d3ee", "#a3e635"][i % 4]} side={DoubleSide} />
+          </mesh>
+        );
+      })}
+      {/* a cooler of cold drinks */}
+      <group position={[25.2, Y, 5.4]}>
+        <B s={[0.6, 0.4, 0.4]} p={[0, 0.2, 0]} c="#2563eb" />
+        <B s={[0.62, 0.08, 0.42]} p={[0, 0.44, 0]} c="#f8fafc" />
+      </group>
+    </group>
+  );
+}
+
+const SWIMMERS: [number, number][] = [
+  [19.5, 3.0],
+  [22.6, 2.6],
+  [21.0, 4.2],
+];
+
 /** A kite looping in the wind while someone holds its string in the roof garden. */
 function Kite() {
   const kite = useRef<Group>(null);
@@ -578,12 +685,14 @@ export function Rooftop({
   visible,
   phase,
   party = false,
+  poolParty = false,
   name = "AGENT HQ",
   accent = "#34d399",
 }: {
   visible: boolean;
   phase: Phase;
   party?: boolean;
+  poolParty?: boolean;
   /** the office's name, for the logo on the tower */
   name?: string;
   accent?: string;
@@ -765,6 +874,7 @@ export function Rooftop({
       </StaticMerge>
       <Sky phase={phase} />
       <Kite />
+      <PoolParty on={poolParty} />
       <Skyline phase={phase} name={name} accent={accent} />
       <Beacons
         points={[

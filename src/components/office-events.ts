@@ -32,6 +32,7 @@ export type EventKind =
   | "cafe"
   | "rooftop"
   | "roofparty"
+  | "poolparty"
   | "breakfast"
   | "lunch"
   | "dinner";
@@ -545,6 +546,26 @@ const EVENTS: EventDef[] = [
       ]),
       dwell: 4,
       text: { key: "ge.roofparty.text" },
+    }),
+  },
+  {
+    kind: "poolparty",
+    icon: "🏖️",
+    // a sunny afternoon at the rooftop pool: a DJ, floats and a beach ball
+    seconds: 70,
+    xp: 12,
+    when: (h) => between(h, 11, 18),
+    plan: (idle) => ({
+      orders: gather(idle, [
+        fix(spotById("roof-dj"), "Pool party mix!", ["🎧", "🌴", "🔊"], "DJing the pool party", "dj"),
+        ...["roof-swim-1", "roof-swim-2", "roof-swim-3"].map((id) => fix(spotById(id), "Pool party!", ["🏖️", "💦", "🎉"], "at the pool party", "swim")),
+        ...["roof-pool-1", "roof-pool-2", "roof-lounger-1", "roof-lounger-2"].map((id) =>
+          fix(spotById(id), "Sun's out!", ["😎", "🍹", "☀️"], "at the pool party"),
+        ),
+        ...["dance-1", "dance-2", "dance-3"].map((id) => fix(spotById(id), "Pool party!", ["🌴", "💃", "🕺"], "at the pool party", "dance")),
+      ]),
+      dwell: 4,
+      text: { key: "ge.poolparty.text" },
     }),
   },
   ...(
