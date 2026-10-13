@@ -2474,7 +2474,8 @@ export default function OfficeScene({
 
   return (
     <Canvas
-      shadows
+      // three.js dropped soft (PCFSoft) shadows; ask for the PCF map it falls back to anyway
+      shadows="percentage"
       orthographic
       dpr={dpr}
       gl={{ powerPreference: "high-performance", alpha: true }}

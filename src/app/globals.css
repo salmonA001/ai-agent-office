@@ -451,7 +451,9 @@
     border-color var(--dur-2) var(--ease-out),
     box-shadow var(--dur-2) var(--ease-out),
     color var(--dur-2) var(--ease-out),
-    opacity var(--dur-2) var(--ease-out);
+    opacity var(--dur-2) var(--ease-out),
+    --mx 450ms var(--ease-out),
+    --my 450ms var(--ease-out);
   @media (hover: hover) and (pointer: fine) {
     &:hover:not(:disabled) {
       filter: brightness(1.08);
@@ -500,9 +502,11 @@
   backdrop-filter: blur(18px) saturate(150%);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
   border: 1px solid rgb(var(--glow) / 0.16);
+  /* a bevelled metal edge */
   box-shadow:
     0 10px 40px var(--glass-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
+    inset 0 1px 0 var(--bevel-hi),
+    inset 0 -1px 0 var(--bevel-lo);
 }
 /* Darker glass for panels that sit on top of the bright 3D office */
 @utility glass-strong {
@@ -524,65 +528,63 @@
   mix-blend-mode: normal;
 }
 
-/* the soft pill that follows the pointer across a segmented control */
-.hover-pill {
-  opacity: 0;
-  background: rgb(var(--glow) / 0.12);
-  box-shadow: inset 0 0 0 1px rgb(var(--glow) / 0.16);
-  transition:
-    transform 220ms var(--ease-out),
-    opacity 160ms ease;
+/* Metal surfaces live in the components layer, so an element's own utilities (a progress bar's
+   width transition, a ring, a shadow) still win over these defaults. */
+@layer components {
+  /* the soft pill that follows the pointer across a segmented control */
+  .hover-pill {
+    opacity: 0;
+    background: rgb(var(--glow) / 0.12);
+    box-shadow: inset 0 0 0 1px rgb(var(--glow) / 0.16);
+    transition:
+      transform 220ms var(--ease-out),
+      opacity 160ms ease;
+  }
+
+  /* the sliding highlight behind the chosen option of a segmented control */
+  .segment-thumb {
+    background-color: var(--accent);
+    transition: transform 240ms var(--ease-in-out);
+  }
+
+  /* Liquid metal (every theme has its own): buttons, badges and selected options, with a highlight
+     that glides after the pointer (set by ChromePointer) */
+  .bg-primary,
+  .bg-accent,
+  .metal,
+  .segment-thumb {
+    background-image:
+      radial-gradient(9rem 5rem at var(--mx) var(--my), rgb(255 255 255 / 0.7), transparent 70%),
+      var(--metal-iris),
+      var(--metal-fill);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      inset 0 -1px 0 rgb(0 0 0 / 0.3),
+      0 1px 2px var(--metal-drop),
+      0 6px 18px -8px rgb(var(--glow) / 0.55);
+  }
+  .metal {
+    color: var(--on-accent);
+  }
+  .bg-primary,
+  .bg-accent,
+  .metal {
+    transition:
+      transform var(--dur-1) var(--ease-out),
+      filter var(--dur-2) var(--ease-out),
+      opacity var(--dur-2) var(--ease-out),
+      color var(--dur-2) var(--ease-out),
+      --mx 450ms var(--ease-out),
+      --my 450ms var(--ease-out);
+  }
 }
 
-/* the sliding highlight behind the chosen option of a segmented control */
-.segment-thumb {
-  background-color: var(--accent);
-  transition: transform 240ms var(--ease-in-out);
-}
-
-/* Liquid metal (every theme has its own): buttons, badges and selected options, with a highlight
-   that glides after the pointer (set by ChromePointer) */
-.bg-primary,
-.bg-accent,
-.metal,
-.segment-thumb {
-  background-image:
-    radial-gradient(9rem 5rem at var(--mx) var(--my), rgb(255 255 255 / 0.7), transparent 70%),
-    var(--metal-iris),
-    var(--metal-fill);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.9),
-    inset 0 -1px 0 rgb(0 0 0 / 0.3),
-    0 1px 2px var(--metal-drop),
-    0 6px 18px -8px rgb(var(--glow) / 0.55);
-}
-.metal {
-  color: var(--on-accent);
-}
-.bg-primary,
-.bg-accent,
-.metal {
-  transition:
-    transform var(--dur-1) var(--ease-out),
-    filter var(--dur-2) var(--ease-out),
-    opacity var(--dur-2) var(--ease-out),
-    color var(--dur-2) var(--ease-out),
-    --mx 450ms var(--ease-out),
-    --my 450ms var(--ease-out);
-}
-/* the brand word, cast in the theme's metal */
+/* the brand word wins over its text colour utility on purpose, so it stays outside the layers */
 .brand-metal {
   background-image: var(--brand-fill, var(--metal-fill));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-}
-/* glass panels get a bevelled metal edge */
-.glass {
-  box-shadow:
-    0 10px 40px var(--glass-shadow),
-    inset 0 1px 0 var(--bevel-hi),
-    inset 0 -1px 0 var(--bevel-lo);
 }
 
 html {
