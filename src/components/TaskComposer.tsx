@@ -19,7 +19,7 @@ import { type Key, useI18n } from "@/lib/i18n";
 import type { StudyLevel, TaskKind } from "@/lib/run-task";
 import { QUIZ_SIZES } from "@/lib/study";
 import { HoverPill, SegmentThumb } from "./chrome";
-import { EXAMS, type ExamGroup, examById, PAST_PAPERS } from "@/lib/exams";
+import { EXAM_GROUPS, EXAMS, examById, PAST_PAPERS } from "@/lib/exams";
 
 /** A file picked for the next task: pictures are shrunk to a data URL, text files are read as text. */
 export type ComposerFile = { id: string; name: string; kind: "image" | "text"; size: number; dataUrl?: string; text?: string; pdf?: boolean };
@@ -201,7 +201,8 @@ export function TaskComposer({
       : kind === "test"
         ? t("composer.testPlaceholder")
         : t("composer.placeholder");
-  const groups: ExamGroup[] = ["m4", "posn", "ijso"];
+  // past papers for the chosen exam first
+  const papers = exam ? [...PAST_PAPERS].sort((a, b) => Number(b.groups.includes(exam.group)) - Number(a.groups.includes(exam.group))) : PAST_PAPERS;
   const submitLabel = kind === "learn" ? t("composer.submitLearn") : kind === "test" ? t("composer.submitTest") : t("composer.submit");
 
   return (
@@ -269,7 +270,7 @@ export function TaskComposer({
             className="min-h-10 rounded-lg border border-line bg-surface px-2 text-sm text-ink transition-colors focus:border-accent/60"
           >
             <option value="">{t("exam.none")}</option>
-            {groups.map((g) => (
+            {EXAM_GROUPS.map((g) => (
               <optgroup key={g} label={t(`exam.group.${g}` as Key)}>
                 {EXAMS.filter((e) => e.group === g).map((e) => (
                   <option key={e.id} value={e.id}>
@@ -288,7 +289,7 @@ export function TaskComposer({
             <summary className="cursor-pointer font-semibold text-muted hover:text-ink">{t("exam.papers")}</summary>
             <p className="enter-fade mt-1.5 text-muted">{t("exam.papersHint")}</p>
             <ul className="mt-1.5 flex flex-col gap-1">
-              {PAST_PAPERS.map((p) => (
+              {papers.map((p) => (
                 <li key={p.url}>
                   <a
                     href={p.url}
