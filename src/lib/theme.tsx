@@ -3,6 +3,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export const THEMES = [
+  { id: "chrome", swatch: ["#0b0c0f", "#9aa5b2", "#f3f6f9"] },
   { id: "matrix", swatch: ["#030504", "#10b981", "#34d399"] },
   { id: "midnight", swatch: ["#06071a", "#818cf8", "#a5b4fc"] },
   { id: "sunset", swatch: ["#0e0606", "#fb923c", "#fdba74"] },
@@ -18,10 +19,10 @@ const THEME_KEY = "office.theme";
 export const PREPAINT_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");if(t)d.dataset.theme=t;var l=localStorage.getItem("office.lang");if(l)d.lang=l;d.dataset.motion=localStorage.getItem("office.motion")||"full";}catch(e){}`;
 
 type Ctx = { theme: ThemeId; setTheme: (t: ThemeId) => void };
-const ThemeContext = createContext<Ctx>({ theme: "matrix", setTheme: () => {} });
+const ThemeContext = createContext<Ctx>({ theme: "chrome", setTheme: () => {} });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeId>("matrix");
+  const [theme, setThemeState] = useState<ThemeId>("chrome");
 
   useEffect(() => {
     const current = document.documentElement.dataset.theme as ThemeId | undefined;

@@ -40,7 +40,7 @@
 | ☕ **Tap for coffee** | Click the café counter (or Robo the barista) to buy the whole team a round. |
 | 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
 | 🌏 **English and ไทย** | The whole app, the 3D speech bubbles and the AI answers switch language. |
-| 🎨 **Make it yours** | 5 themes, floors, desks, decorations, your office name in neon, break rules and time of day. |
+| 🎨 **Make it yours** | 6 themes (Liquid chrome by default), floors, desks, decorations, your office name in neon, break rules and time of day. |
 
 ## 📸 Screenshots
 
@@ -195,7 +195,8 @@ Pick one in **Account → AI model**. Bigger models write better answers but nee
 - **Customize** (on the office floor): floor style, desk finish, accent colour, neon office sign, plants, rugs, art, lamps, desk items, aquarium and string lights.
 - **Activities**: which breaks agents take, how often, and whether random events happen.
 - **Time of day**: real clock, a 24-minute time-lapse, or fixed day, sunset or night lighting.
-- **5 themes** (Matrix, Midnight, Sunset, Ocean, Daylight), each checked for WCAG AA contrast.
+- **6 themes**, each checked for WCAG AA contrast: **Liquid chrome** (the default: graphite glass over a swirl of liquid metal, polished-chrome buttons and selected options with a highlight that glides after your pointer), Matrix, Midnight, Sunset, Ocean and Daylight.
+- **Motion that feels right**: strong ease-out curves under ~300ms for things that appear, a chrome thumb that slides between options of every segmented control, presses that scale to 0.97, hover effects only on mouse and trackpad, and glows that animate opacity only. The Motion setting can reduce or turn off all of it.
 - **Motion**: full, follow device, or reduced. The 3D view lowers its resolution on slow devices to stay smooth.
 - **Full screen** with the button or the **F** key.
 

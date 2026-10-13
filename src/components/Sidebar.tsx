@@ -23,6 +23,7 @@ import type { Task, TaskStatus } from "@/lib/run-task";
 import { MODEL_CHOICES, MODELS, setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Motion, MOTIONS, setMotion, useDeviceReducedMotion, useMotion } from "@/lib/motion";
 import { THEMES, useTheme } from "@/lib/theme";
+import { SegmentThumb } from "./chrome";
 import { countWords } from "@/lib/words";
 import { useGame } from "./office-events";
 import { teamTotals } from "./OfficeGame";
@@ -114,7 +115,7 @@ function SidebarBody({
         {!collapsed && (
           <div className="enter-fade min-w-0 flex-1">
             <p className="truncate font-bold leading-tight">
-              AI Agent <span className="text-accent">Office</span>
+              AI Agent <span className="brand-chrome text-accent">Office</span>
             </p>
             <p className="truncate text-xs text-muted">{t("app.hello", { name: name || "👋" })}</p>
           </div>
@@ -174,11 +175,7 @@ function SidebarBody({
           {/* segmented tabs with a sliding highlight */}
           <div className="px-4 pt-4">
             <div role="tablist" aria-label="sidebar" className="relative grid grid-cols-3 rounded-xl bg-well p-1">
-              <span
-                aria-hidden
-                className="absolute inset-y-1 left-1 rounded-lg bg-accent transition-transform duration-300 ease-out"
-                style={{ width: "calc((100% - 0.5rem) / 3)", transform: `translateX(${index * 100}%)` }}
-              />
+              <SegmentThumb index={index} count={TABS.length} gap={0} round="rounded-lg" />
               {TABS.map(({ id, label, Icon }) => (
                 <button
                   key={id}
@@ -598,7 +595,7 @@ function ThemePicker() {
       <h3 id={`${uid}-theme`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         {t("account.theme")}
       </h3>
-      <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-labelledby={`${uid}-theme`}>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby={`${uid}-theme`}>
         {THEMES.map((th) => (
           <button
             key={th.id}
@@ -635,7 +632,8 @@ function MotionPicker() {
       <h3 id={`${uid}-motion`} className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         {t("account.motion")}
       </h3>
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby={`${uid}-motion`}>
+      <div className="relative grid grid-cols-3 gap-1 rounded-xl bg-well p-1" role="radiogroup" aria-labelledby={`${uid}-motion`}>
+        <SegmentThumb index={MOTIONS.indexOf(motion)} count={MOTIONS.length} round="rounded-lg" />
         {MOTIONS.map((m: Motion) => (
           <button
             key={m}
@@ -643,7 +641,7 @@ function MotionPicker() {
             role="radio"
             aria-checked={motion === m}
             onClick={() => setMotion(m)}
-            className={`press min-h-10 rounded-lg px-1 text-xs font-semibold ${motion === m ? "bg-accent text-on-accent" : "text-muted hover:text-ink"}`}
+            className={`press relative z-10 min-h-10 rounded-lg px-1 text-xs font-semibold ${motion === m ? "text-on-accent" : "text-muted hover:text-ink"}`}
           >
             {t(`motion.${m}` as Key)}
           </button>
@@ -662,14 +660,15 @@ function QuickSettings() {
   const nextTheme = THEMES[(THEMES.findIndex((x) => x.id === theme) + 1) % THEMES.length];
   return (
     <div className="flex items-center gap-2 border-t border-line p-3">
-      <div className="grid flex-1 grid-cols-2 gap-1 rounded-lg bg-well p-1">
+      <div className="relative grid flex-1 grid-cols-2 gap-1 rounded-lg bg-well p-1">
+        <SegmentThumb index={LANGS.findIndex((l) => l.id === lang)} count={LANGS.length} />
         {LANGS.map((l) => (
           <button
             key={l.id}
             type="button"
             aria-pressed={lang === l.id}
             onClick={() => setLang(l.id)}
-            className={`press min-h-9 rounded-md text-xs font-semibold ${lang === l.id ? "bg-accent text-on-accent" : "text-muted hover:text-ink"}`}
+            className={`press relative z-10 min-h-9 rounded-md text-xs font-semibold ${lang === l.id ? "text-on-accent" : "text-muted hover:text-ink"}`}
           >
             {l.label}
           </button>

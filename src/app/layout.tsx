@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
 import { PREPAINT_SCRIPT } from "@/lib/theme";
+import { LiquidChromeFilter } from "@/components/chrome";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      data-theme="matrix"
+      data-theme="chrome"
       data-motion="full"
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${plexThai.variable} h-full antialiased`}
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: PREPAINT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col font-sans">
+        <LiquidChromeFilter />
         <Providers>{children}</Providers>
       </body>
     </html>

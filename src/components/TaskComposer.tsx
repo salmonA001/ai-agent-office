@@ -18,6 +18,7 @@ import { setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Key, useI18n } from "@/lib/i18n";
 import type { StudyLevel, TaskKind } from "@/lib/run-task";
 import { QUIZ_SIZES } from "@/lib/study";
+import { SegmentThumb } from "./chrome";
 import { EXAMS, type ExamGroup, examById, PAST_PAPERS } from "@/lib/exams";
 
 /** A file picked for the next task: pictures are shrunk to a data URL, text files are read as text. */
@@ -86,7 +87,8 @@ function Segments<T extends string | number>({
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs text-muted">{label}</span>
-      <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-lg bg-well p-1">
+      <div role="radiogroup" aria-label={label} className="relative flex gap-1 rounded-lg bg-well p-1">
+        <SegmentThumb index={options.findIndex((o) => o.value === value)} count={options.length} />
         {options.map((o) => {
           const on = o.value === value;
           return (
@@ -96,8 +98,8 @@ function Segments<T extends string | number>({
               role="radio"
               aria-checked={on}
               onClick={() => onPick(o.value)}
-              className={`press min-h-9 flex-1 rounded-md px-2 text-xs font-semibold transition-colors duration-200 ${
-                on ? "bg-accent text-on-accent shadow-sm" : "text-muted hover:text-ink"
+              className={`press relative z-10 min-h-9 flex-1 basis-0 rounded-md px-2 text-xs font-semibold ${
+                on ? "text-on-accent" : "text-muted hover:text-ink"
               }`}
             >
               {o.label}
@@ -228,7 +230,8 @@ export function TaskComposer({
         {t("composer.title")}
       </label>
       <div className="flex flex-col gap-1">
-        <div role="radiogroup" aria-label={t("purpose.label")} className="grid grid-cols-3 gap-1 rounded-lg bg-well p-1">
+        <div role="radiogroup" aria-label={t("purpose.label")} className="relative grid grid-cols-3 gap-1 rounded-lg bg-well p-1">
+          <SegmentThumb index={kinds.findIndex((k) => k.kind === kind)} count={kinds.length} />
           {kinds.map(({ kind: k, label, I }) => {
             const on = kind === k;
             return (
@@ -238,8 +241,8 @@ export function TaskComposer({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setKind(k)}
-                className={`press inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-1 text-sm font-semibold transition-colors duration-200 ${
-                  on ? "bg-accent text-on-accent shadow-sm" : "text-muted hover:text-ink"
+                className={`press relative z-10 inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-1 text-sm font-semibold ${
+                  on ? "text-on-accent" : "text-muted hover:text-ink"
                 }`}
               >
                 <I size={16} weight={on ? "fill" : "duotone"} aria-hidden className="shrink-0" />
@@ -376,7 +379,8 @@ export function TaskComposer({
       )}
 
       <div className={`flex flex-col gap-1 ${kind === "test" ? "hidden" : ""}`}>
-        <div role="radiogroup" aria-label={t("mode.label")} className="grid grid-cols-2 gap-1 rounded-lg bg-well p-1">
+        <div role="radiogroup" aria-label={t("mode.label")} className="relative grid grid-cols-2 gap-1 rounded-lg bg-well p-1">
+          <SegmentThumb index={ai.think ? 1 : 0} count={2} />
           {modes.map(({ think, label, I }) => {
             const on = ai.think === think;
             return (
@@ -386,8 +390,8 @@ export function TaskComposer({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setAiSettings({ think })}
-                className={`press inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors duration-200 ${
-                  on ? "bg-accent text-on-accent shadow-sm" : "text-muted hover:text-ink"
+                className={`press relative z-10 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md text-sm font-semibold ${
+                  on ? "text-on-accent" : "text-muted hover:text-ink"
                 }`}
               >
                 <I size={16} weight={on ? "fill" : "duotone"} aria-hidden />
