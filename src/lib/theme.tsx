@@ -54,7 +54,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return;
     }
     // the new theme pours out in a circle from the click: the browser snapshots the old page and
-    // the new one, and only the new snapshot's clip-path animates (on the compositor)
+    // the new one, and only the new snapshot's clip-path animates (on the compositor).
+    // Restyling the whole page for a new theme costs one long frame (~40ms), so the circle holds
+    // at zero for a moment (delay + backwards fill) and then grows on a gentle-start ease-in-out: no jump
+    // at the start, and an even spread across the screen.
     const x = from?.x ?? window.innerWidth / 2;
     const y = from?.y ?? window.innerHeight / 2;
     const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
@@ -63,7 +66,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       .then(() =>
         root.animate(
           { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
-          { duration: 620, easing: "cubic-bezier(0.32, 0.72, 0, 1)", pseudoElement: "::view-transition-new(root)" },
+          { duration: 720, delay: 70, fill: "backwards", easing: "cubic-bezier(0.65, 0, 0.25, 1)", pseudoElement: "::view-transition-new(root)" },
         ),
       )
       .catch(() => {});
