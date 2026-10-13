@@ -54,7 +54,7 @@ import { type Attachment, runTask, type Task, type TaskStatus } from "@/lib/run-
 import { TaskComposer } from "./TaskComposer";
 import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
 import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
-import { MAX_DESKS } from "./office-nav";
+import { MAX_DESKS, NIGHT_DESKS, onShift } from "./office-nav";
 import { CustomizePanel } from "./OfficeCustomize";
 import { AgentPanel, AgentStatusText, initials, Ticker, Timeline } from "./OfficeExplain";
 import { DrillOverlay, EventBanner, EventsPanel, LevelToast, TeamStats, XpBadge } from "./OfficeGame";
@@ -373,7 +373,10 @@ export function Office() {
 
   const start = useCallback(
     (text: string, extra: { attachments?: Attachment[]; images?: Record<string, string>; think?: boolean } = {}) => {
-      const team = agents.slice(0, MAX_DESKS);
+      // Max plans with the crew that's on shift right now (everyone, if nobody is)
+      const hour = minutes === null ? null : minutes / 60;
+      const onDuty = agents.filter((a) => hour === null || onShift(a.shift, hour));
+      const team = (onDuty.length ? onDuty : agents).slice(0, MAX_DESKS + NIGHT_DESKS);
       const task: Task = {
         id: crypto.randomUUID(),
         prompt: text,
@@ -401,7 +404,7 @@ export function Office() {
         })
         .finally(() => controllers.current.delete(task.id));
     },
-    [agents, updateTask, lang],
+    [agents, updateTask, lang, minutes],
   );
 
 
@@ -565,7 +568,12 @@ export function Office() {
                 <h2 id="floor-heading" className="font-semibold">
                   {t("floor.title")}
                 </h2>
-                <span className="text-xs text-muted">{t("hire.desks", { n: Math.min(agents.length, MAX_DESKS), max: MAX_DESKS })}</span>
+                <span className="text-xs text-muted">{t("hire.desks", {
+                    day: agents.filter((a) => a.shift !== "night").length,
+                    night: agents.filter((a) => a.shift === "night").length,
+                    dmax: MAX_DESKS,
+                    nmax: NIGHT_DESKS,
+                  })}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -600,14 +608,16 @@ export function Office() {
             )}
 
             {showHire &&
-              (agents.length >= MAX_DESKS ? (
+              (agents.length >= MAX_DESKS + NIGHT_DESKS ? (
                 <p role="status" className="enter-drop mb-4 rounded-xl bg-well p-4 text-sm text-muted">
-                  {t("hire.full", { n: MAX_DESKS })}
+                  {t("hire.full", { n: MAX_DESKS + NIGHT_DESKS })}
                 </p>
               ) : (
                 <HireForm
                   onHire={(a) => {
-                    setAgents((all) => [...all, a]);
+                    // a free day desk first, otherwise one in the night-shift wing
+                    const dayCount = agents.filter((x) => x.shift !== "night").length;
+                    setAgents((all) => [...all, { ...a, shift: dayCount < MAX_DESKS ? "day" : "night" }]);
                     setShowHire(false);
                     setNames([[a.id, a.name]]);
                     triggerEvent("welcome", a.id);
@@ -674,6 +684,10 @@ export function Office() {
                     tasks={tasks}
                     onClose={() => setFocusId(null)}
                     onChange={(patch) => setAgents((all) => all.map((x) => (x.id === focusAgent.id ? { ...x, ...patch } : x)))}
+                    shiftRoom={{
+                      day: agents.filter((x) => x.shift !== "night").length < MAX_DESKS,
+                      night: agents.filter((x) => x.shift === "night").length < NIGHT_DESKS,
+                    }}
                   />
                 </div>
               )}

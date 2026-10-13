@@ -104,7 +104,15 @@ function ZoneLine({ zone }: { zone: ZoneId }) {
 }
 
 /** Pick where an agent likes to be and what they like doing on their breaks. */
-function AgentPrefs({ agent, onChange }: { agent: Agent; onChange: (patch: Partial<Agent>) => void }) {
+function AgentPrefs({
+  agent,
+  onChange,
+  shiftRoom,
+}: {
+  agent: Agent;
+  onChange: (patch: Partial<Agent>) => void;
+  shiftRoom?: { day: boolean; night: boolean };
+}) {
   const { t } = useI18n();
   const hobbies = agent.hobbies ?? [];
   const chip = (on: boolean) =>
@@ -118,6 +126,30 @@ function AgentPrefs({ agent, onChange }: { agent: Agent; onChange: (patch: Parti
         {t("panel.customize", { name: agent.name })}
       </summary>
       <div className="mt-2 flex flex-col gap-2">
+        <div>
+          <p className="mb-1 text-xs text-muted">{t("panel.shift")}</p>
+          <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={t("panel.shift")}>
+            {(["day", "night"] as const).map((sh) => {
+              const on = (agent.shift ?? "day") === sh;
+              // moving crews needs a free desk on the other side
+              const full = !on && shiftRoom && !shiftRoom[sh];
+              return (
+                <button
+                  key={sh}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={full}
+                  title={full ? t("panel.shiftFull") : undefined}
+                  onClick={() => onChange({ shift: sh })}
+                  className={`${chip(on)} disabled:opacity-40`}
+                >
+                  {t(`shift.${sh}` as Key)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div>
           <p className="mb-1 text-xs text-muted">{t("panel.zone")}</p>
           <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={t("panel.zone")}>
@@ -157,11 +189,13 @@ export function AgentPanel({
   tasks,
   onClose,
   onChange,
+  shiftRoom,
 }: {
   agent: Agent;
   tasks: Task[];
   onClose: () => void;
   onChange?: (patch: Partial<Agent>) => void;
+  shiftRoom?: { day: boolean; night: boolean };
 }) {
   const activity = useAgentActivity(agent.id);
   const { lang, t } = useI18n();
@@ -219,7 +253,13 @@ export function AgentPanel({
           <p className="text-ink/90">{agent.hobbies.map((h) => t(`cat.${h}` as Key)).join(" · ")}</p>
         </div>
       )}
-      {onChange && agent.id !== "max" && <AgentPrefs agent={agent} onChange={onChange} />}
+      {agent.id !== "max" && (
+        <div>
+          <p className="text-xs font-semibold text-accent">{t("panel.shift")}</p>
+          <p className="text-ink/90">{t(`shift.${agent.shift ?? "day"}` as Key)}</p>
+        </div>
+      )}
+      {onChange && agent.id !== "max" && <AgentPrefs agent={agent} onChange={onChange} shiftRoom={shiftRoom} />}
       {agent.id === "max" ? null : latest ? (
         <div className="flex flex-col gap-1">
           <p className="text-xs font-semibold text-accent">{t("panel.latest", { status: t(statusKey[latest.sub.status]) })}</p>

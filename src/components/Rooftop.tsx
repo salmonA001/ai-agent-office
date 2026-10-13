@@ -17,7 +17,8 @@ import {
 } from "three";
 import type { Phase } from "@/lib/office-custom";
 import { useStill } from "@/lib/motion";
-import { COURTYARD, isPresent, ROOF_Y } from "./office-nav";
+import { Beacons, Skyline } from "./city";
+import { COURTYARD, isPresent, ROOF_Y, WING } from "./office-nav";
 import { rgbMaterials } from "./rgb";
 import { seeded, useDisposable } from "./scene-utils";
 import { DYNAMIC, StaticMerge } from "./static-merge";
@@ -106,38 +107,6 @@ const solarCells = () =>
       g.stroke();
     }
   }, [6, 1]);
-
-/** Curtain-wall windows for the outside of the building (seen from the roof view). */
-const windows = (repeat: [number, number]) =>
-  texture((g, n) => {
-    g.fillStyle = "#5f7684";
-    g.fillRect(0, 0, n, n);
-    const sky = g.createLinearGradient(0, 0, n, n);
-    sky.addColorStop(0, "#b9d8e8");
-    sky.addColorStop(1, "#7fa3b8");
-    g.fillStyle = sky;
-    g.fillRect(6, 6, n - 12, n - 12);
-    g.fillStyle = "rgba(255,255,255,0.35)";
-    g.beginPath();
-    g.moveTo(14, n - 20);
-    g.lineTo(n - 40, 14);
-    g.lineTo(n - 24, 14);
-    g.lineTo(30, n - 20);
-    g.fill();
-  }, repeat);
-
-/** Outer wall along x (or z) from the ground up to the roof: closes the cut-away sides in the roof view. */
-function Facade({ a, b, at, alongZ = false, map }: { a: number; b: number; at: number; alongZ?: boolean; map: Texture }) {
-  const len = b - a;
-  const mid = (a + b) / 2;
-  const h = Y - 0.3;
-  return (
-    <mesh position={alongZ ? [at, h / 2, mid] : [mid, h / 2, at]} rotation-y={alongZ ? Math.PI / 2 : 0}>
-      <planeGeometry args={[len, h]} />
-      <meshStandardMaterial map={map} roughness={0.25} metalness={0.3} side={DoubleSide} />
-    </mesh>
-  );
-}
 
 /** Glass balustrade along x (or along z), so you can see out over the edge. */
 function Railing({ a, b, at, alongZ = false }: { a: number; b: number; at: number; alongZ?: boolean }) {
@@ -610,9 +579,6 @@ export function Rooftop({ visible, phase, party = false }: { visible: boolean; p
   const deckTex = useDisposable(() => planks([8, 4]), "roof-deck");
   const grassTex = useDisposable(() => turf([8, 5]), "roof-turf");
   const solarTex = useDisposable(solarCells, "roof-solar");
-  const glassSouth = useDisposable(() => windows([17, 1]), "facade-s");
-  const glassEast = useDisposable(() => windows([7, 1]), "facade-e");
-  const glassEast2 = useDisposable(() => windows([4, 1]), "facade-e2");
   const glow = phase !== "day";
   const { x0, x1, z0, z1 } = ROOF;
   const slab = (a: number, b: number, c: number, d: number) => (
@@ -637,16 +603,18 @@ export function Rooftop({ visible, phase, party = false }: { visible: boolean; p
         {/* sky deck and roof garden */}
         <Plane x0={10} x1={x1} z0={16.6} z1={z1} map={deckTex} y={0.012} />
         <Plane x0={x0} x1={9.6} z0={14} z1={z1} map={grassTex} y={0.012} />
-        {/* the building's outer glass walls on the open (camera) sides */}
-        <Facade a={x0} b={x1} at={z1 + 0.16} map={glassSouth} />
-        <Facade a={z0} b={COURT.z0} at={x1 + 0.16} alongZ map={glassEast} />
-        <Facade a={COURT.z1} b={z1} at={x1 + 0.16} alongZ map={glassEast2} />
+        {/* the roof over the night-shift wing, with the helipad */}
+        {slab(WING.x0, WING.x1, WING.z0, WING.z1)}
+        <Plane x0={WING.x0} x1={WING.x1} z0={WING.z0} z1={WING.z1} map={gravelTex} />
+        <Helipad />
         {/* parapets at the back, glass railings where there's a view */}
         <B s={[x1 - x0, 0.6, 0.2]} p={[(x0 + x1) / 2, Y + 0.3, z0]} c="#d6d3d1" />
         <B s={[0.2, 0.6, z1 - z0]} p={[x0, Y + 0.3, (z0 + z1) / 2]} c="#d6d3d1" />
-        <Railing a={x0} b={x1} at={z1} />
+        <Railing a={x0} b={WING.x1} at={z1} />
         <Railing a={z0} b={COURT.z0} at={x1} alongZ />
-        <Railing a={COURT.z1} b={z1} at={x1} alongZ />
+        <Railing a={COURT.z0} b={z1} at={x1} alongZ />
+        <Railing a={WING.z0} b={WING.z1} at={WING.x1} alongZ />
+        <Railing a={WING.x0} b={WING.x1} at={WING.z0} />
         <Railing a={COURT.x0} b={x1} at={COURT.z0} />
         <Railing a={COURT.x0} b={x1} at={COURT.z1} />
         <Railing a={COURT.z0} b={COURT.z1} at={COURT.x0} alongZ />
@@ -784,6 +752,62 @@ export function Rooftop({ visible, phase, party = false }: { visible: boolean; p
       </StaticMerge>
       <Sky phase={phase} />
       <Kite />
+      <Skyline phase={phase} />
+      <Beacons
+        points={[
+          [WING.x0 + 0.4, Y + 1.2, WING.z0 + 0.4],
+          [WING.x1 - 0.4, Y + 1.2, WING.z0 + 0.4],
+          [WING.x1 - 0.4, Y + 1.2, WING.z1 - 0.4],
+          [-6.8, Y + 2.55, 0.3],
+        ]}
+      />
+    </group>
+  );
+}
+
+/** A helipad on the night wing's roof: H in a ring, edge lights and a windsock. */
+function Helipad() {
+  const cx = (WING.x0 + WING.x1) / 2;
+  const cz = (WING.z0 + WING.z1) / 2;
+  return (
+    <group position={[cx, Y, cz]}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.02, 0]}>
+        <circleGeometry args={[4.2, 40]} />
+        <meshStandardMaterial color="#374151" roughness={0.8} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.03, 0]}>
+        <ringGeometry args={[3.5, 3.8, 40]} />
+        <meshStandardMaterial color="#facc15" roughness={0.6} />
+      </mesh>
+      {[-0.9, 0.9].map((dx) => (
+        <mesh key={dx} position={[dx, 0.035, 0]}>
+          <boxGeometry args={[0.4, 0.01, 3.0]} />
+          <meshStandardMaterial color="#f8fafc" />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.035, 0]}>
+        <boxGeometry args={[1.8, 0.01, 0.4]} />
+        <meshStandardMaterial color="#f8fafc" />
+      </mesh>
+      {Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        return (
+          <mesh key={i} position={[Math.cos(a) * 4.35, 0.08, Math.sin(a) * 4.35]}>
+            <cylinderGeometry args={[0.08, 0.08, 0.12, 8]} />
+            <meshBasicMaterial color="#86efac" toneMapped={false} />
+          </mesh>
+        );
+      })}
+      <group position={[4.3, 0, 6.6]}>
+        <mesh position={[0, 1.1, 0]}>
+          <cylinderGeometry args={[0.04, 0.04, 2.2, 6]} />
+          <meshStandardMaterial color="#e5e7eb" />
+        </mesh>
+        <mesh position={[-0.45, 2.05, 0]} rotation-z={Math.PI / 2 + 0.15}>
+          <coneGeometry args={[0.18, 0.9, 10, 1, true]} />
+          <meshStandardMaterial color="#f97316" side={DoubleSide} />
+        </mesh>
+      </group>
     </group>
   );
 }

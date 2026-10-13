@@ -33,6 +33,9 @@
 | 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
 | 🏙️ **A living office** | 20 animal agents (and Biscuit the office dog) work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
 | 🌤️ **Rooftop** | A second level: switch the view to the roof, where agents ride the elevator up for fresh air, a sky deck, a fire pit and a roof garden. |
+| 🏙️ **A tower in the city** | The office is the top floor of a high-rise: from the roof you see 14 storeys of glass drop to a street with traffic, and a skyline of towers whose windows light up at night. |
+| 🌙 **Day and night shifts** | A day crew (7:00-19:00) and a night crew (19:00-7:00) with their own night-shift wing. Agents clock in and out by the lift, and everyone on shift gets together for breakfast, lunch and dinner. |
+| 💬 **Small talk** | Agents sharing a table hold real back-and-forth conversations, taking turns line by line (sometimes about the task the team is working on). |
 | ☕ **Tap for coffee** | Click the café counter (or Robo the barista) to buy the whole team a round. |
 | 🎥 **Follow cam** | Click any agent, or Max, and the camera follows them around the office. |
 | 🌏 **English and ไทย** | The whole app, the 3D speech bubbles and the AI answers switch language. |
@@ -80,13 +83,17 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 | | Room | What's there |
 |---|---|---|
 | ☕ | **Lobby café** | Counter with a pastry case, back bar with an espresso machine, grinder and syrups, chalkboard menus, café tables and a sofa lounge. **Robo the barista** shuttles between the machine, the till and the pickup. Agents queue, order, collect their cup and sit down, or take it back to their desk. **Click the counter or Robo** for a coffee round. |
+| 🌙 | **Night-shift wing** | East of the garden: 12 desks of its own on a dark-blue carpet, a neon NIGHT SHIFT sign, a kitchenette with a steaming coffee machine, palms and a floor lamp; a door to the garden and glass to the strategy hub. The night crew works here while the day crew is home. |
 | 🖥️ | **Server room** | Two rows of 42U racks with server faces and blinking status LEDs (red during a server alarm), a perforated raised floor with a cold aisle, yellow ladder cable trays, a precision cooling unit, a UPS cabinet and fire-suppression cylinders. |
 | 🎮 | **Game room** | Two high-end custom gaming PCs (glass-sided RGB towers, wide screens where the level scrolls while someone plays, RGB keyboards, racing chairs), an arcade cabinet and foosball. |
-| 🌤️ | **Rooftop** (second level) | The **Rooftop** button on the 3D view lifts the camera to the roof: blue sky (orange at sunset, deep blue at night), drifting clouds and birds. A **sky deck** with glass railings to lean on, a fire pit (lit after dark), sun loungers, an umbrella, a BBQ, a telescope and string lights; a raised **rooftop pool** with steps and poolside loungers (agents swim laps, half under the rippling water); a **kite** that someone flies from the roof garden; a **roof garden** with raised beds, a greenhouse and benches; **solar panels**, HVAC units with spinning fans, a water tank, a satellite dish and an antenna with a blinking warning light. The garden courtyard is left open, so you can look down at the koi pond and watch whoever is down there (a picnic, someone playing fetch with Biscuit) from the roof. Agents **take the elevator** up and down (they step in, ride, and walk out on the other floor), go up most around lunch and sunset, and the camera follows a selected agent between floors. |
+| 🌤️ | **Rooftop** (second level) | The **Rooftop** button on the 3D view lifts the camera to the roof: blue sky (orange at sunset, deep blue at night), drifting clouds and birds. A **sky deck** with glass railings to lean on, a fire pit (lit after dark), sun loungers, an umbrella, a BBQ, a telescope and string lights; a raised **rooftop pool** with steps and poolside loungers (agents swim laps, half under the rippling water); a **kite** that someone flies from the roof garden; a **roof garden** with raised beds, a greenhouse and benches; **solar panels**, HVAC units with spinning fans, a water tank, a satellite dish and an antenna with a blinking warning light. The garden courtyard is left open, so you can look down at the koi pond and watch whoever is down there (a picnic, someone playing fetch with Biscuit) from the roof. Agents **take the elevator** up and down (they step in, ride, and walk out on the other floor), go up most around lunch and sunset, and the camera follows a selected agent between floors. The office sits at the top of a **14-storey glass tower**: the roof view shows its curtain walls dropping to the street, cars driving round the block, a lobby canopy and street trees, and a city of towers around it (lights on in their windows at night, red beacons blinking on the tallest). The night wing's roof has a **helipad** with edge lights and a windsock. |
 | 💻 | **Every desk** | A custom PC tower with a tempered-glass side, RGB fans and a front light strip that cycle through colours. |
 
 ### Life in the office
 
+- **Two shifts**: the day crew works 7:00-19:00 at the main desks, the night crew 19:00-7:00 in the night-shift wing (support, security, QA, data and translation by default; switch anyone in their panel). At the end of a shift agents finish what they're doing, say goodbye and take the lift home; the next crew steps out of the lift with a "Morning, team!" or "Evening, night crew!". Only the crew on shift takes on tasks.
+- **Mealtimes**: breakfast at 7:30 (pancakes and coffee), lunch at 12:00 and dinner at 19:30. Everyone on shift and free sits down together in the kitchen, the cafés, the garden or by the rooftop fire pit, with plates on the tables.
+- **Conversations**: at café tables, the picnic table, the breakout table, the touch table and the fire pit, two agents talk in turns ("Did you see the new task?" "About the launch plan?" "Yes! Tricky one."). A dozen conversations in English and Thai.
 - **Breaks follow the clock**: coffee in the morning, a lunch rush at noon, games after five. Each agent spends most breaks in their favourite zone.
 - **Work happens in the zones too.** When Max hands an agent a job, agents whose favourite zone has a workplace often take it there: researchers and writers to a focus pod, analysts, planners and strategists to the strategy-hub table, designers and innovators to the touch table or whiteboards, marketers and translators to a café table. They read up while their part waits its turn, work there while it streams, then wind down and wander off.
 - **The rooms react to people**: a pod's busy light turns red and its screen wakes up with scrolling work when someone's inside; whiteboards fill with a fresh sketch, left to right, while someone draws; the touch table glows and projects floating ideas; the 3D printer's head sweeps as the print grows; the hub's screen goes live (with a blinking REC dot) when people meet; the pinball playfield flashes while someone plays.
@@ -94,11 +101,13 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 - **Little routines**: agents queue at the café, order from Robo, collect a cup and carry it around; stop to say hello when they pass a colleague; and stretch, sip from a mug, read or check their phone at their desk between jobs.
 - **Two-person activities need two people.** Ping-pong, foosball, the touch-table brainstorm and café chats start with an invitation: the agent asks the nearest free colleague, both hurry over and play the same game. If nobody's free they pick something else, and if a partner gets called away the other wraps up.
 - **Max makes his rounds.** Between tasks he checks on the desks, reviews the roadmap in the hub, rehearses on the town-hall stage, visits the labs, grabs a coffee and says hi to Robo. He hurries back to the projector when work arrives.
-- **22 office events**, timed to the hour: the rare **rooftop party** (lights out everywhere, a DJ at the decks, lasers, a spinning disco ball, colour-changing party lights and a strobe, everyone free dancing on the roof; the view flies up to watch), rooftop hangout, coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
+- **22 office events** plus three daily meals, timed to the hour: the rare **rooftop party** (lights out everywhere, a DJ at the decks, lasers, a spinning disco ball, colour-changing party lights and a strobe, everyone free dancing on the roof; the view flies up to watch), rooftop hangout, coffee round, strategy meeting, hackathon, all-hands, garden picnic, pizza party, fire drill, birthday, yoga class, karaoke, movie night, ice cream, parcel delivery, power cut and more. There's also a welcome party for each new hire.
 - Routes follow hand-placed waypoints through aisles and doorways. An automated check walks 54,000+ routes (including Biscuit's) (both floors and the elevator trips between them) and a 3-hour simulation with zero collisions.
 - **Smooth**: static furniture is merged into a few big meshes after each render, so the whole office draws in about 2,000 calls a frame, and all PCs share one set of RGB materials.
 
 ## 🤖 The team
+
+🌙 marks the night crew (19:00-7:00, in the night-shift wing); everyone else works days (7:00-19:00).
 
 | Agent | Role | Favourite zone |
 |---|---|---|
@@ -111,23 +120,23 @@ Beyond the zones there's a meeting room with a live projector, a lounge, a **gam
 | Dee | Designer | 🎨 Creative Labs |
 | Ivy | Innovator | 🎨 Creative Labs |
 | Cody | Engineer | ⚙️ Engine Room |
-| Dax | Data Scientist | ⚙️ Engine Room |
+| Dax 🌙 | Data Scientist | ⚙️ Engine Room |
 | Mia | Marketer | ☕ Social & Wellness Core |
-| Lin | Translator | ☕ Social & Wellness Core |
-| Quinn | QA Tester | 🧘 Fitness & Meditation |
+| Lin 🌙 | Translator | ☕ Social & Wellness Core |
+| Quinn 🌙 | QA Tester | 🧘 Fitness & Meditation |
 | Kai | Wellness Coach | 🧘 Fitness & Meditation |
 | Finn | Finance Analyst | 📊 Strategy Hub |
 | Lex | Legal Advisor | 🎧 Focus Pods |
 | Hana | People Partner | ☕ Social & Wellness Core |
-| Sunny | Customer Support | ☕ Social & Wellness Core |
+| Sunny 🌙 | Customer Support | ☕ Social & Wellness Core |
 | Paige | Product Manager | 🎨 Creative Labs |
-| Ozzy | Security Engineer | ⚙️ Engine Room |
+| Ozzy 🌙 | Security Engineer | ⚙️ Engine Room |
 | Theo | Tutor | 🎧 Focus Pods |
 | 🐶 **Biscuit** | Office dog: trots between his kennel, his bowl and the garden, and visits colleagues on their breaks for a pat | The garden |
 
-Hire your own (name, role, instructions and favourite zone), up to one per desk (24).
+Hire your own (name, role, instructions and favourite zone), up to one per desk: 24 day desks and 12 in the night wing. New hires join the day crew while there's room.
 
-**Customize any agent** from their panel (click them in the office or in the team list): pick their **favourite zone** and their **favourite breaks** (coffee, chatting, games, rest, reading, exercise, focus, calls, nature, ideas, music, the office dog). They spend more of their breaks doing what they like, and Max still picks who works on what.
+**Customize any agent** from their panel (click them in the office or in the team list): their **shift** (day or night), their **favourite zone** and their **favourite breaks** (coffee, chatting, games, rest, reading, exercise, focus, calls, nature, ideas, music, the office dog). They spend more of their breaks doing what they like, and Max still picks who works on what.
 
 ## 🧠 How it works
 

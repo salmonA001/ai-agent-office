@@ -1,5 +1,5 @@
 import { ZONE_IDS, type ZoneId } from "@/components/camera-focus";
-import { SPOT_CATS, type SpotCat } from "@/components/office-nav";
+import { type Shift, SPOT_CATS, type SpotCat } from "@/components/office-nav";
 
 export type Agent = {
   id: string;
@@ -10,6 +10,8 @@ export type Agent = {
   zone?: ZoneId;
   /** the kinds of break they like most (picked more often) */
   hobbies?: SpotCat[];
+  /** day crew (7:00-19:00, main desks) or night crew (19:00-7:00, the night wing) */
+  shift?: Shift;
   custom?: boolean;
 };
 
@@ -93,6 +95,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     instructions:
       "Work with data: metrics, formulas, SQL, simple statistics and charts described as tables. Show your working.",
     hobbies: ["games", "ideas"],
+    shift: "night",
     zone: "engine",
   },
   {
@@ -101,6 +104,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "QA Tester",
     instructions: "Find bugs, edge cases and risks. Write test cases, acceptance criteria and checklists.",
     hobbies: ["exercise", "games"],
+    shift: "night",
     zone: "fitness",
   },
   {
@@ -109,6 +113,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     role: "Translator",
     instructions: "Translate and localize text naturally between languages, keeping tone, meaning and cultural fit.",
     hobbies: ["chat", "reading"],
+    shift: "night",
     zone: "social",
   },
   {
@@ -172,6 +177,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     instructions:
       "Write friendly, clear replies to customers, FAQs and help articles; solve the problem step by step and keep the tone warm.",
     hobbies: ["chat", "food"],
+    shift: "night",
     zone: "social",
   },
   {
@@ -190,6 +196,7 @@ export const DEFAULT_AGENTS: Agent[] = [
     instructions:
       "Review designs and code for security risks, explain threats and give concrete fixes, checklists and safe defaults.",
     hobbies: ["games", "ideas"],
+    shift: "night",
     zone: "engine",
   },
   {
@@ -211,7 +218,7 @@ export function withDefaultAgents(stored: Agent[]): Agent[] {
   const kept = stored
     .filter((a) => a.custom || !RETIRED.has(a.id))
     // drop fields from older versions (e.g. the shift)
-    .map(({ id, name, role, instructions, zone, hobbies, custom }) => {
+    .map(({ id, name, role, instructions, zone, hobbies, shift, custom }) => {
       const builtIn = DEFAULT_AGENTS.find((d) => d.id === id);
       return {
         id,
@@ -222,6 +229,7 @@ export function withDefaultAgents(stored: Agent[]): Agent[] {
         // the zone and hobbies picked in the agent panel (or when hiring), else the built-in ones
         zone: zone && ZONE_IDS.includes(zone) ? zone : builtIn?.zone,
         hobbies: Array.isArray(hobbies) ? hobbies.filter((h) => SPOT_CATS.includes(h)) : builtIn?.hobbies,
+        shift: shift === "night" || shift === "day" ? shift : (builtIn?.shift ?? "day"),
       };
     });
   const have = new Set(kept.map((a) => a.id));

@@ -20,7 +20,7 @@ import { type Key, type Lang, translate } from "@/lib/i18n";
 import type { DecorItem, FloorStyle, Phase } from "@/lib/office-custom";
 import { currentEventKind } from "./office-events";
 import type { ZoneId } from "./camera-focus";
-import { isPresent, walkers } from "./office-nav";
+import { isPresent, walkers, WING } from "./office-nav";
 import { PcTower } from "./pc";
 import { rgbMaterials } from "./rgb";
 import { useStill } from "@/lib/motion";
@@ -34,6 +34,8 @@ type V3 = [number, number, number];
 // west (-x) walls are full height and the south/east walls are cut away like a dollhouse. ----------
 
 export const FLOOR = { x0: -8, x1: 26, z0: -6, z1: 24 };
+/** Everything the camera has to fit: the main floor plus the night-shift wing. */
+export const BOUNDS = { x0: -8, x1: 36.2, z0: -6, z1: 24 };
 /** The east wing (lobby, town hall, garden) starts here; the open hall is west of it. */
 export const EAST = { x0: 16, lobbyZ: 1.2, gardenZ: 8.8 };
 export const CORRIDOR = { z0: -0.3, z1: 0.9 };
@@ -1411,6 +1413,63 @@ function DogThings() {
         <sphereGeometry args={[0.07, 12, 10]} />
         <meshStandardMaterial color="#a3e635" />
       </mesh>
+    </group>
+  );
+}
+
+/** The night-shift wing east of the garden: its own room, desks drawn by the scene. */
+function NightWing({ decor, sky }: { decor: FloorDecor; sky: Texture }) {
+  const { x0, x1, z0, z1, door } = WING;
+  const carpet = useDisposable(() => carpetTexture("#36415f", [7, 10]), "night-carpet");
+  const sign = useDisposable(() => neonTexture("NIGHT SHIFT", "#a78bfa"), "night-sign");
+  const glow = decor.phase !== "day";
+  return (
+    <group>
+      <Floor x0={x0} x1={x1} z0={z0} z1={z1} map={carpet} />
+      {/* back wall with windows and the neon sign, cut-away walls at the front */}
+      <Wall a={[x0, z0]} b={[x1, z0]} h={EXT_H} />
+      <Wall a={[x1, z0]} b={[x1, z1]} h={0.3} />
+      <Wall a={[x0, z1]} b={[x1, z1]} h={0.3} />
+      {/* to the garden: a low wall with a door; to the strategy hub: glass */}
+      <Wall a={[x0, z0]} b={[x0, door[0]]} h={1.0} />
+      <Wall a={[x0, door[1]]} b={[x0, SOUTH.z0]} h={1.0} />
+      <GlassWallZ x={x0} z0={SOUTH.z0} z1={z1} />
+      <group>
+        {[door[0], door[1]].map((z) => (
+          <B key={z} s={[0.14, 2.05, 0.07]} p={[x0, 1.025, z]} c="#4c1d95" />
+        ))}
+        <B s={[0.14, 0.07, door[1] - door[0] + 0.07]} p={[x0, 2.05, (door[0] + door[1]) / 2]} c="#4c1d95" />
+      </group>
+      {[28.6, 34.2].map((x) => (
+        <WindowPane key={x} p={[x, 1.45, z0 + 0.09]} w={1.6} h={1.0} sky={sky} />
+      ))}
+      <group position={[31.4, 1.95, z0 + 0.1]}>
+        <B s={[2.6, 0.66, 0.05]} p={[0, 0, 0]} c="#111827" />
+        <mesh position={[0, 0, 0.03]}>
+          <planeGeometry args={[2.5, 0.6]} />
+          <meshBasicMaterial map={sign} transparent toneMapped={false} />
+        </mesh>
+      </group>
+      {/* kitchenette: counter, coffee machine, mugs and a little fridge */}
+      <group position={[27.4, 0, 23.55]}>
+        <B s={[1.2, 0.95, 0.5]} p={[0, 0.475, 0]} c="#1f2937" />
+        <B s={[1.25, 0.04, 0.55]} p={[0, 0.97, 0]} c="#e5e7eb" rough={0.3} />
+        <B s={[0.3, 0.38, 0.3]} p={[-0.3, 1.18, -0.05]} c="#9ca3af" metal={0.6} rough={0.3} />
+        {[0.15, 0.32].map((x) => (
+          <mesh key={x} position={[x, 1.03, 0.05]}>
+            <cylinderGeometry args={[0.045, 0.04, 0.09, 10]} />
+            <meshStandardMaterial color={x > 0.2 ? "#a78bfa" : "#fbbf24"} />
+          </mesh>
+        ))}
+      </group>
+      <Steam p={[27.1, 1.42, 23.5]} />
+      {decor.items.plants && (
+        <>
+          <PalmPlant p={[35.6, 0, 9.4]} />
+          <PalmPlant p={[35.6, 0, 23.4]} s={0.9} />
+        </>
+      )}
+      {decor.items.lamps && <FloorLamp p={[35.7, 0, 16.4]} on={glow} />}
     </group>
   );
 }
@@ -3086,7 +3145,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[x0, LIFT.z1]} b={[x0, z1]} h={EXT_H} />
       <Elevator />
       <Wall a={[x0, z1]} b={[x1, z1]} h={0.3} />
-      <Wall a={[x1, z0]} b={[x1, z1]} h={0.3} />
+      <Wall a={[x1, z0]} b={[x1, WING.z0]} h={0.3} />
       {/* room dividers */}
       <Wall a={[MEETING.x1, z0]} b={[MEETING.x1, CORRIDOR.z0]} h={INT_H} />
       <Wall a={[LOUNGE.x0, z0]} b={[LOUNGE.x0, CORRIDOR.z0]} h={INT_H} color="#e7e3ee" />
@@ -3111,6 +3170,7 @@ export const OfficeFloor = memo(function OfficeFloor({ decor }: { decor: FloorDe
       <Wall a={[14.4, CORRIDOR.z1]} b={[EAST.x0, CORRIDOR.z1]} h={1.0} />
       <EastWing decor={decor} />
       <DogThings />
+      <NightWing decor={decor} sky={sky} />
       <SouthWing decor={decor} sky={sky} />
     </StaticMerge>
   );
@@ -3130,7 +3190,8 @@ function Elevator() {
   useFrame((_, dt) => {
     let near = false;
     for (const w of walkers.values()) {
-      if (w.phase.kind !== "seated" && Math.hypot(w.x + 7.4, w.z - 0.3) < 1.0) near = true;
+      // agents gone home wait out of sight in the lift, so they don't hold the doors open
+      if (!w.hidden && w.phase.kind !== "seated" && Math.hypot(w.x + 7.4, w.z - 0.3) < 1.0) near = true;
     }
     open.current += ((near ? 1 : 0) - open.current) * Math.min(1, dt * 5);
     const w = half * (1 - open.current * 0.92);
@@ -3447,5 +3508,40 @@ export function EventProps({ kind }: { kind: string | null }) {
   if (kind === "delivery") return <Parcels />;
   if (kind === "movie") return <MovieScreen />;
   if (kind === "picnic") return <PicnicBasket />;
+  if (kind === "breakfast" || kind === "lunch" || kind === "dinner") return <MealPlates kind={kind} />;
   return null;
+}
+
+/** Plates of food on the dining, café and lobby tables at mealtimes. */
+function MealPlates({ kind }: { kind: "breakfast" | "lunch" | "dinner" }) {
+  const food = { breakfast: ["#f59e0b", "#fde68a"], lunch: ["#22c55e", "#f97316"], dinner: ["#dc2626", "#fbbf24"] }[kind];
+  const tables: V3[] = [
+    [2.6, 0.78, 14.5],
+    [5.4, 0.78, 14.5],
+    [8.2, 0.78, 14.5],
+    [-1.6, 0.78, -1.35],
+    [1.8, 0.78, -1.35],
+    [17.4, 0.78, -2.3],
+    [19.4, 0.78, -2.3],
+  ];
+  return (
+    <group>
+      {tables.map((p, i) => (
+        <group key={i} position={p}>
+          {[-0.18, 0.18].map((dx) => (
+            <group key={dx} position={[dx, 0, 0]}>
+              <mesh>
+                <cylinderGeometry args={[0.13, 0.11, 0.02, 16]} />
+                <meshStandardMaterial color="#ffffff" />
+              </mesh>
+              <mesh position={[0, 0.04, 0]} scale={[1, 0.5, 1]}>
+                <sphereGeometry args={[0.07, 10, 8]} />
+                <meshStandardMaterial color={food[(i + (dx > 0 ? 1 : 0)) % 2]} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
 }

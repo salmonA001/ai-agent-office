@@ -24,7 +24,7 @@ export const MAX_DESKS = DESK_GRID.cols * DESK_GRID.rows;
 /** Walkways around the desk block. */
 export const AISLE = { west: -2.8, east: 12.2, front: 1.4 } as const;
 
-export type DeskSlot = { index: number; row: number; col: number; x: number; z: number; seat: P2; aisleZ: number };
+export type DeskSlot = { index: number; row: number; col: number; x: number; z: number; seat: P2; aisleZ: number; wing?: "night" };
 
 export function deskSlot(index: number): DeskSlot {
   const { cols, x, spacing, z0, pitch } = DESK_GRID;
@@ -37,6 +37,25 @@ export function deskSlot(index: number): DeskSlot {
 }
 
 const rowAisle = (row: number) => deskSlot(row * DESK_GRID.cols).aisleZ;
+
+/** The night-shift wing east of the garden: its own room with three columns of desks. */
+export const WING = { x0: 26, x1: 36.2, z0: 8.8, z1: 24, door: [13.0, 14.2] as const };
+export const NIGHT_GRID = { cols: 3, rows: 4, x: 31.7, spacing: 2.3, z0: 10.4, pitch: 2.95 } as const;
+export const NIGHT_DESKS = NIGHT_GRID.cols * NIGHT_GRID.rows;
+/** The wing's side walkways (west by the door, east along the far wall). */
+const WING_AISLE = { west: 27.4, east: 35.4 };
+
+export function nightSlot(index: number): DeskSlot {
+  const { cols, x, spacing, z0, pitch } = NIGHT_GRID;
+  const row = Math.floor(index / cols);
+  const col = index % cols;
+  const dx = x + (col - (cols - 1) / 2) * spacing;
+  const dz = z0 + row * pitch;
+  const seat: P2 = [dx, dz + CHAIR_Z];
+  return { index, row, col, x: dx, z: dz, seat, aisleZ: seat[1] + AISLE_BEHIND, wing: "night" };
+}
+
+const nightAisle = (row: number) => nightSlot(row * NIGHT_GRID.cols).aisleZ;
 
 // ---------- Waypoint graph ----------
 
@@ -96,6 +115,14 @@ const NODES: Record<string, P2> = {
   LO1: [17.5, 0.3],
   LO2: [21.5, 0.3],
   LO3: [24.15, 0.3],
+  // ----- the night-shift wing, through a door from the garden -----
+  GX: [25.4, 13.6],
+  N0: [26.8, 13.6],
+  NWm: [WING_AISLE.west, 13.6],
+  ...Object.fromEntries([0, 1, 2, 3].flatMap((r) => [
+    [`NW${r}`, [WING_AISLE.west, nightAisle(r)]],
+    [`NE${r}`, [WING_AISLE.east, nightAisle(r)]],
+  ])),
   // ----- the roof (a separate level, reached by the elevator) -----
   RL: [-5.0, 0.3],
   RN: [-5.0, 3.0],
@@ -203,6 +230,18 @@ const EDGES: [string, string][] = [
   ["LO1", "LO2"],
   ["LO2", "LO3"],
   ["LO2", "CF"],
+  // night wing
+  ["GS2", "GX"],
+  ["GX", "N0"],
+  ["N0", "NWm"],
+  ["NWm", "NW0"],
+  ["NWm", "NW1"],
+  ["NW1", "NW2"],
+  ["NW2", "NW3"],
+  ["NE0", "NE1"],
+  ["NE1", "NE2"],
+  ["NE2", "NE3"],
+  ["NW3", "NE3"],
   // roof
   ["RL", "RN"],
   ["RN", "RW"],
@@ -543,6 +582,9 @@ export const SPOTS: Spot[] = [
   spot({ id: "idea-bag", at: [15.4, 22.4], node: "FC2", approach: [[14.6, 22.4]], face: -PI / 2, seat: 0.32, activity: "rest", cat: "ideas", say: "Thinking big", where: "in the creative labs", emoji: ["💭", "🌈"] }),
   spot({ id: "pinball", at: [10.0, 22.55], node: "FC2", approach: [[13.6, 22.55]], face: 0, activity: "play", cat: "games", say: "Multiball!", where: "at the pinball machine", emoji: ["🎰", "😆"] }),
 
+  // ----- the night wing's coffee corner -----
+  spot({ id: "night-coffee", at: [27.4, 22.9], node: "NW3", approach: [[27.4, 21.6]], face: 0, activity: "sip", cat: "food", say: "Night-shift coffee", where: "in the night-shift kitchenette", emoji: ["☕", "🌙"] }),
+
   // ----- music corner and easel in the creative labs -----
   spot({ id: "easel", at: [14.6, 19.95], node: "FC1", approach: [[13.6, 19.95]], face: PI, activity: "draw", cat: "ideas", say: "Painting a sunset", where: "at the easel", emoji: ["🎨", "🖌️"] }),
   spot({ id: "piano", at: [15.6, 20.65], node: "FC1", approach: [[13.6, 20.65]], face: PI, seat: 0.45, activity: "piano", cat: "music", say: "Playing a little tune", where: "at the piano", emoji: ["🎹", "🎶"] }),
@@ -643,14 +685,15 @@ function nodePath(from: string, to: string): string[] {
 }
 
 /** An agent's desk: back out of the chair to the walkway behind its row, then to either side aisle. */
-export type Home = { seat: P2; aisleZ: number; row: number };
+export type Home = { seat: P2; aisleZ: number; row: number; wing?: "night" };
 
 type Leg = { points: P2[]; node: string };
 
 function legs(a: Anchor): Leg[] {
   if ("spot" in a) return [{ points: [a.spot.at, ...[...a.spot.approach].reverse()], node: a.spot.node }];
-  const { seat, aisleZ, row } = a.home;
+  const { seat, aisleZ, row, wing } = a.home;
   const out: P2[] = [seat, [seat[0], aisleZ]];
+  if (wing === "night") return [{ points: out, node: `NW${row}` }, { points: out, node: `NE${row}` }];
   return [{ points: out, node: `RW${row}` }, { points: out, node: `RE${row}` }];
 }
 
@@ -760,6 +803,17 @@ function roofPull(hour: number) {
   return hour >= 21 || hour < 7 ? 0.4 : 0.8;
 }
 
+// ---------- Shifts: the day crew works 7:00-19:00, the night crew 19:00-7:00 ----------
+
+export type Shift = "day" | "night";
+export const SHIFT_HOURS: Record<Shift, [number, number]> = { day: [7, 19], night: [19, 7] };
+
+/** Whether that shift is at work at this office hour. */
+export function onShift(shift: Shift | undefined, hour = officeHour) {
+  const [from, to] = SHIFT_HOURS[shift ?? "day"];
+  return from < to ? hour >= from && hour < to : hour >= from || hour < to;
+}
+
 // ---------- Who is where ----------
 
 /** Spots currently claimed, so two agents don't sit in the same chair. */
@@ -863,6 +917,15 @@ export class Wanderer {
   workAt: Spot | null = null;
   /** 0: ground floor, 1: the roof */
   level: 0 | 1 = 0;
+  /** which crew they're on */
+  shift: Shift = "day";
+  /** gone home for the night (or the day): not in the building */
+  away = false;
+  /** on the way out at the end of the shift */
+  leaving = false;
+  /** just arrived for their shift, saying hello on the way to the desk */
+  arriving = false;
+  private fresh = true;
   /** inside the elevator (not drawn) */
   hidden = false;
   private ride = 0;
@@ -875,7 +938,7 @@ export class Wanderer {
   private greetYaw = 0;
   readonly id: string;
   readonly seatY: number;
-  private mode: "seated" | "out" | "spot" | "home" = "seated";
+  private mode: "seated" | "out" | "spot" | "home" | "away" = "seated";
   private origin: Anchor;
   private path: P2[] = [];
   private seg = 0;
@@ -902,6 +965,11 @@ export class Wanderer {
   }
 
   /** The agent has a job in progress (not just watching Max plan): they may take it to their zone. */
+  /** Which crew they're on: day or night. */
+  setShift(shift: Shift) {
+    this.shift = shift;
+  }
+
   setWorking(working: boolean) {
     this.working = working;
   }
@@ -929,7 +997,7 @@ export class Wanderer {
 
   /** Free to take part in office events. */
   isIdle() {
-    return !this.busy && this.canWander;
+    return !this.busy && this.canWander && !this.away && !this.leaving && onShift(this.shift);
   }
 
   /** Visit these spots in order (dwelling `dwellEach` seconds at all but the last), then wait for release(). */
@@ -973,7 +1041,23 @@ export class Wanderer {
 
     let targetY = 0;
     let targetYaw = this.yaw;
-    if (this.mode === "seated") {
+    const duty = onShift(this.shift);
+    if (this.fresh) {
+      // the office opens with the off-shift crew already at home
+      this.fresh = false;
+      if (!duty && !busy) {
+        this.away = true;
+        this.hidden = true;
+        this.mode = "away";
+        [this.x, this.z] = LIFT_GROUND.at;
+      }
+    }
+    if (this.mode === "away") {
+      // home for the night: back through the elevator when the shift starts
+      if (duty) this.clockIn(home);
+    } else if (this.mode === "seated" && !duty && !busy && canWander && !this.ordered) {
+      this.clockOut({ home });
+    } else if (this.mode === "seated") {
       [this.x, this.z] = home.seat;
       targetY = this.seatY;
       targetYaw = 0;
@@ -1015,6 +1099,9 @@ export class Wanderer {
       if (this.orders.length) {
         // new orders interrupt a normal hangout at once; along an ordered route, wait out each stop
         if (!this.onOrder || this.timer <= 0) this.takeOrder({ spot: this.spot });
+      } else if (!this.ordered && this.timer <= 0 && !duty) {
+        // end of the shift: wrap up and head out
+        this.clockOut({ spot: this.spot });
       } else if (!this.ordered && this.timer <= 0) {
         const from = this.spot;
         const homeChance = breakScale > 1 ? 0.65 : breakScale < 1 ? 0.15 : 0.35;
@@ -1059,6 +1146,15 @@ export class Wanderer {
         this.hidden = true;
         this.ride = LIFT_RIDE;
         this.rideTo = levelOf(this.afterRide);
+      } else if (this.greetT <= 0 && this.seg >= this.path.length - 1 && this.leaving) {
+        // out of the door: gone until the next shift
+        this.leaving = false;
+        this.away = true;
+        this.hidden = true;
+        this.mode = "away";
+        this.spot = null;
+        this.holding = null;
+        this.phase = { kind: "seated" };
       } else if (this.greetT <= 0 && this.seg >= this.path.length - 1) {
         if (this.mode === "out" && this.spot) {
           if (taken.get(this.spot.id) === this.id) present.set(this.spot.id, this.id);
@@ -1081,6 +1177,7 @@ export class Wanderer {
           this.mode = "seated";
           this.spot = null;
           this.holding = null;
+          this.arriving = false;
           this.timer = (8 + Math.random() * 10) * breakScale;
           this.phase = { kind: "seated" };
         }
@@ -1097,6 +1194,24 @@ export class Wanderer {
   dispose() {
     releaseSpot(this.id);
     walkers.delete(this.id);
+  }
+
+  /** End of the shift: walk to the elevator and leave the building. */
+  private clockOut(from: Anchor) {
+    releaseSpot(this.id);
+    this.workAt = null;
+    this.leaving = true;
+    this.start(from, { spot: LIFT_GROUND }, STROLL, "out");
+  }
+
+  /** Start of the shift: out of the elevator and over to the desk. */
+  private clockIn(home: Home) {
+    this.away = false;
+    this.hidden = false;
+    this.level = 0;
+    this.arriving = true;
+    [this.x, this.z] = LIFT_GROUND.at;
+    this.start({ spot: LIFT_GROUND }, { home }, STROLL, "home");
   }
 
   /** Step out of the elevator on the new floor and carry on (or ride back if plans changed on the way). */
@@ -1217,6 +1332,7 @@ export class Wanderer {
   private goHome(home: Home) {
     releaseSpot(this.id);
     this.holding = null;
+    this.leaving = false;
     if (this.ride > 0) {
       // in the elevator: ride on, then come straight back down to the desk
       this.afterRide = { home };

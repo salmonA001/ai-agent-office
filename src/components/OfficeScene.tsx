@@ -7,8 +7,8 @@ import { CanvasTexture, type Group, type Mesh, Object3D, type Sprite, type Sprit
 import type { Agent } from "@/lib/agents";
 import {
   type BoardLine,
+  BOUNDS,
   EventProps,
-  FLOOR,
   type FloorDecor,
   MANAGER_TV,
   OfficeChair,
@@ -38,6 +38,10 @@ import {
   type ManagerPhase,
   ManagerWalker,
   MAX_DESKS,
+  NIGHT_DESKS,
+  nightSlot,
+  onShift,
+  type Shift,
   registerWalker,
   ROOF_Y,
   setAgentZones,
@@ -51,6 +55,7 @@ import {
 import { useStill } from "@/lib/motion";
 import { clip, hash, useDisposable } from "./scene-utils";
 import { StaticMerge } from "./static-merge";
+import { chatLine, setChatterTopic } from "./chatter";
 import { PcTower } from "./pc";
 import { tickRgb } from "./rgb";
 
@@ -1383,6 +1388,7 @@ type AvatarProps = {
   working: boolean;
   /** has a part of a task (queued or in progress), so may take it to their favourite zone */
   assigned: boolean;
+  shift: Shift;
   attentive: boolean;
   bubble?: string;
   lastDoneAt?: number;
@@ -1521,6 +1527,11 @@ function AgentAvatarImpl(props: AvatarProps) {
   const [riding, setRiding] = useState(false);
   // Biscuit the dog has come over for a pat
   const [petted, setPetted] = useState(false);
+  // small talk with the colleague across the table
+  const [talk, setTalk] = useState<string | undefined>(undefined);
+  // off shift (gone home), or just arriving for the shift
+  const [away, setAway] = useState(false);
+  const [arriving, setArriving] = useState(false);
   // something to do while sitting at the desk with nothing to work on
   const [fidget, setFidget] = useState<Action>("idle");
   useEffect(() => {
@@ -1533,6 +1544,7 @@ function AgentAvatarImpl(props: AvatarProps) {
     if (!g) return;
     const p = live.current;
     walker.setWorking(p.assigned);
+    walker.setShift(p.shift);
     if (walker.update(delta, p.home, p.busy, p.canWander)) setPhase(walker.phase);
     g.position.set(walker.x + walker.offX, walker.y + walker.level * ROOF_Y, walker.z + walker.offZ);
     g.rotation.y = walker.yaw;
@@ -1546,6 +1558,16 @@ function AgentAvatarImpl(props: AvatarProps) {
     const hello = walker.greetT > 0;
     if (hello !== greeting) setGreeting(hello);
     if (walker.hidden !== riding) setRiding(walker.hidden);
+    if (walker.away !== away) setAway(walker.away);
+    if (walker.arriving !== arriving) setArriving(walker.arriving);
+    // take turns talking once both are at the table
+    let line: string | undefined;
+    const ph = walker.phase;
+    if (ph.kind === "spot" && ph.spot.pair && here && !walker.workAt && (ph.spot.activity === "chat" || ph.spot.activity === "talk")) {
+      const key = [...(ph.spot.id < ph.spot.pair ? ph.spot.id + ph.spot.pair : ph.spot.pair + ph.spot.id)].reduce((a, c) => a + c.charCodeAt(0), 0);
+      line = chatLine(p.lang, key, ph.spot.id < ph.spot.pair, clock.elapsedTime);
+    }
+    if (line !== talk) setTalk(line);
     const dog = petWalker.walker;
     const pat = !!dog && dog.phase.kind === "visit" && dog.visiting === walker.id;
     if (pat !== petted) setPetted(pat);
@@ -1605,9 +1627,17 @@ function AgentAvatarImpl(props: AvatarProps) {
         : holding === "box"
           ? translate(props.lang, "bubble.parcel")
           : undefined;
+  else if (phase.kind === "spot" && phase.spot.pair && partnerHere && (phase.spot.activity === "chat" || phase.spot.activity === "talk"))
+    // a conversation: their line, or quiet while the other one talks
+    say = talk;
   else say = alone ? translate(props.lang, chatAlone ? "bubble.saving" : "bubble.waitPartner") : phrase(props.lang, phase.spot.say);
+  if (arriving && phase.kind === "walking") say = translate(props.lang, props.shift === "night" ? "shift.helloNight" : "shift.helloDay");
 
-  const status = riding
+  const status = away
+    ? translate(props.lang, "act.offShift", { time: props.shift === "night" ? "19:00" : "7:00" })
+    : walker.leaving
+      ? translate(props.lang, "act.clockingOut")
+      : riding
     ? translate(props.lang, walker.level ? "act.liftDown" : "act.liftUp")
     : workingAway
     ? translate(props.lang, "act.workingAt", { where: phrase(props.lang, phase.spot.where), title: bubble ?? "" })
@@ -1667,6 +1697,7 @@ const AgentAvatar = memo(
     a.busy === b.busy &&
     a.working === b.working &&
     a.assigned === b.assigned &&
+    a.shift === b.shift &&
     a.attentive === b.attentive &&
     a.bubble === b.bubble &&
     a.lastDoneAt === b.lastDoneAt &&
@@ -1879,7 +1910,7 @@ function Pacer({
 }
 
 /** Where the camera looks: the middle of the floor. */
-const TARGET: V3 = [9, 0.6, 9];
+const TARGET: V3 = [(BOUNDS.x0 + BOUNDS.x1) / 2, 0.6, (BOUNDS.z0 + BOUNDS.z1) / 2];
 
 type LightSet = { ambient: [string, number]; hemi: [string, string, number]; sun: [string, number, V3]; lamps: number };
 
@@ -1906,6 +1937,8 @@ const ROOM_LIGHTS: V3[] = [
   [4.7, 2.4, 20.6],
   [12.8, 2.4, 20.6],
   [21.5, 2.4, 20.6],
+  [31, 2.4, 12.5],
+  [31, 2.4, 19.5],
 ];
 
 /** Rooftop party: the lights go off everywhere; the party lights do the rest. */
@@ -2338,8 +2371,8 @@ function CameraFit() {
     const up = new Vector3().crossVectors(right, forward);
     let [minX, maxX, minY, maxY] = [Infinity, -Infinity, Infinity, -Infinity];
     const p = new Vector3();
-    for (const x of [FLOOR.x0, FLOOR.x1])
-      for (const z of [FLOOR.z0, FLOOR.z1])
+    for (const x of [BOUNDS.x0, BOUNDS.x1])
+      for (const z of [BOUNDS.z0, BOUNDS.z1])
         for (const y of [0, 2.4]) {
           p.set(x, y, z);
           minX = Math.min(minX, p.dot(right));
@@ -2414,6 +2447,7 @@ export default function OfficeScene({
   useEffect(() => setAutoEvents(custom.events), [custom.events]);
   useEffect(() => setAgentZones(Object.fromEntries(agents.map((a) => [a.id, a.zone]))), [agents]);
   useEffect(() => setAgentHobbies(Object.fromEntries(agents.map((a) => [a.id, a.hobbies]))), [agents]);
+  useEffect(() => setChatterTopic(board[0]?.text), [board]);
   useEffect(() => setFollow(selectedId ?? null), [selectedId]);
   const roofView = useCameraFocus().level === 1;
   // the rare rooftop party: take everyone up to see it
@@ -2425,7 +2459,14 @@ export default function OfficeScene({
   const [dpr, setDpr] = useState(1.5);
 
   const still = useStill();
-  const seated = agents.slice(0, MAX_DESKS);
+  // day crew at the main desks, night crew in the night-shift wing
+  const dayCrew = agents.filter((a) => a.shift !== "night").slice(0, MAX_DESKS);
+  const nightCrew = agents.filter((a) => a.shift === "night").slice(0, NIGHT_DESKS);
+  const placed = [
+    ...dayCrew.map((a, i) => ({ a, i, d: deskSlot(i) })),
+    ...nightCrew.map((a, i) => ({ a, i: dayCrew.length + i, d: nightSlot(i) })),
+  ];
+  const hour = minute / 60;
   const looks = [...LOOKS, ...MORE_LOOKS];
 
   return (
@@ -2443,6 +2484,9 @@ export default function OfficeScene({
       <ZoneSigns lang={lang} accent={decor.accent} />
       <Rooftop visible={roofView} phase={roofParty ? "night" : phase} party={roofParty} />
       {roofView && <color attach="background" args={[ROOF_SKY[roofParty ? "night" : phase]]} />}
+      {/* haze over the distant city from the roof; always mounted (pushed far out on the ground
+          floor) so switching views doesn't recompile every material */}
+      <fog attach="fog" args={[ROOF_SKY[roofParty ? "night" : phase], roofView ? 80 : 4000, roofView ? 230 : 5000]} />
       <EventDirector />
       <Projector lines={board} merging={manager === "merging"} lang={lang} />
       <group position={[-2.6 + 0.1, 1.5, -4.3]} rotation-y={Math.PI / 2}>
@@ -2454,14 +2498,19 @@ export default function OfficeScene({
       <Dog lang={lang} />
       <RgbDriver />
       <TownHallScreen lang={lang} />
-      {Array.from({ length: MAX_DESKS - seated.length }, (_, k) => {
-        const d = deskSlot(seated.length + k);
+      {Array.from({ length: MAX_DESKS - dayCrew.length }, (_, k) => {
+        const d = deskSlot(dayCrew.length + k);
         return <EmptyDesk key={`free-${d.index}`} position={[d.x, 0, d.z]} desk={deskLook} />;
       })}
-      {seated.map((a, i) => {
-        const d = deskSlot(i);
+      {Array.from({ length: NIGHT_DESKS - nightCrew.length }, (_, k) => {
+        const d = nightSlot(nightCrew.length + k);
+        return <EmptyDesk key={`free-night-${d.index}`} position={[d.x, 0, d.z]} desk={deskLook} />;
+      })}
+      {placed.map(({ a, i, d }) => {
         const state = desks[a.id] ?? IDLE_DESK;
-        const attentive = manager === "planning";
+        // only the crew on shift gathers round to watch Max plan
+        const onDuty = onShift(a.shift, hour);
+        const attentive = manager === "planning" && onDuty;
         const look = looks[i % looks.length];
         return (
           <group key={a.id}>
@@ -2469,10 +2518,11 @@ export default function OfficeScene({
             <AgentAvatar
               agent={a}
               look={look}
-              home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row }}
+              home={{ seat: d.seat, aisleZ: d.aisleZ, row: d.row, wing: d.wing }}
               busy={attentive || state.screen.mode === "working" || state.screen.mode === "queued"}
               working={state.working.length > 0}
               assigned={state.screen.mode === "working" || state.screen.mode === "queued"}
+              shift={a.shift ?? "day"}
               attentive={attentive}
               bubble={state.working[0]}
               lastDoneAt={state.lastDoneAt}

@@ -31,7 +31,10 @@ export type EventKind =
   | "hackathon"
   | "cafe"
   | "rooftop"
-  | "roofparty";
+  | "roofparty"
+  | "breakfast"
+  | "lunch"
+  | "dinner";
 
 export type ActiveEvent = {
   id: number;
@@ -190,6 +193,8 @@ type EventDef = {
   random?: false;
   /** happens only now and then, even when the time is right */
   rare?: true;
+  /** a fixed time of day (office hour) instead of at random: meals */
+  at?: number;
   plan: (idle: string[], everyone: string[], hero?: string) => Plan | null;
 };
 
@@ -542,6 +547,30 @@ const EVENTS: EventDef[] = [
       text: { key: "ge.roofparty.text" },
     }),
   },
+  ...(
+    [
+      ["breakfast", "🥞", 7.5, "Pancakes and coffee!", ["🥞", "☕", "🍳"], "at breakfast", [...CAFE, "stool", "dining-a", "dining-b", ...CAFE_SEATS]],
+      ["lunch", "🍱", 12, "Lunch break!", ["🍱", "🥗", "🍜"], "at lunch", [...CAFE.slice(2), "dining-a", "dining-b", "picnic-a", "picnic-b", ...CAFE_SEATS, "stool"]],
+      ["dinner", "🍝", 19.5, "Dinner time!", ["🍝", "🍜", "🌙"], "at dinner", ["dining-a", "dining-b", ...CAFE_SEATS, "night-coffee", "roof-fire-a", "roof-fire-b", ...CAFE.slice(2)]],
+    ] as const
+  ).map(
+    ([kind, icon, at, say, emoji, where, ids]): EventDef => ({
+      kind,
+      icon,
+      seconds: 55,
+      xp: 6,
+      at,
+      plan: (idle) => ({
+        // everyone on shift and free sits down to eat together
+        orders: gather(
+          idle,
+          ids.map((id) => fix(spotById(id), say, [...emoji], where, "sip")),
+        ),
+        dwell: 4,
+        text: { key: `ge.${kind}.text` as Key },
+      }),
+    }),
+  ),
   {
     kind: "welcome",
     icon: "🎉",
@@ -582,7 +611,13 @@ let pendingHero: string | undefined;
 
 /** The office clock (0-24), so evening events happen in the evening. */
 export function setEventHour(hour: number) {
+  // meals happen when the office clock passes their time (once a day)
+  const before = eventHour;
   eventHour = hour;
+  if (!autoEvents || hour === before) return;
+  const passed = (at: number) => (before < hour ? at > before && at <= hour : at > before || at <= hour);
+  const meal = EVENTS.find((e) => e.at !== undefined && passed(e.at));
+  if (meal && !pending) pending = meal.kind;
 }
 
 
@@ -669,7 +704,7 @@ export function tickEvents(t: number) {
 
 /** Events that fit the time of day (stand-ups in the morning, movies at night). */
 function eligible() {
-  return EVENTS.filter((e) => e.random !== false && (!e.when || e.when(eventHour)) && (!e.rare || Math.random() < 0.12));
+  return EVENTS.filter((e) => e.random !== false && e.at === undefined && (!e.when || e.when(eventHour)) && (!e.rare || Math.random() < 0.12));
 }
 
 export const EVENT_KINDS = EVENTS.filter((e) => e.random !== false).map((e) => ({
