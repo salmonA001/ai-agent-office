@@ -30,6 +30,7 @@
 | 🔒 **Private and free** | Qwen 3.5 runs on your graphics card through WebGPU. No API key, no server, and nothing you type leaves your device. |
 | 🧑‍💼 **A real team** | Max the manager splits each task, picks the right agent for each part and explains why, then merges the results and double-checks the answer. |
 | 🧠 **Think mode** | Agents write reasoning notes before answering, streamed live onto their desk PCs. |
+| 🎓 **Learn and test yourself** | Switch the task box to **Learn** and Theo the tutor teaches any topic (or your homework) step by step, or to **Test me** for a multiple-choice quiz on a topic or your own notes, with the answer key cross-checked by Quinn. Answer it in the app, get your score with explanations, retry what you missed, or have Theo teach it. |
 | 📎 **Files and pictures** | Attach text files and pictures (drop, paste or browse). A vision model describes each picture for the team. |
 | 🏙️ **A living office** | 20 animal agents (and Biscuit the office dog) work, take breaks, queue for coffee, game together, greet each other in the halls, meditate and hold strategy meetings across six working zones. |
 | 🌤️ **Rooftop** | A second level: switch the view to the roof, where agents ride the elevator up for fresh air, a sky deck, a fire pit and a roof garden. |
@@ -161,6 +162,15 @@ flowchart LR
 | ⌨️ **Work** | Each agent writes its part knowing the team's plan, streamed live to its desk PC. In **Think** mode it writes reasoning notes first. |
 | 🧩 **Merge** | Max combines the parts into one answer, removing overlap and fixing contradictions. |
 | 🔍 **Review** | Optional: Max double-checks the answer for mistakes and gaps. |
+
+### 🎓 Learning help
+
+The task box has three purposes: **Team** (the flow above), **Learn** and **Test me**. Pick a level (beginner, intermediate or advanced) for both.
+
+| Purpose | What happens |
+|---|---|
+| 🎓 **Learn** | Theo, the office tutor, writes a lesson pitched at your level: **the big idea**, **step by step** (new terms defined), **a worked example** (or your attached homework solved step by step, explaining why each step works), **common mistakes**, a **recap** with memory tricks, and **questions to check yourself**. Then: **Quiz me on this**, **Explain it more simply** or **Go deeper**. |
+| 📝 **Test me** | Theo writes a 5, 8 or 10-question multiple-choice quiz on your topic, or on notes you attach ("Test me on my notes"). Quinn, the QA tester, answers every question independently; Theo writes a couple of spares, and any question the two disagree on is dropped first. Options are shuffled. You answer in the app and **check your answers**: score, the right answer and why for each question, your best score, **retry the ones you missed**, **teach me what I missed** (a lesson on exactly those questions) or a **new quiz**. Progress is saved with the task. |
 
 Every step lands on the task's timeline with a plain-language reason. Click any agent to see what they're doing right now and their latest output.
 

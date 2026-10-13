@@ -11,12 +11,14 @@ import {
   CornersInIcon,
   CornersOutIcon,
   CpuIcon,
+  ExamIcon,
   FastForwardIcon,
   FileTextIcon,
   GearIcon,
+  GraduationCapIcon,
   HeadphonesIcon,
-  type Icon,
   ImageIcon,
+  LightbulbIcon,
   ListIcon,
   MapTrifoldIcon,
   MoonIcon,
@@ -27,6 +29,7 @@ import {
   SunHorizonIcon,
   SunIcon,
   TrashIcon,
+  type Icon,
   XIcon,
 } from "@phosphor-icons/react";
 import dynamic from "next/dynamic";
@@ -50,13 +53,15 @@ import {
 import { type Key, phrase, useI18n } from "@/lib/i18n";
 import { useProfileName } from "@/lib/profile";
 import { countWords } from "@/lib/words";
-import { type Attachment, runTask, type Task, type TaskStatus } from "@/lib/run-task";
+import { type Attachment, type Quiz, runTask, type StudyLevel, type Task, type TaskKind, type TaskStatus } from "@/lib/run-task";
+import { runStudy } from "@/lib/study";
 import { TaskComposer } from "./TaskComposer";
 import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
 import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
 import { MAX_DESKS, NIGHT_DESKS, onShift } from "./office-nav";
 import { CustomizePanel } from "./OfficeCustomize";
 import { AgentPanel, AgentStatusText, initials, Ticker, Timeline } from "./OfficeExplain";
+import { QuizView } from "./QuizView";
 import { DrillOverlay, EventBanner, EventsPanel, LevelToast, TeamStats, XpBadge } from "./OfficeGame";
 import type { BoardLine, DeskState, ManagerState, ScreenState } from "./OfficeScene";
 import { Sidebar, type SidebarTab } from "./Sidebar";
@@ -372,7 +377,17 @@ export function Office() {
   }, []);
 
   const start = useCallback(
-    (text: string, extra: { attachments?: Attachment[]; images?: Record<string, string>; think?: boolean } = {}) => {
+    (
+      text: string,
+      extra: {
+        attachments?: Attachment[];
+        images?: Record<string, string>;
+        think?: boolean;
+        kind?: TaskKind;
+        level?: StudyLevel;
+        count?: number;
+      } = {},
+    ) => {
       // Max plans with the crew that's on shift right now (everyone, if nobody is)
       const hour = minutes === null ? null : minutes / 60;
       const onDuty = agents.filter((a) => hour === null || onShift(a.shift, hour));
@@ -382,6 +397,8 @@ export function Office() {
         prompt: text,
         ...(extra.attachments?.length ? { attachments: extra.attachments } : {}),
         mode: extra.think ? "think" : "fast",
+        ...(extra.kind && extra.kind !== "team" ? { kind: extra.kind, level: extra.level ?? "intermediate" } : {}),
+        ...(extra.kind === "test" ? { count: extra.count ?? 5 } : {}),
         createdAt: Date.now(),
         status: "planning",
         subtasks: [],
@@ -394,7 +411,13 @@ export function Office() {
       setSelectedId(task.id);
       setSideTab("progress");
 
-      runTask(task, team, controller.signal, (fn) => updateTask(task.id, fn), lang, { review: getAiSettings().review, images: extra.images })
+      const update = (fn: (t: Task) => Task) => updateTask(task.id, fn);
+      // lessons and quizzes go to the tutor; everything else is planned by Max
+      const run =
+        task.kind === "learn" || task.kind === "test"
+          ? runStudy(task, team, controller.signal, update, lang, { check: getAiSettings().review, images: extra.images })
+          : runTask(task, team, controller.signal, update, lang, { review: getAiSettings().review, images: extra.images });
+      run
         .catch((err: Error) => {
           if (controller.signal.aborted) {
             updateTask(task.id, (t) => ({ ...t, status: "cancelled" }));
@@ -749,11 +772,14 @@ export function Office() {
             <div className="flex flex-col gap-5">
               <TaskComposer
                 composerRef={composer}
-                onSubmit={({ text, files, think }) =>
+                onSubmit={({ text, files, think, kind, level, count }) =>
                   start(text, {
                     attachments: files.map((f) => ({ name: f.name, kind: f.kind, ...(f.text ? { text: f.text } : {}) })),
                     images: Object.fromEntries(files.filter((f) => f.dataUrl).map((f) => [f.name, f.dataUrl!])),
                     think,
+                    kind,
+                    level,
+                    count,
                   })
                 }
               />
@@ -769,8 +795,18 @@ export function Office() {
                   task={selected}
                   agents={agents}
                   onCancel={() => cancel(selected.id)}
-                  onRetry={() => start(selected.prompt, { attachments: selected.attachments, think: selected.mode === "think" })}
+                  onRetry={() =>
+                    start(selected.prompt, {
+                      attachments: selected.attachments,
+                      think: selected.mode === "think",
+                      kind: selected.kind,
+                      level: selected.level,
+                      count: selected.count,
+                    })
+                  }
                   onDelete={() => remove(selected.id)}
+                  onStudy={(text, extra) => start(text, extra)}
+                  onQuiz={(quiz) => setTasks((all) => all.map((x) => (x.id === selected.id ? { ...x, quiz } : x)))}
                 />
               ) : (
                 <div className="enter-fade grid h-full min-h-64 place-items-center rounded-2xl border border-dashed border-line p-8 text-center text-muted">
@@ -791,14 +827,26 @@ function TaskView({
   onCancel,
   onRetry,
   onDelete,
+  onStudy,
+  onQuiz,
 }: {
   task: Task;
   agents: Agent[];
   onCancel: () => void;
   onRetry: () => void;
   onDelete: () => void;
+  /** start a follow-up lesson or quiz */
+  onStudy: (text: string, extra: { kind: TaskKind; level?: StudyLevel; count?: number; attachments?: Attachment[] }) => void;
+  onQuiz: (quiz: Quiz) => void;
 }) {
   const { lang, t } = useI18n();
+  const study = task.kind === "learn" || task.kind === "test";
+  const topic = task.prompt.length > 120 ? `${task.prompt.slice(0, 118)}…` : task.prompt;
+  const learnMissed = (missed: number[]) => {
+    const q = task.quiz!.questions;
+    const list = missed.map((i) => `- ${q[i].question} → ${q[i].options[q[i].answer]}`).join("\n");
+    onStudy(`${t("study.missedPrompt", { topic })}\n${list}`, { kind: "learn", level: task.level });
+  };
   const [copied, setCopied] = useState(false);
   const active = ACTIVE.includes(task.status);
 
@@ -843,8 +891,17 @@ function TaskView({
             )}
           </div>
         </div>
-        {(task.mode === "think" || task.attachments?.length) && (
+        {(task.mode === "think" || task.attachments?.length || study) && (
           <ul className="mt-2 flex flex-wrap gap-1.5 text-xs" aria-label={t("attach.list")}>
+            {study && (
+              <li className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 font-semibold text-accent">
+                {task.kind === "test" ? <ExamIcon size={13} weight="fill" aria-hidden /> : <GraduationCapIcon size={13} weight="fill" aria-hidden />}
+                {t(task.kind === "test" ? "task.kindTest" : "task.kindLearn")}
+                {" · "}
+                {t(`study.${task.level ?? "intermediate"}` as Key)}
+                {task.kind === "test" && task.count ? ` · ${t("task.questions", { n: task.count })}` : ""}
+              </li>
+            )}
             {task.mode === "think" && (
               <li className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-1 font-semibold text-accent">
                 <BrainIcon size={13} weight="fill" aria-hidden />
@@ -890,10 +947,19 @@ function TaskView({
                     {s.reason}
                   </p>
                 )}
-                <details className="text-xs text-muted">
-                  <summary>{t("task.brief")}</summary>
-                  <p className="enter-fade mt-1 whitespace-pre-wrap">{s.brief}</p>
-                </details>
+                {!study && (
+                  <details className="text-xs text-muted">
+                    <summary>{t("task.brief")}</summary>
+                    <p className="enter-fade mt-1 whitespace-pre-wrap">{s.brief}</p>
+                  </details>
+                )}
+                {study ? (
+                  task.kind === "test" && s.output ? (
+                    <p className="text-sm text-muted" aria-live="polite">
+                      {s.output}
+                    </p>
+                  ) : null
+                ) : (
                 <div className="max-h-96 overflow-y-auto rounded-lg bg-well p-3">
                   {s.output ? (
                     <Markdown>{s.output}</Markdown>
@@ -901,6 +967,7 @@ function TaskView({
                     <p className="text-sm text-muted">{s.status === "error" ? t("task.failed") : t("task.waiting")}</p>
                   )}
                 </div>
+                )}
               </div>
             );
           })}
@@ -909,11 +976,20 @@ function TaskView({
 
       <Timeline events={task.events} start={task.createdAt} />
 
-      {(task.final || task.status === "synthesizing") && (
+      {task.kind === "test" && task.quiz && (
+        <QuizView
+          quiz={task.quiz}
+          onChange={onQuiz}
+          onLearnMissed={learnMissed}
+          onNewQuiz={() => onStudy(task.prompt, { kind: "test", level: task.level, count: task.count, attachments: task.attachments })}
+        />
+      )}
+
+      {task.kind !== "test" && (task.final || task.status === "synthesizing") && (
         <section aria-labelledby="final-heading" className="glass glow enter-pop rounded-2xl border-accent/60 p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 id="final-heading" className="font-semibold text-accent">
-              {t("task.final")}
+              {task.kind === "learn" ? t("task.lesson") : t("task.final")}
             </h3>
             {task.final && (
               <button
@@ -935,6 +1011,48 @@ function TaskView({
             )}
           </div>
           {task.final ? <Markdown>{task.final}</Markdown> : <p className="text-sm text-muted">{t("task.merging")}</p>}
+          {task.kind === "learn" && task.status === "done" && (
+            <div className="enter mt-4 flex flex-col gap-2 border-t border-line pt-3">
+              <p className="text-xs font-semibold text-muted">{t("lesson.next")}</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onStudy(t("study.quizMePrompt", { topic }), {
+                      kind: "test",
+                      level: task.level,
+                      count: 5,
+                      attachments: [{ name: t("study.lessonFile"), kind: "text", text: task.final }],
+                    })
+                  }
+                  className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-semibold text-on-primary"
+                >
+                  <ExamIcon size={16} weight="bold" aria-hidden />
+                  {t("lesson.quizMe")}
+                </button>
+                {task.level !== "beginner" && (
+                  <button
+                    type="button"
+                    onClick={() => onStudy(t("study.simplerPrompt", { topic }), { kind: "learn", level: "beginner", attachments: task.attachments })}
+                    className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-semibold hover:border-accent/60"
+                  >
+                    <LightbulbIcon size={16} weight="bold" aria-hidden />
+                    {t("lesson.simpler")}
+                  </button>
+                )}
+                {task.level !== "advanced" && (
+                  <button
+                    type="button"
+                    onClick={() => onStudy(t("study.deeperPrompt", { topic }), { kind: "learn", level: "advanced", attachments: task.attachments })}
+                    className="press inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-semibold hover:border-accent/60"
+                  >
+                    <GraduationCapIcon size={16} weight="bold" aria-hidden />
+                    {t("lesson.deeper")}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       )}
     </article>

@@ -33,11 +33,36 @@ export type Attachment = { name: string; kind: "image" | "text"; text?: string }
 
 export type TaskMode = "fast" | "think";
 
+/** What the task is for: team work (the default), a lesson, or a practice quiz. */
+export type TaskKind = "team" | "learn" | "test";
+export type StudyLevel = "beginner" | "intermediate" | "advanced";
+
+/** One multiple-choice question; `answer` is the index of the right option. */
+export type QuizQuestion = { question: string; options: string[]; answer: number; explanation: string };
+
+/** A practice quiz and how the learner is doing on it (saved with the task). */
+export type Quiz = {
+  questions: QuizQuestion[];
+  /** the option picked for each question, or null */
+  picked: (number | null)[];
+  checked: boolean;
+  /** retrying only these questions (the ones missed last time) */
+  only?: number[];
+  attempts?: number;
+  /** best score so far, in percent */
+  best?: number;
+};
+
 export type Task = {
   id: string;
   prompt: string;
   attachments?: Attachment[];
   mode?: TaskMode;
+  kind?: TaskKind;
+  level?: StudyLevel;
+  /** how many questions, for a quiz */
+  count?: number;
+  quiz?: Quiz;
   createdAt: number;
   status: TaskStatus;
   subtasks: Subtask[];
@@ -46,7 +71,7 @@ export type Task = {
   events?: TaskEvent[];
 };
 
-type Update = (fn: (task: Task) => Task) => void;
+export type Update = (fn: (task: Task) => Task) => void;
 type Result = { agentName: string; role: string; title: string; output: string };
 
 /** At most this many agents work on one task (more would not fit the model's memory). */
@@ -54,7 +79,7 @@ const MAX_PARTS = 4;
 /** Characters of the team's work the manager can read in one go (the model sees about 4,000 tokens). */
 const MERGE_BUDGET = 6500;
 
-const LANG_RULE: Record<Lang, string> = {
+export const LANG_RULE: Record<Lang, string> = {
   en: " Write in English.",
   th: " Write everything in Thai (ภาษาไทย), natural and fluent.",
 };
@@ -62,10 +87,10 @@ const LANG_RULE: Record<Lang, string> = {
 const firstSentence = (text: string) => text.split(/(?<=[.!?])\s/)[0];
 
 /** Characters of attached files each agent reads (the model sees about 4,000 tokens in all). */
-const FILES_BUDGET = 4500;
+export const FILES_BUDGET = 4500;
 
 /** The attached files as one block for the prompt, each trimmed to a fair share of `budget`. */
-function filesBlock(files: Attachment[], budget: number) {
+export function filesBlock(files: Attachment[], budget: number) {
   const usable = files.filter((f) => f.text?.trim());
   if (!usable.length) return "";
   const share = Math.floor(budget / usable.length);
@@ -246,28 +271,23 @@ function review(task: string, draft: string, lang: Lang, signal: AbortSignal, on
 
 // ---------- Orchestration ----------
 
-/** Manager plans, agents work, manager merges, and (optionally) the answer gets a final review. */
-export async function runTask(
-  task: Task,
-  agents: Agent[],
-  signal: AbortSignal,
-  update: Update,
-  lang: Lang = "en",
-  opts: { review: boolean; images?: Record<string, string> } = { review: true },
-) {
-  const think = task.mode === "think";
-  const log = (kind: TaskEvent["kind"], key: Key, params?: Msg["params"], agentId?: string) =>
+export type Log = (kind: TaskEvent["kind"], key: Key, params?: Msg["params"], agentId?: string) => void;
+
+/** Adds lines to the task's timeline (stored in English, shown in the current language). */
+export function taskLogger(update: Update): Log {
+  return (kind, key, params, agentId) =>
     update((t) => ({
       ...t,
       events: [...(t.events ?? []), { at: Date.now(), kind, text: translate("en", key, params), msg: { key, params }, agentId }],
     }));
-  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
+}
 
-  // pictures first: the vision model describes each one, and the team works from the description
+/** Pictures first: the vision model describes each one, and the team works from the description. */
+export async function prepareFiles(task: Task, signal: AbortSignal, update: Update, log: Log, images?: Record<string, string>) {
   const files = [...(task.attachments ?? [])];
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
-    const url = opts.images?.[f.name];
+    const url = images?.[f.name];
     if (f.kind !== "image" || f.text || !url) continue;
     log("info", "ev.lookImage", { name: f.name });
     try {
@@ -281,6 +301,22 @@ export async function runTask(
     }
   }
   if (files.some((f) => f.text)) log("info", "ev.files", { n: files.filter((f) => f.text).length });
+  return files;
+}
+
+/** Manager plans, agents work, manager merges, and (optionally) the answer gets a final review. */
+export async function runTask(
+  task: Task,
+  agents: Agent[],
+  signal: AbortSignal,
+  update: Update,
+  lang: Lang = "en",
+  opts: { review: boolean; images?: Record<string, string> } = { review: true },
+) {
+  const think = task.mode === "think";
+  const log = taskLogger(update);
+  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "An agent";
+  const files = await prepareFiles(task, signal, update, log, opts.images);
   const filesForPlan = filesBlock(files, 1500);
   const filesForWork = filesBlock(files, FILES_BUDGET);
 

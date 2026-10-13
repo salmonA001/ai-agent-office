@@ -1,9 +1,21 @@
 "use client";
 
-import { BrainIcon, FileTextIcon, LightningIcon, PaperclipIcon, PaperPlaneRightIcon, XIcon } from "@phosphor-icons/react";
+import {
+  BrainIcon,
+  ExamIcon,
+  FileTextIcon,
+  GraduationCapIcon,
+  LightningIcon,
+  PaperclipIcon,
+  PaperPlaneRightIcon,
+  UsersThreeIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { type RefObject, useRef, useState } from "react";
 import { setAiSettings, useAiSettings } from "@/lib/browser-ai";
-import { useI18n } from "@/lib/i18n";
+import { type Key, useI18n } from "@/lib/i18n";
+import type { StudyLevel, TaskKind } from "@/lib/run-task";
+import { QUIZ_SIZES } from "@/lib/study";
 
 /** A file picked for the next task: pictures are shrunk to a data URL, text files are read as text. */
 export type ComposerFile = { id: string; name: string; kind: "image" | "text"; size: number; dataUrl?: string; text?: string };
@@ -44,15 +56,61 @@ async function readFile(file: File): Promise<ComposerFile> {
 
 const sizeText = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
-/** The "new task" box: text, attached files and pictures, and fast or think mode. */
+const LEVELS: StudyLevel[] = ["beginner", "intermediate", "advanced"];
+
+/** A small segmented control (radio group) for the composer's options. */
+function Segments<T extends string | number>({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onPick: (v: T) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted">{label}</span>
+      <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-lg bg-well p-1">
+        {options.map((o) => {
+          const on = o.value === value;
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onPick(o.value)}
+              className={`press min-h-9 flex-1 rounded-md px-2 text-xs font-semibold transition-colors duration-200 ${
+                on ? "bg-accent text-on-accent shadow-sm" : "text-muted hover:text-ink"
+              }`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The "new task" box: what it's for (team work, a lesson or a practice quiz), the text, attached
+ * files and pictures, and fast or think mode.
+ */
 export function TaskComposer({
   composerRef,
   onSubmit,
 }: {
   composerRef: RefObject<HTMLTextAreaElement | null>;
-  onSubmit: (task: { text: string; files: ComposerFile[]; think: boolean }) => void;
+  onSubmit: (task: { text: string; files: ComposerFile[]; think: boolean; kind: TaskKind; level: StudyLevel; count: number }) => void;
 }) {
   const { t } = useI18n();
+  const [kind, setKind] = useState<TaskKind>("team");
+  const [level, setLevel] = useState<StudyLevel>("intermediate");
+  const [count, setCount] = useState<number>(5);
   const ai = useAiSettings();
   const input = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState("");
@@ -79,7 +137,7 @@ export function TaskComposer({
   const submit = () => {
     const text = prompt.trim();
     if (text.length < 3) return;
-    onSubmit({ text, files, think: ai.think });
+    onSubmit({ text, files, think: ai.think, kind, level, count });
     setPrompt("");
     setFiles([]);
     setProblem(null);
@@ -89,6 +147,13 @@ export function TaskComposer({
     { think: false, label: t("mode.fast"), I: LightningIcon },
     { think: true, label: t("mode.think"), I: BrainIcon },
   ];
+  const kinds = [
+    { kind: "team" as const, label: t("purpose.team"), I: UsersThreeIcon },
+    { kind: "learn" as const, label: t("purpose.learn"), I: GraduationCapIcon },
+    { kind: "test" as const, label: t("purpose.test"), I: ExamIcon },
+  ];
+  const placeholder = kind === "learn" ? t("composer.learnPlaceholder") : kind === "test" ? t("composer.testPlaceholder") : t("composer.placeholder");
+  const submitLabel = kind === "learn" ? t("composer.submitLearn") : kind === "test" ? t("composer.submitTest") : t("composer.submit");
 
   return (
     <form
@@ -116,6 +181,31 @@ export function TaskComposer({
       <label htmlFor="task" className="font-semibold">
         {t("composer.title")}
       </label>
+      <div className="flex flex-col gap-1">
+        <div role="radiogroup" aria-label={t("purpose.label")} className="grid grid-cols-3 gap-1 rounded-lg bg-well p-1">
+          {kinds.map(({ kind: k, label, I }) => {
+            const on = kind === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setKind(k)}
+                className={`press inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-1 text-sm font-semibold transition-colors duration-200 ${
+                  on ? "bg-accent text-on-accent shadow-sm" : "text-muted hover:text-ink"
+                }`}
+              >
+                <I size={16} weight={on ? "fill" : "duotone"} aria-hidden className="shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p key={kind} className="enter-fade text-xs text-muted" aria-live="polite">
+          {t(`purpose.${kind}Hint` as Key)}
+        </p>
+      </div>
       <textarea
         id="task"
         ref={composerRef}
@@ -136,7 +226,7 @@ export function TaskComposer({
         }}
         rows={5}
         maxLength={4000}
-        placeholder={t("composer.placeholder")}
+        placeholder={placeholder}
         className="resize-y rounded-lg border border-line bg-well p-3 text-sm text-ink transition-colors placeholder:text-muted/80 focus:border-accent/60"
       />
 
@@ -174,7 +264,21 @@ export function TaskComposer({
         </p>
       )}
 
-      <div className="flex flex-col gap-1">
+      {kind !== "team" && (
+        <div className="enter-drop grid gap-2">
+          <Segments
+            label={t("study.level")}
+            value={level}
+            options={LEVELS.map((l) => ({ value: l, label: t(`study.${l}` as Key) }))}
+            onPick={setLevel}
+          />
+          {kind === "test" && (
+            <Segments label={t("study.count")} value={count} options={QUIZ_SIZES.map((n) => ({ value: n, label: String(n) }))} onPick={setCount} />
+          )}
+        </div>
+      )}
+
+      <div className={`flex flex-col gap-1 ${kind === "test" ? "hidden" : ""}`}>
         <div role="radiogroup" aria-label={t("mode.label")} className="grid grid-cols-2 gap-1 rounded-lg bg-well p-1">
           {modes.map(({ think, label, I }) => {
             const on = ai.think === think;
@@ -234,8 +338,14 @@ export function TaskComposer({
           aria-keyshortcuts="Control+Enter Meta+Enter"
           className="press inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
         >
-          <PaperPlaneRightIcon size={16} weight="bold" aria-hidden />
-          {t("composer.submit")}
+          {kind === "learn" ? (
+            <GraduationCapIcon size={16} weight="bold" aria-hidden />
+          ) : kind === "test" ? (
+            <ExamIcon size={16} weight="bold" aria-hidden />
+          ) : (
+            <PaperPlaneRightIcon size={16} weight="bold" aria-hidden />
+          )}
+          {submitLabel}
         </button>
       </div>
     </form>
