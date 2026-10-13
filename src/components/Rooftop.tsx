@@ -574,7 +574,20 @@ function PartyStage({ party }: { party: boolean }) {
  * railings, a roof garden with raised beds and a greenhouse, solar panels and HVAC units, and the
  * open courtyard over the garden below. Shown when the view switches to the roof.
  */
-export function Rooftop({ visible, phase, party = false }: { visible: boolean; phase: Phase; party?: boolean }) {
+export function Rooftop({
+  visible,
+  phase,
+  party = false,
+  name = "AGENT HQ",
+  accent = "#34d399",
+}: {
+  visible: boolean;
+  phase: Phase;
+  party?: boolean;
+  /** the office's name, for the logo on the tower */
+  name?: string;
+  accent?: string;
+}) {
   const gravelTex = useDisposable(() => gravel([14, 12]), "roof-gravel");
   const deckTex = useDisposable(() => planks([8, 4]), "roof-deck");
   const grassTex = useDisposable(() => turf([8, 5]), "roof-turf");
@@ -752,7 +765,7 @@ export function Rooftop({ visible, phase, party = false }: { visible: boolean; p
       </StaticMerge>
       <Sky phase={phase} />
       <Kite />
-      <Skyline phase={phase} />
+      <Skyline phase={phase} name={name} accent={accent} />
       <Beacons
         points={[
           [WING.x0 + 0.4, Y + 1.2, WING.z0 + 0.4],

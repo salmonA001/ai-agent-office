@@ -2482,7 +2482,12 @@ export default function OfficeScene({
       <Lights phase={phase} />
       <OfficeFloor decor={decor} />
       <ZoneSigns lang={lang} accent={decor.accent} />
-      <Rooftop visible={roofView} phase={roofParty ? "night" : phase} party={roofParty} />
+      <Rooftop
+        visible={roofView}
+        phase={roofParty ? "night" : phase}
+        party={roofParty}
+        name={decor.sign.trim() || "AGENT HQ"}
+      />
       {roofView && <color attach="background" args={[ROOF_SKY[roofParty ? "night" : phase]]} />}
       {/* haze over the distant city from the roof; always mounted (pushed far out on the ground
           floor) so switching views doesn't recompile every material */}

@@ -17,7 +17,7 @@ import { DYNAMIC, StaticMerge } from "./static-merge";
 
 /** Storeys below the office, and the street level. */
 const STOREY = ROOF_Y;
-const FLOORS = 14;
+const FLOORS = 18;
 export const STREET_Y = ROOF_Y - FLOORS * STOREY;
 
 /** One texture tile = 4 windows across, 4 storeys up. */
@@ -26,9 +26,98 @@ const TILE_H = 4 * STOREY;
 
 type Glass = { map: CanvasTexture; lit: CanvasTexture };
 
-/** Window grid for a curtain wall: a daytime look and a map of which windows are lit at night. */
-function glassTextures(frame: string, glass: [string, string], seed: number): Glass {
-  const n = 256;
+const SKIN = ["#f1c7a5", "#d8a27c", "#a86f4c", "#7a4a2f", "#f5d6bd"];
+const SHIRT = ["#2563eb", "#16a34a", "#dc2626", "#f59e0b", "#7c3aed", "#0f766e", "#e5e7eb", "#111827", "#db2777"];
+const SCREEN = ["#38bdf8", "#34d399", "#a78bfa", "#fbbf24", "#60a5fa"];
+
+/**
+ * What's behind one window: an office floor with ceiling lights, desks with glowing monitors and
+ * people at work (or a meeting, or a quiet corner with a plant). `lit` draws it with the lights on.
+ */
+function drawRoom(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rnd: () => number, lit: boolean) {
+  const floorY = y + h * 0.8;
+  g.fillStyle = lit ? "#e9d3a6" : "#c9d4dc";
+  g.fillRect(x, y, w, h);
+  // ceiling with light panels, carpet below
+  g.fillStyle = lit ? "#b59a6e" : "#9fadb8";
+  g.fillRect(x, y, w, h * 0.1);
+  g.fillStyle = lit ? "#fffbe8" : "#eef4f8";
+  for (let i = 0; i < 3; i++) g.fillRect(x + w * (0.08 + i * 0.32), y + h * 0.1, w * 0.2, 2.5);
+  g.fillStyle = lit ? "#6b5a45" : "#7b8794";
+  g.fillRect(x, floorY, w, y + h - floorY);
+  const person = (cx: number, top: number, s = 1) => {
+    // seen from behind, at their screen: chair, shirt, head
+    g.fillStyle = "#1f2937";
+    g.fillRect(cx - 7 * s, top + 10 * s, 14 * s, 16 * s);
+    g.fillStyle = SHIRT[Math.floor(rnd() * SHIRT.length)];
+    g.beginPath();
+    g.roundRect(cx - 6 * s, top + 6 * s, 12 * s, 14 * s, 4 * s);
+    g.fill();
+    g.fillStyle = SKIN[Math.floor(rnd() * SKIN.length)];
+    g.beginPath();
+    g.arc(cx, top + 2 * s, 5 * s, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = rnd() < 0.5 ? "#2b1d14" : "#5b3a1e";
+    g.beginPath();
+    g.arc(cx, top + 0.5 * s, 5 * s, Math.PI, Math.PI * 2);
+    g.fill();
+  };
+  const kind = rnd();
+  if (kind < 0.72) {
+    // two workstations, drawn big enough to read from the roof
+    const S = 1.35;
+    for (const u of [0.26, 0.74]) {
+      const cx = x + w * u;
+      const deskY = floorY - 14 * S;
+      g.fillStyle = lit ? "#f8fafc" : "#e5e7eb";
+      g.fillRect(cx - 21 * S, deskY, 42 * S, 4 * S);
+      g.fillStyle = "#4b5563";
+      g.fillRect(cx - 19 * S, deskY + 4 * S, 2, 10 * S);
+      g.fillRect(cx + 17 * S, deskY + 4 * S, 2, 10 * S);
+      const screens = rnd() < 0.5 ? 2 : 1;
+      for (let m = 0; m < screens; m++) {
+        const mx = cx + (screens === 2 ? (m ? 2 : -18) : -8) * S;
+        g.fillStyle = "#111827";
+        g.fillRect(mx, deskY - 14 * S, 16 * S, 11 * S);
+        g.fillStyle = SCREEN[Math.floor(rnd() * SCREEN.length)];
+        g.fillRect(mx + 1.5 * S, deskY - 12.5 * S, 13 * S, 8 * S);
+        g.fillStyle = "rgba(255,255,255,0.6)";
+        for (let l = 0; l < 3; l++) g.fillRect(mx + 3 * S, deskY - 11 * S + l * 2.4 * S, (5 + rnd() * 6) * S, 1.2);
+        g.fillStyle = "#374151";
+        g.fillRect(mx + 7 * S, deskY - 3 * S, 2 * S, 3 * S);
+      }
+      if (rnd() < 0.75) person(cx + (rnd() - 0.5) * 6, deskY - 5 * S, S);
+    }
+  } else if (kind < 0.86) {
+    // a meeting round a table, with a screen on the wall
+    g.fillStyle = "#111827";
+    g.fillRect(x + w * 0.38, y + h * 0.2, w * 0.24, h * 0.18);
+    g.fillStyle = SCREEN[Math.floor(rnd() * SCREEN.length)];
+    g.fillRect(x + w * 0.39, y + h * 0.21, w * 0.22, h * 0.15);
+    for (const u of [0.22, 0.4, 0.6, 0.78]) person(x + w * u, floorY - 26, 0.9);
+    g.fillStyle = lit ? "#8b5e3c" : "#7c5a40";
+    g.fillRect(x + w * 0.12, floorY - 12, w * 0.76, 5);
+  } else {
+    // a quiet corner: sofa and a plant
+    g.fillStyle = SHIRT[Math.floor(rnd() * SHIRT.length)];
+    g.fillRect(x + w * 0.15, floorY - 14, w * 0.4, 14);
+    g.fillRect(x + w * 0.15, floorY - 22, w * 0.4, 8);
+    if (rnd() < 0.5) person(x + w * 0.35, floorY - 32, 0.9);
+    g.fillStyle = "#92400e";
+    g.fillRect(x + w * 0.72, floorY - 10, 12, 10);
+    g.fillStyle = "#15803d";
+    g.beginPath();
+    g.arc(x + w * 0.72 + 6, floorY - 18, 10, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+/**
+ * Curtain wall: a daytime look (the office floors seen through tinted glass) and the same floors
+ * with the lights on for the night. `busy` is the share of windows lit after dark.
+ */
+function glassTextures(frame: string, glass: [string, string], seed: number, busy = 0.4): Glass {
+  const n = 512;
   const cell = n / 4;
   const day = document.createElement("canvas");
   const night = document.createElement("canvas");
@@ -45,33 +134,49 @@ function glassTextures(frame: string, glass: [string, string], seed: number): Gl
       const x = c * cell + 6;
       const y = r * cell + 8;
       const w = cell - 12;
-      const h = cell - 22;
+      const h = cell - 26;
+      const roomSeed = 1 + Math.floor(rnd() * 1e9);
+      const on = rnd() < busy;
+      // by day: the room behind tinted, reflective glass
+      drawRoom(g, x, y, w, h, seeded(roomSeed), false);
       const sky = g.createLinearGradient(x, y, x + w, y + h);
       sky.addColorStop(0, glass[0]);
       sky.addColorStop(1, glass[1]);
+      g.globalAlpha = 0.36;
       g.fillStyle = sky;
       g.fillRect(x, y, w, h);
-      g.fillStyle = "rgba(255,255,255,0.18)";
-      g.fillRect(x + 4, y + 3, w * 0.35, h - 6);
-      // about a third of the windows have the lights on at night
-      const on = rnd();
-      if (on < 0.38) {
-        k.fillStyle = on < 0.1 ? "#cfe6ff" : on < 0.3 ? "#ffd38c" : "#ffb86b";
-        k.fillRect(x, y, w, h);
+      g.globalAlpha = 1;
+      g.fillStyle = "rgba(255,255,255,0.12)";
+      g.beginPath();
+      g.moveTo(x + w * 0.1, y + h);
+      g.lineTo(x + w * 0.45, y);
+      g.lineTo(x + w * 0.62, y);
+      g.lineTo(x + w * 0.27, y + h);
+      g.fill();
+      g.fillStyle = frame;
+      g.fillRect(x + w / 2 - 1.5, y, 3, h);
+      // by night: lights on in the busy rooms, a monitor or two left on in the others
+      if (on) {
+        drawRoom(k, x, y, w, h, seeded(roomSeed), true);
+        k.fillStyle = "#000000";
+        k.fillRect(x + w / 2 - 1.5, y, 3, h);
+      } else if (rnd() < 0.3) {
+        k.fillStyle = SCREEN[Math.floor(rnd() * SCREEN.length)];
+        k.fillRect(x + w * (0.2 + rnd() * 0.5), y + h * 0.55, 12, 8);
       }
     }
-  const make = (c: HTMLCanvasElement, srgb: boolean) => {
+  const make = (c: HTMLCanvasElement) => {
     const t = new CanvasTexture(c);
-    if (srgb) t.colorSpace = SRGBColorSpace;
+    t.colorSpace = SRGBColorSpace;
     t.wrapS = t.wrapT = RepeatWrapping;
-    t.anisotropy = 4;
+    t.anisotropy = 8;
     return t;
   };
-  return { map: make(day, true), lit: make(night, true) };
+  return { map: make(day), lit: make(night) };
 }
 
-function useGlass(frame: string, a: string, b: string, seed: number) {
-  const glass = useMemo(() => glassTextures(frame, [a, b], seed), [frame, a, b, seed]);
+function useGlass(frame: string, a: string, b: string, seed: number, busy?: number) {
+  const glass = useMemo(() => glassTextures(frame, [a, b], seed, busy), [frame, a, b, seed, busy]);
   useEffect(
     () => () => {
       glass.map.dispose();
@@ -104,11 +209,66 @@ function useGeometry<T extends BufferGeometry | BufferGeometry[]>(make: () => T,
   return geo;
 }
 
-const glowOf = (phase: Phase) => (phase === "night" ? 1.25 : phase === "sunset" ? 0.55 : 0);
+const glowOf = (phase: Phase) => (phase === "night" ? 1.1 : phase === "sunset" ? 0.5 : 0);
+
+/** The building's logo: the app badge in the accent colour and the office name, lit at night. */
+function logoTexture(name: string, accent: string) {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = accent;
+  g.beginPath();
+  g.roundRect(16, 28, 200, 200, 48);
+  g.fill();
+  g.fillStyle = "#0b1410";
+  g.font = "bold 112px system-ui, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText("AI", 116, 134);
+  g.fillStyle = "#ffffff";
+  g.textAlign = "left";
+  let size = 150;
+  g.font = `bold ${size}px system-ui, sans-serif`;
+  while (g.measureText(name).width > 760 && size > 60) {
+    size -= 6;
+    g.font = `bold ${size}px system-ui, sans-serif`;
+  }
+  g.shadowColor = accent;
+  g.shadowBlur = 18;
+  g.fillText(name, 250, 136);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+function Logo({
+  name,
+  accent,
+  position,
+  rotation = 0,
+  width,
+}: {
+  name: string;
+  accent: string;
+  position: [number, number, number];
+  rotation?: number;
+  width: number;
+}) {
+  const tex = useMemo(() => logoTexture(name, accent), [name, accent]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return (
+    <mesh position={position} rotation-y={rotation}>
+      <planeGeometry args={[width, width / 4]} />
+      <meshBasicMaterial map={tex} transparent toneMapped={false} depthWrite={false} />
+    </mesh>
+  );
+}
 
 /** The tower's own outer walls, from the street up to the roof edge. */
-function TowerWalls({ phase }: { phase: Phase }) {
-  const glass = useGlass("#4b5d6b", "#a9cde0", "#5f87a0", 7);
+function TowerWalls({ phase, name, accent }: { phase: Phase; name: string; accent: string }) {
+  const glass = useGlass("#3b4b58", "#a9cde0", "#5f87a0", 7, 0.6);
   const top = ROOF_Y - 0.3;
   const h = top - STREET_Y;
   const geo = useGeometry(() => {
@@ -150,6 +310,10 @@ function TowerWalls({ phase }: { phase: Phase }) {
           side={DoubleSide}
         />
       </mesh>
+      {/* the logo near the top of the tower, and over the lobby entrance */}
+      <Logo name={name} accent={accent} position={[14, top - 3.2, 24.3]} width={20} />
+      <Logo name={name} accent={accent} position={[WING.x1 + 0.3, top - 3.2, (WING.z0 + WING.z1) / 2]} rotation={Math.PI / 2} width={13} />
+      <Logo name={name} accent={accent} position={[14, STREET_Y + 5.3, 24.3]} width={8} />
       {/* the night wing's glass wall to the open courtyard */}
       <mesh position={[WING.x0 + 0.02, (ROOF_Y - 0.3) / 2, (COURTYARD.z0 + COURTYARD.z1) / 2]} rotation-y={Math.PI / 2}>
         <planeGeometry args={[COURTYARD.z1 - COURTYARD.z0, ROOF_Y - 0.3]} />
@@ -430,10 +594,10 @@ function Traffic({ phase }: { phase: Phase }) {
 }
 
 /** Everything below and around the roof: our tower's walls, the street and the city. */
-export function Skyline({ phase }: { phase: Phase }) {
+export function Skyline({ phase, name, accent }: { phase: Phase; name: string; accent: string }) {
   return (
     <group>
-      <TowerWalls phase={phase} />
+      <TowerWalls phase={phase} name={name} accent={accent} />
       <Streets phase={phase} />
       <Traffic phase={phase} />
       <Towers phase={phase} />
