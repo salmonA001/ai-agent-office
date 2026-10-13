@@ -28,7 +28,9 @@ const LEVEL: Record<StudyLevel, string> = {
   advanced: "an advanced learner: precise terms, nuance, edge cases and why it works",
 };
 
-export const QUIZ_SIZES = [5, 8, 10] as const;
+export const QUIZ_SIZES = [5, 10, 20, 30] as const;
+/** Questions written per model call: the in-browser model sees about 4,000 tokens at a time. */
+const BATCH = 8;
 
 /** The first of these agents on the team (the tutor, ideally), or anyone. */
 function pick(team: Agent[], ids: string[], not?: string) {
@@ -222,7 +224,7 @@ async function quiz(
   lang: Lang,
   check: boolean,
 ) {
-  const n = Math.max(3, Math.min(10, task.count ?? 5));
+  const n = Math.max(3, Math.min(30, task.count ?? 5));
   const level = task.level ?? "intermediate";
   const exam = examById(task.exam);
   const examRule = exam
@@ -235,8 +237,9 @@ async function quiz(
       : LANG_RULE[lang];
   const tutor = pick(team, ["tutor", "researcher", "writer"]);
   const checker = check ? pick(team, ["qa", "analyst", "researcher"], tutor.id) : undefined;
-  // a couple of spares, so questions the checker disagrees with can be dropped
-  const ask = checker && checker.id !== tutor.id ? Math.min(12, n + 2) : n;
+  // a few spares: questions the checker disagrees with get dropped, and a long quiz written in
+  // batches can lose one to a repeat or a cut-off reply
+  const ask = n + (checker && checker.id !== tutor.id ? Math.min(4, Math.ceil(n / 5)) : n > BATCH ? Math.ceil(n / 10) : 0);
   const writeTitle = translate(lang, "study.quizTitle", { n });
   const subs: Subtask[] = [
     {
@@ -266,71 +269,90 @@ async function quiz(
   // 1. the tutor writes the questions
   log("start", "ev.start", { name: tutor.name, title: writeTitle }, tutor.id);
   setSub(update, 0, (s) => ({ ...s, status: "working", startedAt: Date.now(), output: translate(lang, "quiz.writing", { n: 1, total: ask }) }));
-  const schema = JSON.stringify({
-    type: "object",
-    properties: {
-      questions: {
-        type: "array",
-        minItems: ask,
-        maxItems: ask,
-        items: {
-          type: "object",
-          properties: {
-            question: { type: "string" },
-            options: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
-            answer: { type: "integer", minimum: 0, maximum: 3 },
-            explanation: { type: "string" },
+  const schema = (k: number) =>
+    JSON.stringify({
+      type: "object",
+      properties: {
+        questions: {
+          type: "array",
+          minItems: k,
+          maxItems: k,
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string" },
+              options: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
+              answer: { type: "integer", minimum: 0, maximum: 3 },
+              explanation: { type: "string" },
+            },
+            required: ["question", "options", "answer", "explanation"],
           },
-          required: ["question", "options", "answer", "explanation"],
         },
       },
-    },
-    required: ["questions"],
-  });
+      required: ["questions"],
+    });
   const notes = filesBlock(files, 3000);
-  let raw = "";
-  let made = 0;
-  const write = () =>
-    chat(
+  const batches = Math.ceil(ask / BATCH);
+  /** One batch of `k` questions; later batches see what's already written, so nothing repeats. */
+  const write = (k: number, have: QuizQuestion[], batch: number) => {
+    let raw = "";
+    let made = 0;
+    const done = have.length;
+    const avoid = have
+      .slice(-24)
+      .map((q) => `- ${q.question.length > 90 ? `${q.question.slice(0, 88)}…` : q.question}`)
+      .join("\n");
+    return chat(
       [
         {
           role: "system",
           content:
             `You are ${tutor.name}, a tutor writing a multiple-choice practice quiz to help a learner check their understanding.\n` +
-            `Write exactly ${ask} questions for ${LEVEL[level]}. ` +
+            `Write exactly ${k} questions for ${LEVEL[level]}. ` +
             examRule +
             (notes
               ? "Base every question on the attached files. If a file is an exam paper, use its questions: keep their meaning, make them " +
                 "4-choice where they aren't, and work out the correct answer yourself. "
               : "") +
+            (batches > 1 ? `This is part ${batch + 1} of ${batches} of a longer quiz: cover parts of the topic the earlier questions didn't. ` : "") +
             "Rules: each question tests understanding, not tricky wording; 4 options, exactly one correct; wrong options are plausible " +
             "(common misconceptions), never 'all/none of the above'; answer is the index (0-3) of the correct option, and it varies " +
             "between questions; explanation is one short sentence on why the answer is right. Cover different parts of the topic. " +
             "Reply in JSON only." +
             langRule,
         },
-        { role: "user", content: `Quiz me on: ${exam ? `${exam.name.en}. ` : ""}${task.prompt}${notes ? `\n\n${notes}` : ""}` },
+        {
+          role: "user",
+          content:
+            `Quiz me on: ${exam ? `${exam.name.en}. ` : ""}${task.prompt}${notes ? `\n\n${notes}` : ""}` +
+            (avoid ? `\n\nAlready written (don't repeat these or ask the same thing again):\n${avoid}` : ""),
+        },
       ],
       {
         signal,
         maxTokens: 3000,
-        json: schema,
+        json: schema(k),
         onText: (chunk) => {
           raw += chunk;
-          const done = salvageQuestions(raw).length;
-          if (done !== made && done < ask) {
-            made = done;
-            setSub(update, 0, (s) => ({ ...s, output: translate(lang, "quiz.writing", { n: done + 1, total: ask }) }));
+          const now = salvageQuestions(raw).length;
+          if (now !== made && done + now < ask) {
+            made = now;
+            setSub(update, 0, (s) => ({ ...s, output: translate(lang, "quiz.writing", { n: done + now + 1, total: ask }) }));
           }
         },
       },
     );
-  let questions = clean(salvageQuestions(await write()));
-  if (questions.length < 2) {
-    // one more go if the first reply was unusable
-    raw = "";
-    made = 0;
-    questions = clean(salvageQuestions(await write()));
+  };
+  let questions: QuizQuestion[] = [];
+  // up to two extra batches top up any questions that came back unusable
+  for (let b = 0; b < batches + 2 && questions.length < ask; b++) {
+    const k = Math.min(BATCH, ask - questions.length);
+    const part = Math.min(b, batches - 1);
+    let fresh = clean([...questions, ...salvageQuestions(await write(k, questions, part))]).slice(questions.length);
+    // one more go if a batch came back unusable
+    if (fresh.length === 0) fresh = clean([...questions, ...salvageQuestions(await write(k, questions, part))]).slice(questions.length);
+    if (fresh.length === 0) break;
+    questions = [...questions, ...fresh];
   }
   if (questions.length < 2) {
     setSub(update, 0, (s) => ({ ...s, status: "error", output: translate(lang, "quiz.failed") }));
@@ -346,42 +368,47 @@ async function quiz(
     setSub(update, 1, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
     let agreed = questions;
     try {
-      const reply = await chat(
-        [
+      const CHUNK = 10;
+      const answers: unknown[] = [];
+      for (let i = 0; i < questions.length; i += CHUNK) {
+        const part = questions.slice(i, i + CHUNK);
+        const reply = await chat(
+          [
+            {
+              role: "system",
+              content:
+                `You are ${checker.name}, the ${checker.role}. Solve each multiple-choice question yourself and give the index (0-based) ` +
+                "of the correct option for each, in order. Reply in JSON only.",
+            },
+            {
+              role: "user",
+              content: part.map((q, j) => `${j + 1}. ${q.question}\n${q.options.map((o, m) => `   ${m}: ${o}`).join("\n")}`).join("\n\n"),
+            },
+          ],
           {
-            role: "system",
-            content:
-              `You are ${checker.name}, the ${checker.role}. Solve each multiple-choice question yourself and give the index (0-based) ` +
-              "of the correct option for each, in order. Reply in JSON only.",
+            signal,
+            maxTokens: 200,
+            json: JSON.stringify({
+              type: "object",
+              properties: { answers: { type: "array", minItems: part.length, maxItems: part.length, items: { type: "integer" } } },
+              required: ["answers"],
+            }),
           },
-          {
-            role: "user",
-            content: questions.map((q, i) => `${i + 1}. ${q.question}\n${q.options.map((o, j) => `   ${j}: ${o}`).join("\n")}`).join("\n\n"),
-          },
-        ],
-        {
-          signal,
-          maxTokens: 200,
-          json: JSON.stringify({
-            type: "object",
-            properties: { answers: { type: "array", minItems: questions.length, maxItems: questions.length, items: { type: "integer" } } },
-            required: ["answers"],
-          }),
-        },
-      );
-      const answers: unknown = JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)).answers;
-      if (Array.isArray(answers)) {
-        const ok = questions.filter((q, i) => answers[i] === q.answer);
-        const disputed = questions.filter((q, i) => answers[i] !== q.answer);
-        agreed = [...ok, ...disputed];
-        log("done", "ev.quizChecked", { name: checker.name, ok: ok.length, total: questions.length }, checker.id);
-        setSub(update, 1, (s) => ({
-          ...s,
-          status: "done",
-          finishedAt: Date.now(),
-          output: translate(lang, "quiz.checked", { ok: ok.length, total: questions.length }),
-        }));
-      } else throw new Error("no answers");
+        );
+        const got: unknown = JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)).answers;
+        if (!Array.isArray(got)) throw new Error("no answers");
+        answers.push(...part.map((_, j) => got[j]));
+      }
+      const ok = questions.filter((q, i) => answers[i] === q.answer);
+      const disputed = questions.filter((q, i) => answers[i] !== q.answer);
+      agreed = [...ok, ...disputed];
+      log("done", "ev.quizChecked", { name: checker.name, ok: ok.length, total: questions.length }, checker.id);
+      setSub(update, 1, (s) => ({
+        ...s,
+        status: "done",
+        finishedAt: Date.now(),
+        output: translate(lang, "quiz.checked", { ok: ok.length, total: questions.length }),
+      }));
     } catch (err) {
       if (signal.aborted) throw err;
       setSub(update, 1, (s) => ({ ...s, status: "done", finishedAt: Date.now(), output: translate(lang, "quiz.checkSkipped") }));

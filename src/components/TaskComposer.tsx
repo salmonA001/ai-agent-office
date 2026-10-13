@@ -283,6 +283,7 @@ export function TaskComposer({
           {exam && (
             <p className="enter-fade text-xs text-muted">
               {t("exam.hint", { n: count, min: Math.round(count * exam.minutesPerQuestion) })}
+              {exam.note && <span className="mt-0.5 block text-error/90">{exam.note[lang]}</span>}
             </p>
           )}
           <details className="text-xs">

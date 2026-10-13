@@ -7,10 +7,10 @@ import type { StudyLevel } from "./run-task";
  * the real past papers are linked, for learners to download and attach.
  */
 
-export type ExamGroup = "m1" | "m4" | "onet" | "tcas" | "posn" | "ijso";
+export type ExamGroup = "m1" | "m4" | "onet" | "tcas" | "triam" | "mwit" | "kvis" | "samsen" | "suankularb" | "posn" | "ijso";
 
 /** The order the groups are listed in the exam picker. */
-export const EXAM_GROUPS: ExamGroup[] = ["m1", "m4", "onet", "tcas", "posn", "ijso"];
+export const EXAM_GROUPS: ExamGroup[] = ["m1", "m4", "triam", "mwit", "kvis", "samsen", "suankularb", "onet", "tcas", "posn", "ijso"];
 
 export type ExamPreset = {
   id: string;
@@ -18,13 +18,15 @@ export type ExamPreset = {
   name: Record<Lang, string>;
   level: StudyLevel;
   /** default number of questions and minutes allowed per question */
-  count: 5 | 8 | 10;
+  count: 5 | 10 | 20 | 30;
   minutesPerQuestion: number;
   /** what the exam covers and how it asks (for the prompt, in English) */
   syllabus: string;
   style: string;
   /** questions in this language whatever the app language (an English exam is in English) */
   questionLang?: "en";
+  /** a caveat shown under the picker */
+  note?: Record<Lang, string>;
 };
 
 const M4_STYLE =
@@ -37,6 +39,15 @@ const IJSO_STYLE =
   "IJSO (International Junior Science Olympiad) selection for students under 16: integrated science problems that mix physics, " +
   "chemistry and biology with data, experiments and calculations.";
 
+const M4_MATH_SYLLABUS =
+  "real numbers and roots, exponents, polynomials and factoring, linear equations and inequalities, systems of equations, " +
+  "quadratic equations, ratio and percentage, the Pythagorean theorem, similar and congruent triangles, area, surface area and volume, " +
+  "linear graphs and slope, statistics (mean, median, mode, box plots) and basic probability";
+const M4_SCIENCE_SYLLABUS =
+  "matter, mixtures and separation, atoms and the periodic table, chemical reactions and acids and bases, cells and body systems, " +
+  "genetics and heredity, ecosystems, forces and motion, work, energy and power, electricity and circuits, waves, sound and light, " +
+  "earth, weather and space";
+
 export const EXAMS: ExamPreset[] = [
   {
     id: "m4-math",
@@ -46,9 +57,7 @@ export const EXAMS: ExamPreset[] = [
     count: 10,
     minutesPerQuestion: 1.5,
     syllabus:
-      "real numbers and roots, exponents, polynomials and factoring, linear equations and inequalities, systems of equations, " +
-      "quadratic equations, ratio and percentage, the Pythagorean theorem, similar and congruent triangles, area, surface area and volume, " +
-      "linear graphs and slope, statistics (mean, median, mode, box plots) and basic probability",
+      M4_MATH_SYLLABUS,
     style: M4_STYLE,
   },
   {
@@ -59,9 +68,7 @@ export const EXAMS: ExamPreset[] = [
     count: 10,
     minutesPerQuestion: 1.5,
     syllabus:
-      "matter, mixtures and separation, atoms and the periodic table, chemical reactions and acids and bases, cells and body systems, " +
-      "genetics and heredity, ecosystems, forces and motion, work, energy and power, electricity and circuits, waves, sound and light, " +
-      "earth, weather and space",
+      M4_SCIENCE_SYLLABUS,
     style: M4_STYLE,
   },
   {
@@ -102,7 +109,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Math", th: "สอวน. ค่าย 1: คณิตศาสตร์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 3,
     syllabus: "number theory (divisibility, primes, remainders), algebra and inequalities, counting and probability, plane geometry, sequences and functions",
     style: POSN_STYLE,
@@ -112,7 +119,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Physics", th: "สอวน. ค่าย 1: ฟิสิกส์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 3,
     syllabus: "kinematics, Newton's laws, work, energy and momentum, circular motion, fluids, heat, waves and optics, electric circuits",
     style: POSN_STYLE,
@@ -122,7 +129,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Chemistry", th: "สอวน. ค่าย 1: เคมี" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 3,
     syllabus: "atomic structure and the periodic table, chemical bonding, stoichiometry and the mole, gases, solutions, reaction rates and equilibrium, acids and bases",
     style: POSN_STYLE,
@@ -132,7 +139,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Biology", th: "สอวน. ค่าย 1: ชีววิทยา" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "cell biology, biochemistry and enzymes, genetics and inheritance, evolution, plant and animal physiology, ecology",
     style: POSN_STYLE,
@@ -142,7 +149,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Computer", th: "สอวน. ค่าย 1: คอมพิวเตอร์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 3,
     syllabus: "logic and truth tables, number bases, tracing short C-like programs, loops and arrays, simple algorithms and complexity, puzzles and patterns",
     style: POSN_STYLE,
@@ -152,7 +159,7 @@ export const EXAMS: ExamPreset[] = [
     group: "posn",
     name: { en: "POSN camp 1: Astronomy", th: "สอวน. ค่าย 1: ดาราศาสตร์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "the celestial sphere and coordinates, the Moon's phases and eclipses, Kepler's laws and gravitation, stars and light, the solar system",
     style: POSN_STYLE,
@@ -162,7 +169,7 @@ export const EXAMS: ExamPreset[] = [
     group: "ijso",
     name: { en: "IJSO selection: Integrated science", th: "คัดเลือก IJSO: วิทยาศาสตร์บูรณาการ" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "physics, chemistry and biology together: motion and energy, electricity, matter and reactions, cells, genetics and ecology, reading data and experiments",
     style: IJSO_STYLE,
@@ -358,7 +365,7 @@ const MORE: ExamPreset[] = [
     group: "tcas",
     name: { en: "TPAT3: Science, technology and engineering", th: "TPAT3: ความถนัดวิทยาศาสตร์ เทคโนโลยี วิศวกรรมศาสตร์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2,
     syllabus: "applying physics and chemistry ideas to real devices, spatial and mechanical reasoning, reading technical data, engineering and technology awareness",
     style: "TPAT3 aptitude test for Thai science and engineering faculties (TCAS): reasoning about how things work rather than school-subject recall.",
@@ -368,7 +375,7 @@ const MORE: ExamPreset[] = [
     group: "tcas",
     name: { en: "A-Level: Applied Math 1", th: "A-Level: คณิตศาสตร์ประยุกต์ 1" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "sets and logic, real numbers, functions, exponential and logarithmic functions, trigonometry, conic sections, vectors, matrices, sequences and series, calculus, counting, probability and statistics",
     style: ALEVEL_STYLE,
@@ -378,7 +385,7 @@ const MORE: ExamPreset[] = [
     group: "tcas",
     name: { en: "A-Level: Physics", th: "A-Level: ฟิสิกส์" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "mechanics, momentum and energy, rotation, oscillations and waves, sound and light, heat and gases, electricity and magnetism, modern physics",
     style: ALEVEL_STYLE,
@@ -388,7 +395,7 @@ const MORE: ExamPreset[] = [
     group: "tcas",
     name: { en: "A-Level: Chemistry", th: "A-Level: เคมี" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2.5,
     syllabus: "atoms and the periodic table, bonding, stoichiometry, gases, solutions, reaction rates, equilibrium, acids and bases, electrochemistry, organic chemistry and polymers",
     style: ALEVEL_STYLE,
@@ -398,7 +405,7 @@ const MORE: ExamPreset[] = [
     group: "tcas",
     name: { en: "A-Level: Biology", th: "A-Level: ชีววิทยา" },
     level: "advanced",
-    count: 8,
+    count: 10,
     minutesPerQuestion: 2,
     syllabus: "biomolecules and cells, genetics and molecular biology, evolution, plant and animal structure and function, ecology",
     style: ALEVEL_STYLE,
@@ -436,7 +443,130 @@ const MORE: ExamPreset[] = [
   },
 ];
 
-EXAMS.push(...MORE);
+const TRIAM_STYLE =
+  "Entrance exam to Mathayom 4 at Triam Udom Suksa School (โรงเรียนเตรียมอุดมศึกษา), among Thailand's most competitive " +
+  "(roughly one place for every 7-9 applicants): Mathayom 1-3 content asked harder than the textbook, multi-step 4-choice questions.";
+const MWIT_STYLE =
+  "Selection exam for Mahidol Wittayanusorn School (MWIT), Thailand's school for students gifted in math and science: " +
+  "challenging problems beyond the Mathayom 1-3 curriculum that need deep understanding and several steps of reasoning.";
+const KVIS_STYLE =
+  "Selection exam for Kamnoetvidya Science Academy (KVIS): applying math and science to unfamiliar situations, data and " +
+  "experiments; challenging, beyond the Mathayom 1-3 curriculum.";
+const schoolM1 = (school: string) =>
+  `Entrance exam to Mathayom 1 at ${school} (special math and science programmes): Prathom 4-6 content asked as harder, multi-step 4-choice problems.`;
+const schoolM4 = (school: string) =>
+  `Entrance exam to Mathayom 4 at ${school} (science and math programmes): Mathayom 1-3 content at a competitive level, multi-step 4-choice questions.`;
+const CHECK_SUBJECTS = {
+  en: "Check the school's official admission announcement for this year's subjects.",
+  th: "ตรวจสอบวิชาที่สอบปีนี้จากประกาศรับสมัครของโรงเรียน",
+};
+const M4_MATH = M4_MATH_SYLLABUS;
+const M4_SCIENCE = M4_SCIENCE_SYLLABUS;
+const M1_MATH = "whole numbers, fractions and decimals, ratio and percentage, number patterns, area, perimeter and volume, angles and shapes, equations, word problems";
+const M1_SCIENCE = "living things, the human body, food chains, matter and mixtures, force and motion, light, sound and electricity, the earth and space";
+
+/** Practice for the entrance exams of well-known schools. */
+const SCHOOLS: ExamPreset[] = [
+  ...(
+    [
+      ["math", "Math", "คณิตศาสตร์", M4_MATH, 1.5],
+      ["science", "Science", "วิทยาศาสตร์", M4_SCIENCE, 1.5],
+      ["english", "English", "ภาษาอังกฤษ", "grammar, vocabulary in context, conversation, reading passages for main idea and inference", 1.2],
+      ["thai", "Thai", "ภาษาไทย", "หลักภาษา, reading and inference, usage, Mathayom 1-3 Thai literature", 1.2],
+      ["social", "Social studies", "สังคมศึกษา", "religion and ethics, civics, economics, Thai and world history, geography", 1.2],
+    ] as const
+  ).map(
+    ([id, en, th, syllabus, min]): ExamPreset => ({
+      id: `triam-${id}`,
+      group: "triam",
+      name: { en: `Triam Udom M.4: ${en}`, th: `เตรียมอุดมศึกษา ม.4: ${th}` },
+      level: "advanced",
+      count: 20,
+      minutesPerQuestion: min,
+      syllabus,
+      style: TRIAM_STYLE,
+      ...(id === "english" ? { questionLang: "en" as const } : {}),
+    }),
+  ),
+  ...(
+    [
+      ["mwit", "MWIT", "มหิดลวิทยานุสรณ์", MWIT_STYLE],
+      ["kvis", "KVIS", "กำเนิดวิทย์", KVIS_STYLE],
+    ] as const
+  ).flatMap(([school, en, th, style]) =>
+    (
+      [
+        ["math", "Math", "คณิตศาสตร์", `${M4_MATH}, plus number theory and problem solving`],
+        ["science", "Science", "วิทยาศาสตร์", `${M4_SCIENCE}, plus experimental design and reading data`],
+      ] as const
+    ).map(
+      ([id, sEn, sTh, syllabus]): ExamPreset => ({
+        id: `${school}-${id}`,
+        group: school,
+        name: { en: `${en} M.4: ${sEn}`, th: `${th} ม.4: ${sTh}` },
+        level: "advanced",
+        count: 20,
+        minutesPerQuestion: 2.5,
+        syllabus,
+        style,
+        note: CHECK_SUBJECTS,
+      }),
+    ),
+  ),
+  ...(
+    [
+      ["samsen", "Samsen", "สามเสนวิทยาลัย", "Samsen Wittayalai School (สามเสนวิทยาลัย)"],
+      ["suankularb", "Suankularb", "สวนกุหลาบวิทยาลัย", "Suankularb Wittayalai School (สวนกุหลาบวิทยาลัย)"],
+    ] as const
+  ).flatMap(([school, en, th, full]) => [
+    {
+      id: `${school}-m1-math`,
+      group: school,
+      name: { en: `${en} M.1: Math`, th: `${th} ม.1: คณิตศาสตร์` },
+      level: "intermediate",
+      count: 20,
+      minutesPerQuestion: 1.5,
+      syllabus: M1_MATH,
+      style: schoolM1(full),
+      note: CHECK_SUBJECTS,
+    } satisfies ExamPreset,
+    {
+      id: `${school}-m1-science`,
+      group: school,
+      name: { en: `${en} M.1: Science`, th: `${th} ม.1: วิทยาศาสตร์` },
+      level: "intermediate",
+      count: 20,
+      minutesPerQuestion: 1.5,
+      syllabus: M1_SCIENCE,
+      style: schoolM1(full),
+      note: CHECK_SUBJECTS,
+    } satisfies ExamPreset,
+    {
+      id: `${school}-m4-math`,
+      group: school,
+      name: { en: `${en} M.4: Math`, th: `${th} ม.4: คณิตศาสตร์` },
+      level: "advanced",
+      count: 20,
+      minutesPerQuestion: 1.5,
+      syllabus: M4_MATH,
+      style: schoolM4(full),
+      note: CHECK_SUBJECTS,
+    } satisfies ExamPreset,
+    {
+      id: `${school}-m4-science`,
+      group: school,
+      name: { en: `${en} M.4: Science`, th: `${th} ม.4: วิทยาศาสตร์` },
+      level: "advanced",
+      count: 20,
+      minutesPerQuestion: 1.5,
+      syllabus: M4_SCIENCE,
+      style: schoolM4(full),
+      note: CHECK_SUBJECTS,
+    } satisfies ExamPreset,
+  ]),
+];
+
+EXAMS.push(...MORE, ...SCHOOLS);
 
 export const examById = (id: string | undefined) => EXAMS.find((e) => e.id === id);
 
@@ -457,6 +587,25 @@ export const PAST_PAPERS: { name: Record<Lang, string>; url: string; groups: Exa
     url: "https://www.trueplookpanya.com/examination",
     groups: ["m1", "m4", "onet", "tcas"],
   },
+  {
+    name: { en: "Triam Udom M.4 practice (TruePlookpanya): math", th: "แนวข้อสอบเข้า ม.4 เตรียมอุดม (ทรูปลูกปัญญา): คณิต" },
+    url: "https://trueplookpanya.com/examination2/start-exam/14401",
+    groups: ["triam"],
+  },
+  {
+    name: { en: "Triam Udom M.4 practice (TruePlookpanya): science", th: "แนวข้อสอบเข้า ม.4 เตรียมอุดม (ทรูปลูกปัญญา): วิทย์" },
+    url: "https://www.trueplookpanya.com/examination2/start-exam/14407",
+    groups: ["triam"],
+  },
+  {
+    name: { en: "Suankularb M.4 practice (TruePlookpanya): science", th: "แนวข้อสอบเข้า ม.4 สวนกุหลาบ (ทรูปลูกปัญญา): วิทย์" },
+    url: "https://www.trueplookpanya.com/examination2/doExam?id=14460",
+    groups: ["suankularb"],
+  },
+  { name: { en: "Triam Udom Suksa: admissions (official)", th: "เตรียมอุดมศึกษา: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.triamudom.ac.th", groups: ["triam"] },
+  { name: { en: "MWIT: admissions (official)", th: "มหิดลวิทยานุสรณ์: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.mwit.ac.th", groups: ["mwit"] },
+  { name: { en: "KVIS: admissions (official)", th: "กำเนิดวิทย์: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.kvis.ac.th", groups: ["kvis"] },
+  { name: { en: "Samsen Wittayalai: admissions (official)", th: "สามเสนวิทยาลัย: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.samsenwit.ac.th", groups: ["samsen"] },
   { name: { en: "POSN exam bank (สอวน.)", th: "คลังข้อสอบ สอวน." }, url: "https://www.posn.or.th/examination/", groups: ["posn"] },
   { name: { en: "IJSO past papers", th: "ข้อสอบ IJSO" }, url: "https://www.posn.or.th/projects/academic-olympiad/ijso/examination/", groups: ["ijso"] },
   { name: { en: "Baan Krupui exam collection", th: "คลังข้อสอบ บ้านครูปุ้ย" }, url: "https://www.baankrupui.com/%E0%B8%84%E0%B8%A5%E0%B8%B1%E0%B8%87%E0%B8%82%E0%B9%89%E0%B8%AD%E0%B8%AA%E0%B8%AD%E0%B8%9A", groups: ["m1", "m4", "onet"] },
