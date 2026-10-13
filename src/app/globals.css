@@ -50,14 +50,48 @@
   --glass-2: rgb(255 255 255 / 0.015);
   --glass-strong: rgb(10 11 14 / 0.88);
   --glass-shadow: rgb(0 0 0 / 0.55);
-  /* polished chrome: bright sky, dark horizon line, bright ground */
-  --chrome-fill: linear-gradient(180deg, #f6f8fb 0%, #c8d0da 24%, #8d98a6 47%, #eef2f6 53%, #b9c2cd 78%, #f3f6f9 100%);
-  /* a faint oil-slick sheen over the metal */
-  --chrome-iris: linear-gradient(115deg, rgb(255 190 255 / 0.16), rgb(170 235 255 / 0.16) 45%, rgb(255 240 190 / 0.16));
+  /* liquid metal: polished silver with an oil-slick sheen */
+  --metal-fill: linear-gradient(180deg, #f6f8fb 0%, #c8d0da 24%, #8d98a6 47%, #eef2f6 53%, #b9c2cd 78%, #f3f6f9 100%);
+  --metal-iris: linear-gradient(115deg, rgb(255 190 255 / 0.16), rgb(170 235 255 / 0.16) 45%, rgb(255 240 190 / 0.16));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #181b20,
+      #a3aebb 7%,
+      #1b1f25 15%,
+      #dfe5ec 23%,
+      #20242b 33%,
+      #8494a6 44%,
+      #c9b8f0 50%,
+      #14171b 58%,
+      #bcc6d1 69%,
+      #1d2127 80%,
+      #9fe0ea 88%,
+      #181b20
+    );
+  --liquid-opacity: 0.3;
 }
 
 /* Matrix: black + emerald */
 [data-theme="matrix"] {
+  /* liquid metal: jade */
+  --metal-fill: linear-gradient(180deg, #effff8 0%, #a9ecd0 24%, #3f9f7c 47%, #dcfcec 53%, #82d9b6 78%, #f2fff9 100%);
+  --metal-iris: linear-gradient(115deg, rgb(160 255 220 / 0.18), rgb(150 220 255 / 0.14) 45%, rgb(230 255 160 / 0.16));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #04100b,
+      #5fbf98 7%,
+      #05140e 15%,
+      #c8f7e2 23%,
+      #071a12 33%,
+      #3a9a76 44%,
+      #9fe7ff 50%,
+      #030c08 58%,
+      #8ee0bd 69%,
+      #06150f 80%,
+      #e8ffb0 88%,
+      #04100b
+    );
+  --liquid-opacity: 0.26;
   color-scheme: dark;
   --surface: #030504;
   --panel: #0b1410;
@@ -85,6 +119,25 @@
 
 /* Midnight: navy + indigo */
 [data-theme="midnight"] {
+  /* liquid metal: indigo mercury */
+  --metal-fill: linear-gradient(180deg, #f5f4ff 0%, #c7c8f8 24%, #7d82da 47%, #eceaff 53%, #aeb1f1 78%, #f6f5ff 100%);
+  --metal-iris: linear-gradient(115deg, rgb(255 180 255 / 0.18), rgb(160 210 255 / 0.16) 45%, rgb(200 180 255 / 0.16));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #0a0b24,
+      #8f93e8 7%,
+      #0c0d2b 15%,
+      #e0dcff 23%,
+      #11123a 33%,
+      #6f6fd0 44%,
+      #f0b8ff 50%,
+      #07081c 58%,
+      #b3b6f5 69%,
+      #0e0f30 80%,
+      #9fd8ff 88%,
+      #0a0b24
+    );
+  --liquid-opacity: 0.3;
   color-scheme: dark;
   --surface: #06071a;
   --panel: #0f1230;
@@ -112,6 +165,25 @@
 
 /* Sunset: warm ember + orange */
 [data-theme="sunset"] {
+  /* liquid metal: rose gold and copper */
+  --metal-fill: linear-gradient(180deg, #fff5ec 0%, #f7cba9 24%, #c47b4f 47%, #ffeadb 53%, #eaa97d 78%, #fff6ee 100%);
+  --metal-iris: linear-gradient(115deg, rgb(255 210 160 / 0.2), rgb(255 170 200 / 0.16) 45%, rgb(255 240 190 / 0.18));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #160807,
+      #d98b5f 7%,
+      #1c0b08 15%,
+      #ffdcc0 23%,
+      #241008 33%,
+      #b8643f 44%,
+      #ffc1d3 50%,
+      #120605 58%,
+      #f0b48a 69%,
+      #1e0c08 80%,
+      #ffe6a8 88%,
+      #160807
+    );
+  --liquid-opacity: 0.28;
   color-scheme: dark;
   --surface: #0e0606;
   --panel: #1c0e0b;
@@ -139,6 +211,25 @@
 
 /* Ocean: deep sea + cyan */
 [data-theme="ocean"] {
+  /* liquid metal: teal mercury */
+  --metal-fill: linear-gradient(180deg, #f0fcff 0%, #ace7f2 24%, #3a9db2 47%, #e2f8fc 53%, #86d3e3 78%, #f3fdff 100%);
+  --metal-iris: linear-gradient(115deg, rgb(170 255 240 / 0.18), rgb(170 200 255 / 0.16) 45%, rgb(220 255 255 / 0.16));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #03111a,
+      #4fb6c9 7%,
+      #04161f 15%,
+      #d3f6fc 23%,
+      #062030 33%,
+      #2f8ea3 44%,
+      #b7c9ff 50%,
+      #020c13 58%,
+      #8fdcea 69%,
+      #051a26 80%,
+      #b6ffe9 88%,
+      #03111a
+    );
+  --liquid-opacity: 0.28;
   color-scheme: dark;
   --surface: #02090f;
   --panel: #08171f;
@@ -166,15 +257,39 @@
 
 /* Daylight: light glass + deep emerald */
 [data-theme="daylight"] {
+  /* liquid metal: pearl */
+  --metal-fill: linear-gradient(180deg, #ffffff 0%, #e6eeeb 24%, #a3b6ae 47%, #f8fbfa 53%, #cddbd5 78%, #ffffff 100%);
+  --metal-iris: linear-gradient(115deg, rgb(190 255 230 / 0.25), rgb(200 220 255 / 0.22) 45%, rgb(255 240 210 / 0.22));
+  --liquid: conic-gradient(
+      from 200deg at 115% -25%,
+      #eef3f1,
+      #ffffff 7%,
+      #e2ebe7 15%,
+      #ffffff 23%,
+      #d6e4de 33%,
+      #ffffff 44%,
+      #e9e1ff 50%,
+      #dbe7e2 58%,
+      #ffffff 69%,
+      #d3e3dc 80%,
+      #dff7ff 88%,
+      #eef3f1
+    );
+  --liquid-opacity: 0.85;
+  --bevel-hi: rgb(255 255 255 / 0.9);
+  --bevel-lo: rgb(15 23 42 / 0.08);
+  --metal-drop: rgb(15 23 42 / 0.18);
   color-scheme: light;
   --surface: #eef3f1;
   --panel: #ffffff;
   --well: rgb(15 23 42 / 0.05);
   --line: rgb(15 23 42 / 0.12);
+  /* pearl is too pale for the brand word on a light page: deep emerald metal instead */
+  --brand-fill: linear-gradient(180deg, #0f8a63 0%, #065f46 47%, #047857 53%, #0a7556 100%);
   --primary: #047857;
-  --on-primary: #ffffff;
+  --on-primary: #052e1f;
   --accent: #047857;
-  --on-accent: #ffffff;
+  --on-accent: #052e1f;
   --danger: #b91c1c;
   --on-danger: #ffffff;
   --ink: #0f172a;
@@ -204,7 +319,14 @@
   --dur-4: 320ms;
 }
 
-/* registered so the chrome highlight can glide after the pointer instead of jumping */
+/* defaults for the dark themes (zero specificity, so a theme's own values win) */
+:where(:root) {
+  --bevel-hi: rgb(255 255 255 / 0.12);
+  --bevel-lo: rgb(0 0 0 / 0.35);
+  --metal-drop: rgb(0 0 0 / 0.5);
+}
+
+/* registered so the metal highlight can glide after the pointer instead of jumping */
 @property --mx {
   syntax: "<percentage>";
   inherits: false;
@@ -400,23 +522,28 @@
   transition: transform 240ms var(--ease-in-out);
 }
 
-/* Liquid Chrome: buttons and selected options are polished metal, with a highlight that glides
-   after the pointer (set by ChromePointer) */
-[data-theme="chrome"] .bg-primary,
-[data-theme="chrome"] .bg-accent,
-[data-theme="chrome"] .segment-thumb {
+/* Liquid metal (every theme has its own): buttons, badges and selected options, with a highlight
+   that glides after the pointer (set by ChromePointer) */
+.bg-primary,
+.bg-accent,
+.metal,
+.segment-thumb {
   background-image:
     radial-gradient(9rem 5rem at var(--mx) var(--my), rgb(255 255 255 / 0.7), transparent 70%),
-    var(--chrome-iris),
-    var(--chrome-fill);
+    var(--metal-iris),
+    var(--metal-fill);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.9),
-    inset 0 -1px 0 rgb(40 48 58 / 0.55),
-    0 1px 2px rgb(0 0 0 / 0.5),
+    inset 0 -1px 0 rgb(0 0 0 / 0.3),
+    0 1px 2px var(--metal-drop),
     0 6px 18px -8px rgb(var(--glow) / 0.55);
 }
-[data-theme="chrome"] .bg-primary,
-[data-theme="chrome"] .bg-accent {
+.metal {
+  color: var(--on-accent);
+}
+.bg-primary,
+.bg-accent,
+.metal {
   transition:
     transform var(--dur-1) var(--ease-out),
     filter var(--dur-2) var(--ease-out),
@@ -425,20 +552,19 @@
     --mx 450ms var(--ease-out),
     --my 450ms var(--ease-out);
 }
-/* the brand word, cast in chrome */
-[data-theme="chrome"] .brand-chrome {
-  background-image: var(--chrome-fill);
+/* the brand word, cast in the theme's metal */
+.brand-metal {
+  background-image: var(--brand-fill, var(--metal-fill));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 /* glass panels get a bevelled metal edge */
-[data-theme="chrome"] .glass {
-  border-color: rgb(225 232 242 / 0.16);
+.glass {
   box-shadow:
     0 10px 40px var(--glass-shadow),
-    inset 0 1px 0 rgb(255 255 255 / 0.12),
-    inset 0 -1px 0 rgb(0 0 0 / 0.35);
+    inset 0 1px 0 var(--bevel-hi),
+    inset 0 -1px 0 var(--bevel-lo);
 }
 
 html {
@@ -460,39 +586,19 @@ body {
 body::after {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -12%;
   z-index: -2;
   pointer-events: none;
+  opacity: var(--liquid-opacity);
   background:
-    radial-gradient(60rem 40rem at 10% -10%, rgb(var(--bg-1) / 0.22), transparent 60%),
-    radial-gradient(50rem 35rem at 100% 25%, rgb(var(--bg-2) / 0.1), transparent 60%),
-    radial-gradient(60rem 40rem at 50% 115%, rgb(var(--bg-3) / 0.35), transparent 60%);
-}
-
-[data-theme="chrome"] body::after {
-  inset: -12%;
-  opacity: 0.3;
-  background:
-    radial-gradient(48rem 30rem at 18% 8%, rgb(240 244 250 / 0.55), transparent 60%),
-    conic-gradient(
-      from 200deg at 115% -25%,
-      #181b20,
-      #a3aebb 7%,
-      #1b1f25 15%,
-      #dfe5ec 23%,
-      #20242b 33%,
-      #8494a6 44%,
-      #c9b8f0 50%,
-      #14171b 58%,
-      #bcc6d1 69%,
-      #1d2127 80%,
-      #9fe0ea 88%,
-      #181b20
-    );
+    radial-gradient(56rem 36rem at 18% 8%, rgb(var(--bg-1) / 0.55), transparent 60%),
+    radial-gradient(50rem 35rem at 100% 30%, rgb(var(--bg-2) / 0.3), transparent 60%),
+    var(--liquid);
   filter: url(#liquid-chrome);
   animation: chrome-pour 900ms var(--ease-out) both;
 }
-[data-theme="chrome"] body::before {
+
+body::before {
   opacity: 0.6;
 }
 

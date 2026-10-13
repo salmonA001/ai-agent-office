@@ -3,12 +3,12 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export const THEMES = [
-  { id: "chrome", swatch: ["#0b0c0f", "#9aa5b2", "#f3f6f9"] },
-  { id: "matrix", swatch: ["#030504", "#10b981", "#34d399"] },
-  { id: "midnight", swatch: ["#06071a", "#818cf8", "#a5b4fc"] },
-  { id: "sunset", swatch: ["#0e0606", "#fb923c", "#fdba74"] },
-  { id: "ocean", swatch: ["#02090f", "#22d3ee", "#67e8f9"] },
-  { id: "daylight", swatch: ["#eef3f1", "#047857", "#ffffff"] },
+  { id: "chrome", swatch: ["#0b0c0f", "#8d98a6", "#f3f6f9"] },
+  { id: "matrix", swatch: ["#030504", "#3f9f7c", "#dcfcec"] },
+  { id: "midnight", swatch: ["#06071a", "#7d82da", "#eceaff"] },
+  { id: "sunset", swatch: ["#0e0606", "#c47b4f", "#ffeadb"] },
+  { id: "ocean", swatch: ["#02090f", "#3a9db2", "#e2f8fc"] },
+  { id: "daylight", swatch: ["#eef3f1", "#a3b6ae", "#ffffff"] },
 ] as const;
 
 export type ThemeId = (typeof THEMES)[number]["id"];

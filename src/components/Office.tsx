@@ -556,7 +556,7 @@ export function Office() {
           </button>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">
-              {profileName ? t("app.hello", { name: profileName }) : <>AI Agent <span className="brand-chrome text-accent">Office</span></>}
+              {profileName ? t("app.hello", { name: profileName }) : <>AI Agent <span className="brand-metal text-accent">Office</span></>}
             </h1>
             <p className="hidden truncate text-xs text-muted md:block">{t("app.tagline")}</p>
           </div>

@@ -195,7 +195,7 @@ Pick one in **Account → AI model**. Bigger models write better answers but nee
 - **Customize** (on the office floor): floor style, desk finish, accent colour, neon office sign, plants, rugs, art, lamps, desk items, aquarium and string lights.
 - **Activities**: which breaks agents take, how often, and whether random events happen.
 - **Time of day**: real clock, a 24-minute time-lapse, or fixed day, sunset or night lighting.
-- **6 themes**, each checked for WCAG AA contrast: **Liquid chrome** (the default: graphite glass over a swirl of liquid metal, polished-chrome buttons and selected options with a highlight that glides after your pointer), Matrix, Midnight, Sunset, Ocean and Daylight.
+- **6 themes, each its own liquid metal**: glass panels over a swirl of that metal, metal buttons, badges and selected options with a highlight that glides after your pointer, and the brand word cast in it. **Liquid chrome** (polished silver with an oil-slick sheen, the default), **Matrix** (jade), **Midnight** (indigo mercury), **Sunset** (rose gold and copper), **Ocean** (teal mercury) and **Daylight** (pearl). Text on every metal is checked at 6:1 or better.
 - **Motion that feels right**: strong ease-out curves under ~300ms for things that appear, a chrome thumb that slides between options of every segmented control, presses that scale to 0.97, hover effects only on mouse and trackpad, and glows that animate opacity only. The Motion setting can reduce or turn off all of it.
 - **Motion**: full, follow device, or reduced. The 3D view lowers its resolution on slow devices to stay smooth.
 - **Full screen** with the button or the **F** key.

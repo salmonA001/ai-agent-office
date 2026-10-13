@@ -108,14 +108,14 @@ function SidebarBody({
       <div className={`flex items-center gap-3 border-b border-line p-4 ${collapsed ? "justify-center px-2" : ""}`}>
         <span
           aria-hidden
-          className="glow grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-accent to-primary text-sm font-black text-on-accent"
+          className="metal grid size-10 shrink-0 place-items-center rounded-xl text-sm font-black"
         >
           AI
         </span>
         {!collapsed && (
           <div className="enter-fade min-w-0 flex-1">
             <p className="truncate font-bold leading-tight">
-              AI Agent <span className="brand-chrome text-accent">Office</span>
+              AI Agent <span className="brand-metal text-accent">Office</span>
             </p>
             <p className="truncate text-xs text-muted">{t("app.hello", { name: name || "👋" })}</p>
           </div>
@@ -447,7 +447,7 @@ function AccountTab({ tasks, agents, onReset }: SidebarProps) {
           {t("account.profile")}
         </h3>
         <div className="flex items-center gap-3">
-          <span aria-hidden className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-accent to-primary text-lg font-black text-on-accent">
+          <span aria-hidden className="metal grid size-12 shrink-0 place-items-center rounded-2xl text-lg font-black">
             {(name || "?").slice(0, 1).toUpperCase()}
           </span>
           <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted">

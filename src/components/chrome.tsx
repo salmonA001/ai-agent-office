@@ -3,14 +3,14 @@
 import { useEffect } from "react";
 
 /**
- * Liquid Chrome pieces shared across the app.
+ * Liquid metal pieces shared by every theme (each theme has its own metal, see globals.css).
  *
  * - LiquidChromeFilter: the SVG filter that bends the backdrop's metal bands into slow liquid
  *   swirls. It is applied to a fixed layer that never animates, so it is computed once.
- * - ChromePointer: moves the specular highlight on a chrome button towards the pointer. The
+ * - ChromePointer: moves the specular highlight on a metal button towards the pointer. The
  *   highlight's position is a registered CSS property with a transition, so it glides after the
  *   pointer with a little lag instead of sticking to it. Mouse and trackpad only.
- * - SegmentThumb: the chrome pill that slides to the chosen option of a segmented control.
+ * - SegmentThumb: the metal pill that slides to the chosen option of a segmented control.
  */
 
 export function LiquidChromeFilter() {
@@ -24,7 +24,7 @@ export function LiquidChromeFilter() {
   );
 }
 
-const CHROME = ".bg-primary, .bg-accent";
+const METAL = ".bg-primary, .bg-accent, .metal";
 
 export function ChromePointer() {
   useEffect(() => {
@@ -46,8 +46,8 @@ export function ChromePointer() {
       el.style.setProperty("--my", `${(((y - r.top) / r.height) * 100).toFixed(1)}%`);
     };
     const move = (e: PointerEvent) => {
-      if (!fine.matches || document.documentElement.dataset.theme !== "chrome") return;
-      const target = e.target instanceof Element ? e.target.closest<HTMLElement>(CHROME) : null;
+      if (!fine.matches) return;
+      const target = e.target instanceof Element ? e.target.closest<HTMLElement>(METAL) : null;
       if (target !== el) release();
       if (!target) return;
       el = target;
