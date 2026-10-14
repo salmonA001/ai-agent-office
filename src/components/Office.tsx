@@ -433,6 +433,12 @@ export function Office() {
   );
 
 
+  // back from an email confirmation link: show the Account tab, where the message is
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (new URLSearchParams(window.location.search).has("account")) setSideTab("account");
+  }, []);
+
   const cancel = (id: string) => controllers.current.get(id)?.abort();
 
   const remove = (id: string) => {
