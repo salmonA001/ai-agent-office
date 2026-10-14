@@ -4,6 +4,8 @@
  * directly), which is fine for the occasional file.
  */
 
+import { importFresh } from "./stale-build";
+
 const MAX_PAGES = 40;
 
 /**
@@ -23,7 +25,7 @@ export class ScannedPdfError extends Error {
 }
 
 export async function pdfText(file: File, maxChars = 20000): Promise<{ text: string; pages: number }> {
-  const [pdfjs, worker] = await Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs")]);
+  const [pdfjs, worker] = await importFresh(() => Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs")]));
   (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = worker;
   const loading = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
   const doc = await loading.promise;

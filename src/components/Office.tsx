@@ -56,6 +56,7 @@ import { countWords } from "@/lib/words";
 import { type Attachment, type Quiz, runTask, type StudyLevel, type Task, type TaskKind, type TaskStatus } from "@/lib/run-task";
 import { examById } from "@/lib/exams";
 import { runStudy } from "@/lib/study";
+import { importFresh } from "@/lib/stale-build";
 import { TaskComposer } from "./TaskComposer";
 import { focusZone, useCameraFocus, ZONE_IDS, type ZoneId } from "./camera-focus";
 import { levelOf, rewardOnce, setNames, triggerEvent, useGame } from "./office-events";
@@ -72,7 +73,7 @@ function SceneLoading() {
   return <div className="grid h-full place-items-center text-sm text-muted">{t("floor.loading")}</div>;
 }
 
-const OfficeScene = dynamic(() => import("./OfficeScene"), { ssr: false, loading: () => <SceneLoading /> });
+const OfficeScene = dynamic(() => importFresh(() => import("./OfficeScene")), { ssr: false, loading: () => <SceneLoading /> });
 
 const IDLE_ENGINE: EngineState = { status: "idle" };
 

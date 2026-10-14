@@ -1,4 +1,5 @@
 import type { MLCEngine } from "@mlc-ai/web-llm";
+import { importFresh } from "./stale-build";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -151,7 +152,7 @@ async function load(): Promise<MLCEngine> {
   if (!adapter) throw new Error("No graphics adapter is available for WebGPU.");
   // half-precision weights are smaller and faster, but not every GPU supports them
   const f16 = adapter.features.has("shader-f16");
-  const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
+  const { CreateMLCEngine } = await importFresh(() => import("@mlc-ai/web-llm"));
   // try the wanted size first, then smaller ones (e.g. not enough graphics memory)
   const order = TIERS.slice(0, TIERS.indexOf(wantedTier()) + 1).reverse();
   let lastError: Error | null = null;
@@ -319,7 +320,7 @@ export function describeImage(dataUrl: string, question: string, signal: AbortSi
     const gpu = (navigator as Navigator & { gpu: WebGpu }).gpu;
     const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
     const f16 = adapter?.features.has("shader-f16") ?? false;
-    const { CreateMLCEngine } = await import("@mlc-ai/web-llm");
+    const { CreateMLCEngine } = await importFresh(() => import("@mlc-ai/web-llm"));
     setState({ status: "loading", progress: 0, text: "", tier: "vision" });
     const engine = await CreateMLCEngine(`${VISION_MODEL.base}-${f16 ? "q4f16_1" : "q4f32_1"}-MLC`, {
       initProgressCallback: (r) => setState({ status: "loading", progress: r.progress, text: r.text, tier: "vision" }),

@@ -15,6 +15,7 @@ function friendly(message: string): Key | null {
   if (m.includes("not confirmed")) return "auth.notConfirmed";
   if (m.includes("already registered") || m.includes("already been registered")) return "auth.exists";
   if (m.includes("rate limit") || m.includes("too many")) return "auth.slowDown";
+  if (m.includes("invalid api key") || m.includes("no api key")) return "auth.badKey";
   if (m.includes("password")) return "auth.passwordHint";
   return null;
 }

@@ -18,6 +18,7 @@ import { setAiSettings, useAiSettings } from "@/lib/browser-ai";
 import { type Key, useI18n } from "@/lib/i18n";
 import type { StudyLevel, TaskKind } from "@/lib/run-task";
 import { QUIZ_SIZES } from "@/lib/study";
+import { importFresh } from "@/lib/stale-build";
 import { HoverPill, SegmentThumb } from "./chrome";
 import { EXAM_GROUPS, EXAMS, examById, PAST_PAPERS } from "@/lib/exams";
 
@@ -54,7 +55,7 @@ async function readFile(file: File): Promise<ComposerFile> {
   if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
     if (file.size > 30e6) throw new Error("big");
     // read in the browser; a scanned paper (pictures of pages) has no text to read
-    const { pdfText } = await import("@/lib/pdf-text");
+    const { pdfText } = await importFresh(() => import("@/lib/pdf-text"));
     try {
       return { ...base, kind: "text", pdf: true, text: (await pdfText(file)).text };
     } catch (err) {
