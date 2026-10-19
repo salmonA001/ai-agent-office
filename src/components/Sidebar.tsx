@@ -24,8 +24,6 @@ import { MODEL_CHOICES, MODELS, setAiSettings, useAiSettings } from "@/lib/brows
 import { type Motion, MOTIONS, setMotion, useDeviceReducedMotion, useMotion } from "@/lib/motion";
 import { originOf, THEMES, useTheme } from "@/lib/theme";
 import { HoverPill, SegmentThumb } from "./chrome";
-import { AccountCard } from "./AccountCard";
-import { useAccount } from "@/lib/cloud-sync";
 import { countWords } from "@/lib/words";
 import { useGame } from "./office-events";
 import { teamTotals } from "./OfficeGame";
@@ -436,7 +434,6 @@ function AccountTab({ tasks, agents, onReset }: SidebarProps) {
   const name = useProfileName();
   const game = useGame();
   const [confirmReset, setConfirmReset] = useState(false);
-  const account = useAccount();
   const done = tasks.filter((x) => x.status === "done").length;
   const words = tasks.reduce(
     (n, x) => n + x.subtasks.reduce((m, s) => m + (s.status === "done" ? countWords(s.output) : 0), 0),
@@ -446,7 +443,6 @@ function AccountTab({ tasks, agents, onReset }: SidebarProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <AccountCard />
       <section className="enter rounded-2xl border border-line bg-well p-4" aria-labelledby={`${uid}-profile`}>
         <h3 id={`${uid}-profile`} className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
           {t("account.profile")}
@@ -465,7 +461,7 @@ function AccountTab({ tasks, agents, onReset }: SidebarProps) {
             />
           </label>
         </div>
-        <p className="mt-2 text-[11px] text-muted">{t(account.user ? "account.cloud" : "account.local")}</p>
+        <p className="mt-2 text-[11px] text-muted">{t("account.local")}</p>
       </section>
 
       <section aria-labelledby={`${uid}-stats`}>
@@ -487,7 +483,7 @@ function AccountTab({ tasks, agents, onReset }: SidebarProps) {
       <ModelPicker />
 
       <section className="enter rounded-2xl border border-danger/40 p-4" style={{ ["--i" as string]: 7 }}>
-        <p className="text-xs text-muted">{t(account.user ? "account.resetHintCloud" : "account.resetHint")}</p>
+        <p className="text-xs text-muted">{t("account.resetHint")}</p>
         <button
           type="button"
           onClick={() => {

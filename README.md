@@ -201,16 +201,6 @@ Pick one in **Account → AI model**. Bigger models write better answers but nee
 - **Motion**: full, follow device, or reduced. The 3D view lowers its resolution on slow devices to stay smooth.
 - **Full screen** with the button or the **F** key.
 
-## 👤 Accounts (optional)
-
-Everything works as a guest, saved in your browser. **Sign in** (Account tab, email and password) to keep your office in your account and open it on any device: tasks and quiz progress, hired agents, XP, customisation, theme, language and AI settings.
-
-- **Backend: Supabase.** Supabase Auth for sign-in, and one Postgres table, `user_state` (see [`supabase/migrations`](supabase/migrations)), with **row level security**: each person can only read and write their own rows, enforced by the database.
-- **Sync:** on sign-in, the account and the browser are merged (tasks combined, XP keeps the higher number, the account's settings win), then changes upload every few seconds and when you leave the page. Signing out removes the office from that browser; it stays in the account.
-- **The AI never leaves your browser.** Only your saved office goes to Supabase.
-
-To set it up on your own deployment: add the Supabase integration from the Vercel Marketplace, run `supabase/migrations/*.sql` in Supabase's SQL editor, and add your site to **Authentication → URL Configuration** (Site URL and Redirect URLs `https://your-site/**`). Without Supabase configured, the app simply has no Account sign-in.
-
 ## 🚀 Run locally
 
 ```bash
@@ -234,7 +224,6 @@ The app is fully static, so any static host works. The live demo deploys to Verc
 | Layer | Tools |
 |---|---|
 | App | Next.js 16 (App Router, Cache Components), React 19, TypeScript |
-| Accounts | Supabase Auth + Postgres with row level security (`@supabase/ssr`), optional |
 | 3D | React Three Fiber, drei, three.js: toon-shaded characters, canvas textures, orthographic isometric camera |
 | AI | WebLLM on WebGPU: Qwen 3.5 (2B / 4B / 9B) and Phi 3.5 Vision |
 | UI | Tailwind CSS 4, glassmorphism, Phosphor icons, react-markdown |
