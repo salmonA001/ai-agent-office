@@ -203,7 +203,13 @@ export function TaskComposer({
         ? t("composer.testPlaceholder")
         : t("composer.placeholder");
   // past papers for the chosen exam first
-  const papers = exam ? [...PAST_PAPERS].sort((a, b) => Number(b.groups.includes(exam.group)) - Number(a.groups.includes(exam.group))) : PAST_PAPERS;
+  // (and among those, sources made for this exam before general collections)
+  const papers = exam
+    ? [...PAST_PAPERS].sort(
+        (a, b) =>
+          Number(b.groups.includes(exam.group)) - Number(a.groups.includes(exam.group)) || a.groups.length - b.groups.length,
+      )
+    : PAST_PAPERS;
   const submitLabel = kind === "learn" ? t("composer.submitLearn") : kind === "test" ? t("composer.submitTest") : t("composer.submit");
 
   return (

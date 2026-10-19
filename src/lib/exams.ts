@@ -7,10 +7,39 @@ import type { StudyLevel } from "./run-task";
  * the real past papers are linked, for learners to download and attach.
  */
 
-export type ExamGroup = "m1" | "m4" | "onet" | "tcas" | "triam" | "mwit" | "kvis" | "samsen" | "suankularb" | "posn" | "ijso";
+export type ExamGroup =
+  | "nt"
+  | "m1"
+  | "m4"
+  | "onet"
+  | "tcas"
+  | "triam"
+  | "mwit"
+  | "kvis"
+  | "samsen"
+  | "suankularb"
+  | "english"
+  | "civil"
+  | "posn"
+  | "ijso";
 
 /** The order the groups are listed in the exam picker. */
-export const EXAM_GROUPS: ExamGroup[] = ["m1", "m4", "triam", "mwit", "kvis", "samsen", "suankularb", "onet", "tcas", "posn", "ijso"];
+export const EXAM_GROUPS: ExamGroup[] = [
+  "nt",
+  "m1",
+  "m4",
+  "triam",
+  "mwit",
+  "kvis",
+  "samsen",
+  "suankularb",
+  "onet",
+  "tcas",
+  "english",
+  "civil",
+  "posn",
+  "ijso",
+];
 
 export type ExamPreset = {
   id: string;
@@ -566,7 +595,153 @@ const SCHOOLS: ExamPreset[] = [
   ]),
 ];
 
-EXAMS.push(...MORE, ...SCHOOLS);
+const NT_STYLE =
+  "Thailand's NT (National Test) for Prathom 3 (Grade 3), set by the Office of the Basic Education Commission: short, " +
+  "concrete 4-choice questions on everyday situations, in words an 8-year-old reads easily.";
+const ONETP6_STYLE =
+  "Thailand's O-NET national test for Prathom 6 (Grade 6), set by NIETS (สทศ.) on the core primary curriculum standards: " +
+  "4-choice questions, some reading short passages, tables or pictures described in words.";
+const TPAT1_STYLE =
+  "TPAT1, the medical aptitude test (กสพท) used for admission to Thai medicine, dentistry, veterinary science and pharmacy: " +
+  "it tests reasoning and judgement, not school content.";
+const CUTEP_STYLE =
+  "CU-TEP, Chulalongkorn University's English proficiency test, used for graduate and international programmes in Thailand: " +
+  "academic-level English.";
+const OCSC_STYLE =
+  "The Thai civil service general exam (ก.พ. ภาค ก) by the Office of the Civil Service Commission: 4-choice questions " +
+  "that every applicant for government jobs must pass.";
+
+/** Primary-level national tests, more TCAS, university English and the civil service exam. */
+const EXTRA: ExamPreset[] = [
+  {
+    id: "nt3-math",
+    group: "nt",
+    name: { en: "NT P.3: Math", th: "NT ป.3: คณิตศาสตร์" },
+    level: "beginner",
+    count: 10,
+    minutesPerQuestion: 1.5,
+    syllabus: "numbers to 100,000, adding and subtracting, multiplying and dividing, money, time, length, weight and volume, simple fractions, reading tables and pictographs, word problems",
+    style: NT_STYLE,
+  },
+  {
+    id: "nt3-thai",
+    group: "nt",
+    name: { en: "NT P.3: Thai", th: "NT ป.3: ภาษาไทย" },
+    level: "beginner",
+    count: 10,
+    minutesPerQuestion: 1.2,
+    syllabus: "reading and understanding short texts, spelling and tones (การสะกดคำ วรรณยุกต์), word meanings, simple sentences, following instructions",
+    style: NT_STYLE,
+  },
+  ...(
+    [
+      ["math", "Math", "คณิตศาสตร์", "fractions, decimals and percentages, ratio, area and perimeter, volume, angles and shapes, simple equations, reading graphs and charts, word problems", 1.5],
+      ["science", "Science", "วิทยาศาสตร์", "living things and the environment, the human body, matter and its changes, force and motion, electricity, light and sound, earth and space", 1.2],
+      ["thai", "Thai", "ภาษาไทย", "reading for the main idea, หลักภาษา (word types, sentences, คำราชาศัพท์), spelling, idioms (สำนวน สุภาษิต), literature for Prathom 4-6", 1.2],
+      ["english", "English", "ภาษาอังกฤษ", "everyday vocabulary, simple grammar (present, past, future), short conversations, signs and short texts", 1],
+    ] as const
+  ).map(
+    ([id, en, th, syllabus, min]): ExamPreset => ({
+      id: `onetp6-${id}`,
+      group: "onet",
+      name: { en: `O-NET P.6: ${en}`, th: `O-NET ป.6: ${th}` },
+      level: "beginner",
+      count: 10,
+      minutesPerQuestion: min,
+      syllabus,
+      style: ONETP6_STYLE,
+      ...(id === "english" ? { questionLang: "en" as const } : {}),
+    }),
+  ),
+  {
+    id: "tpat1-reasoning",
+    group: "tcas",
+    name: { en: "TPAT1 (กสพท): Reasoning", th: "TPAT1 (กสพท): เชาวน์ปัญญา" },
+    level: "advanced",
+    count: 10,
+    minutesPerQuestion: 1.5,
+    syllabus: "number and letter series, analogies, logical deduction from given conditions, spatial and pattern reasoning",
+    style: TPAT1_STYLE,
+  },
+  {
+    id: "tpat1-ethics",
+    group: "tcas",
+    name: { en: "TPAT1 (กสพท): Medical ethics", th: "TPAT1 (กสพท): จริยธรรมทางการแพทย์" },
+    level: "advanced",
+    count: 10,
+    minutesPerQuestion: 1.2,
+    syllabus: "situations a doctor or medical student meets: patient rights and consent, confidentiality, honesty, fairness, teamwork, professional responsibility",
+    style: TPAT1_STYLE + " Each question is a short situation with four possible actions; the best one shows sound medical ethics.",
+  },
+  {
+    id: "tpat1-connect",
+    group: "tcas",
+    name: { en: "TPAT1 (กสพท): Connective thinking", th: "TPAT1 (กสพท): ความคิดเชื่อมโยง" },
+    level: "advanced",
+    count: 10,
+    minutesPerQuestion: 1.5,
+    syllabus: "reading a passage and linking its ideas: the main idea, what follows logically, what the author assumes, which statement connects two ideas",
+    style: TPAT1_STYLE,
+  },
+  {
+    id: "cutep-reading",
+    group: "english",
+    name: { en: "CU-TEP: Reading", th: "CU-TEP: การอ่าน" },
+    level: "advanced",
+    count: 10,
+    minutesPerQuestion: 1.2,
+    syllabus: "academic and general passages: main idea, detail, vocabulary in context, inference, reference words, the author's purpose",
+    style: CUTEP_STYLE + " Give a short passage inside the question when needed.",
+    questionLang: "en",
+  },
+  {
+    id: "cutep-error",
+    group: "english",
+    name: { en: "CU-TEP: Error identification", th: "CU-TEP: หาจุดผิดในประโยค" },
+    level: "advanced",
+    count: 10,
+    minutesPerQuestion: 0.6,
+    syllabus:
+      "grammar errors in one sentence: tenses, subject-verb agreement, articles, prepositions, word forms, pronouns, parallel structure, comparatives",
+    style: CUTEP_STYLE + " Each question is one sentence with four underlined parts given as the options (quote each part); exactly one is wrong.",
+    questionLang: "en",
+  },
+  {
+    id: "ocsc-analysis",
+    group: "civil",
+    name: { en: "Civil service (ก.พ.): Analytical thinking", th: "ก.พ. ภาค ก: ความสามารถในการคิดวิเคราะห์" },
+    level: "intermediate",
+    count: 10,
+    minutesPerQuestion: 1.5,
+    syllabus: "Thai reading and analysis, number series, percentage, ratio and arithmetic word problems, reading tables, logical reasoning and conditions",
+    style: OCSC_STYLE,
+  },
+  {
+    id: "ocsc-english",
+    group: "civil",
+    name: { en: "Civil service (ก.พ.): English", th: "ก.พ. ภาค ก: ภาษาอังกฤษ" },
+    level: "intermediate",
+    count: 10,
+    minutesPerQuestion: 1,
+    syllabus: "conversation, vocabulary, grammar and reading comprehension at a working level",
+    style: OCSC_STYLE,
+    questionLang: "en",
+  },
+  {
+    id: "ocsc-civil",
+    group: "civil",
+    name: { en: "Civil service (ก.พ.): Being a good civil servant", th: "ก.พ. ภาค ก: ความรู้และลักษณะการเป็นข้าราชการที่ดี" },
+    level: "intermediate",
+    count: 10,
+    minutesPerQuestion: 1,
+    syllabus:
+      "the State Administration Act, the Civil Service Act, the Royal Decree on Good Governance, the Administrative Procedure Act, " +
+      "the Liability for Wrongful Acts of Officials Act, the civil service code of ethics, and sound judgement as a public servant",
+    style: OCSC_STYLE,
+  },
+];
+
+EXAMS.push(...MORE, ...SCHOOLS, ...EXTRA);
 
 export const examById = (id: string | undefined) => EXAMS.find((e) => e.id === id);
 
@@ -575,7 +750,7 @@ export const PAST_PAPERS: { name: Record<Lang, string>; url: string; groups: Exa
   {
     name: { en: "O-NET past papers (NIETS, official)", th: "ข้อสอบ O-NET ย้อนหลัง (สทศ. ทางการ)" },
     url: "https://www.niets.or.th/th/catalog/view/630",
-    groups: ["onet"],
+    groups: ["onet", "nt"],
   },
   {
     name: { en: "A-Level papers with answers (mytcas)", th: "ข้อสอบ A-Level พร้อมเฉลย (mytcas)" },
@@ -585,7 +760,7 @@ export const PAST_PAPERS: { name: Record<Lang, string>; url: string; groups: Exa
   {
     name: { en: "TruePlookpanya exam bank (all levels)", th: "คลังข้อสอบ ทรูปลูกปัญญา (ทุกระดับชั้น)" },
     url: "https://www.trueplookpanya.com/examination",
-    groups: ["m1", "m4", "onet", "tcas"],
+    groups: ["nt", "m1", "m4", "onet", "tcas", "civil"],
   },
   {
     name: { en: "Triam Udom M.4 practice (TruePlookpanya): math", th: "แนวข้อสอบเข้า ม.4 เตรียมอุดม (ทรูปลูกปัญญา): คณิต" },
@@ -606,6 +781,12 @@ export const PAST_PAPERS: { name: Record<Lang, string>; url: string; groups: Exa
   { name: { en: "MWIT: admissions (official)", th: "มหิดลวิทยานุสรณ์: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.mwit.ac.th", groups: ["mwit"] },
   { name: { en: "KVIS: admissions (official)", th: "กำเนิดวิทย์: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.kvis.ac.th", groups: ["kvis"] },
   { name: { en: "Samsen Wittayalai: admissions (official)", th: "สามเสนวิทยาลัย: ประกาศรับสมัคร (ทางการ)" }, url: "https://www.samsenwit.ac.th", groups: ["samsen"] },
+  {
+    name: { en: "Civil service exams (ก.พ., official)", th: "สอบ ก.พ. (สำนักงาน ก.พ. ทางการ)" },
+    url: "https://job3.ocsc.go.th",
+    groups: ["civil"],
+  },
+  { name: { en: "mytcas: TCAS exams and schedule (official)", th: "mytcas: การสอบและกำหนดการ TCAS (ทางการ)" }, url: "https://www.mytcas.com", groups: ["tcas"] },
   { name: { en: "POSN exam bank (สอวน.)", th: "คลังข้อสอบ สอวน." }, url: "https://www.posn.or.th/examination/", groups: ["posn"] },
   { name: { en: "IJSO past papers", th: "ข้อสอบ IJSO" }, url: "https://www.posn.or.th/projects/academic-olympiad/ijso/examination/", groups: ["ijso"] },
   { name: { en: "Baan Krupui exam collection", th: "คลังข้อสอบ บ้านครูปุ้ย" }, url: "https://www.baankrupui.com/%E0%B8%84%E0%B8%A5%E0%B8%B1%E0%B8%87%E0%B8%82%E0%B9%89%E0%B8%AD%E0%B8%AA%E0%B8%AD%E0%B8%9A", groups: ["m1", "m4", "onet"] },
