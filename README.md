@@ -158,12 +158,12 @@ flowchart LR
 | Step | What happens |
 |---|---|
 | 👁️ **Look** | Attached pictures are described by Phi 3.5 Vision. Text files are read as-is. |
-| 📋 **Plan** | Max splits the task into 1-4 parts for the best-suited agents (structured JSON, with a reason for each). |
+| 📋 **Plan** | Max splits the task into 1-4 parts for the best-suited agents (structured JSON, with a reason for each). A **quick question** (short, one ask, nothing attached) skips planning: the best-fit agent answers it straight away, one model call fewer. |
 | ⌨️ **Work** | Each agent writes its part knowing the team's plan, streamed live to its desk PC. In **Think** mode it writes reasoning notes first. |
 | 🧩 **Merge** | Max combines the parts into one answer, removing overlap and fixing contradictions. |
 | 🔍 **Review** | Optional: Max double-checks the answer for mistakes and gaps, redoing any calculations. |
 
-**Accuracy.** The office runs a small model in your browser, so it's set up to be careful: answers are sampled conservatively (temperature 0.2 for JSON and checks, 0.4 for lessons, 0.6 for work), agents are told to check every fact and calculation and to say "not sure" rather than guess, quiz questions are written with the worked explanation **before** the answer is chosen, the answer key is re-solved by a second agent, and with double-check on, every lesson is fact-checked before you read it.
+**Accuracy.** The office runs a small model in your browser, so it's set up to be careful: answers are sampled conservatively (temperature 0.2 for JSON and checks, 0.4 for lessons, 0.6 for work), agents are told to check every fact and calculation and to say "not sure" rather than guess, quiz questions are written with the worked explanation **before** the answer is chosen, the answer key is re-solved by a second agent, and with double-check on, every lesson is fact-checked before you read it. Agents also know today's date, and a single-agent answer opens with the direct answer before explaining.
 
 ### 🎓 Learning help
 
@@ -184,13 +184,14 @@ Everything runs on the GPU in your browser via [WebLLM](https://github.com/mlc-a
 
 | Choice | Model | Download | Graphics memory |
 |---|---|---|---|
-| **Automatic** (default) | Smart on computers, Light on phones; steps down if the device can't load it | | |
+| **Automatic** (default) | Smart on computers, Light on phones, Mini on small phones or with data saver on; steps down if the device can't load it | | |
+| Mini | Qwen 3.5 0.8B | 0.5 GB | ~1.6 GB |
 | Light | Qwen 3.5 2B | 1.3 GB | ~2.5 GB |
 | Smart | Qwen 3.5 4B | 2.6 GB | ~4 GB |
 | Max | Qwen 3.5 9B | 5.5 GB | ~6.5 GB |
 | Pictures only | Phi 3.5 Vision | 2.4 GB | ~4 GB |
 
-Pick one in **Account → AI model**. Bigger models write better answers but need a stronger GPU.
+Pick one in **Account → AI model**. Bigger models write better answers but need a stronger GPU. After 10 idle minutes the model leaves graphics memory (so the 3D office and other tabs get it back) and reloads from the browser cache on the next task.
 
 ## 🎛️ Make it yours
 
@@ -227,7 +228,7 @@ The app is fully static, so any static host works. The live demo deploys to Verc
 |---|---|
 | App | Next.js 16 (App Router, Cache Components), React 19, TypeScript |
 | 3D | React Three Fiber, drei, three.js: toon-shaded characters, canvas textures, orthographic isometric camera |
-| AI | WebLLM on WebGPU: Qwen 3.5 (2B / 4B / 9B) and Phi 3.5 Vision |
+| AI | WebLLM on WebGPU: Qwen 3.5 (0.8B / 2B / 4B / 9B) and Phi 3.5 Vision |
 | UI | Tailwind CSS 4, glassmorphism, Phosphor icons, react-markdown |
 
 <details>

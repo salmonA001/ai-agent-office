@@ -153,6 +153,39 @@ function fallbackPlan(task: string, agents: Agent[]): PlannedSubtask[] {
   });
 }
 
+/**
+ * A short, single question with nothing attached needs no planning: one agent answers it straight away,
+ * which saves a whole round on the model (the planner would pick one agent anyway).
+ */
+export function isQuickQuestion(task: string, hasFiles: boolean) {
+  const text = task.trim();
+  if (hasFiles || !text || /\n/.test(text)) return false;
+  // several asks in one message ("…, and also…", lists, several questions) are team work
+  if ((text.match(/[?？]/g) ?? []).length > 1 || /\b(and also|and then|as well as)\b|และช่วย|แล้ว(ก็)?ช่วย|พร้อมทั้ง/i.test(text))
+    return false;
+  // Thai has no spaces between words, so count characters there
+  const words = text.split(/\s+/).length;
+  const thai = /[\u0E00-\u0E7F]/.test(text);
+  return thai ? text.length <= 90 : words <= 18 && text.length <= 140;
+}
+
+/** The best agent for a quick question: a keyword match, else the researcher (good all-rounder). */
+function quickPick(task: string, agents: Agent[]): PlannedSubtask {
+  const word = KEYWORDS.map(([re, id]) => ({ id, word: task.match(re)?.[0] })).find((k) => k.word && agents.some((a) => a.id === k.id));
+  const agent =
+    (word && agents.find((a) => a.id === word.id)) ?? agents.find((a) => a.id === "researcher") ?? agents.find((a) => a.id !== "max") ?? agents[0];
+  return {
+    agentId: agent.id,
+    title: agent.role,
+    brief: task,
+    reason: word ? `The question mentions "${word.word}", which is ${agent.role.toLowerCase()} work.` : `${agent.name} answers general questions.`,
+  };
+}
+
+/** Today's date, so answers about "this year", ages or deadlines are right (the model doesn't know it). */
+const today = () =>
+  `Today is ${new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}. `;
+
 // ---------- The three (or four) steps, each a call to the in-browser model ----------
 
 async function plan(task: string, files: string, agents: Agent[], lang: Lang, signal: AbortSignal): Promise<PlannedSubtask[]> {
@@ -229,7 +262,10 @@ function work(
         role: "system",
         content:
           `You are ${agent.name}, the ${agent.role} in an AI office. ${agent.instructions}\n` +
-          (team.length > 1 ? `The team's plan for this task:\n${plan}\nDo only your part; teammates cover the rest.\n` : "") +
+          today() +
+          (team.length > 1
+            ? `The team's plan for this task:\n${plan}\nDo only your part; teammates cover the rest.\n`
+            : "If the task is a question, answer it in the first sentence, then explain. ") +
           "Be specific and practical: concrete facts, numbers, examples, steps or code where useful. " +
           "Accuracy matters more than length: check every fact, number and calculation before you write it, and if you're " +
           "not sure of something, say so plainly instead of guessing. " +
@@ -267,6 +303,7 @@ function review(task: string, draft: string, lang: Lang, signal: AbortSignal, on
       {
         role: "system",
         content:
+          today() +
           "You are a meticulous editor. Improve the draft answer to the user's task: re-check every fact and redo every " +
           "calculation step by step, fix factual or logical mistakes, " +
           "fill obvious gaps, make it clearer and better organised, and keep everything that is already good. " +
@@ -330,10 +367,17 @@ export async function runTask(
   const filesForPlan = filesBlock(files, 1500);
   const filesForWork = filesBlock(files, FILES_BUDGET);
 
-  log("plan", "ev.planStart");
-  const subtasks = await plan(task.prompt, filesForPlan, agents, lang, signal);
-  if (subtasks.length === 1) log("plan", "ev.planOne");
-  else log("plan", "ev.planMany", { n: subtasks.length });
+  const quick = isQuickQuestion(task.prompt, files.some((f) => f.text));
+  let subtasks: PlannedSubtask[];
+  if (quick) {
+    subtasks = [quickPick(task.prompt, agents)];
+    log("plan", "ev.quick", { name: nameOf(subtasks[0].agentId) });
+  } else {
+    log("plan", "ev.planStart");
+    subtasks = await plan(task.prompt, filesForPlan, agents, lang, signal);
+    if (subtasks.length === 1) log("plan", "ev.planOne");
+    else log("plan", "ev.planMany", { n: subtasks.length });
+  }
   for (const s of subtasks)
     log("assign", "ev.assign", { name: nameOf(s.agentId), title: s.title, reason: s.reason ?? "" }, s.agentId);
   update((t) => ({

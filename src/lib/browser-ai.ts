@@ -4,15 +4,16 @@ import { useSyncExternalStore } from "react";
 
 /**
  * The office AI runs entirely in the browser on the GPU (WebGPU via WebLLM): no API key, no server.
- * Qwen 3.5 in three sizes; "auto" picks one that suits the device and steps down if it can't load.
+ * Qwen 3.5 in four sizes; "auto" picks one that suits the device and steps down if it can't load.
  */
 
-export type ModelTier = "light" | "smart" | "max";
+export type ModelTier = "mini" | "light" | "smart" | "max";
 export type ModelChoice = "auto" | ModelTier;
-export const MODEL_CHOICES: ModelChoice[] = ["auto", "light", "smart", "max"];
-const TIERS: ModelTier[] = ["light", "smart", "max"];
+export const MODEL_CHOICES: ModelChoice[] = ["auto", "mini", "light", "smart", "max"];
+const TIERS: ModelTier[] = ["mini", "light", "smart", "max"];
 
 export const MODELS: Record<ModelTier, { name: string; base: string; download: string; vram: string; maxTokens: number }> = {
+  mini: { name: "Qwen 3.5 0.8B", base: "Qwen3.5-0.8B", download: "0.5 GB", vram: "1.6 GB", maxTokens: 700 },
   light: { name: "Qwen 3.5 2B", base: "Qwen3.5-2B", download: "1.3 GB", vram: "2.5 GB", maxTokens: 800 },
   smart: { name: "Qwen 3.5 4B", base: "Qwen3.5-4B", download: "2.6 GB", vram: "4 GB", maxTokens: 1100 },
   max: { name: "Qwen 3.5 9B", base: "Qwen3.5-9B", download: "5.5 GB", vram: "6.5 GB", maxTokens: 1300 },
@@ -102,6 +103,10 @@ export type EngineState =
 let state: EngineState = { status: "idle" };
 let enginePromise: Promise<MLCEngine> | null = null;
 let loadedTier: ModelTier = "smart";
+/** Free the graphics memory after this long without a request; the model reloads from the browser cache. */
+const IDLE_UNLOAD_MS = 10 * 60 * 1000;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+let busy = 0;
 const listeners = new Set<() => void>();
 
 function setState(next: EngineState) {
@@ -124,12 +129,21 @@ export function webGpuSupported() {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
 
-/** Phones and low-memory machines get the light model; everything else the smart one. */
+/**
+ * Computers get the smart model, phones and low-memory machines the light one, and small phones the
+ * mini one. With data saver on, or on a slow connection, one size smaller (a smaller download).
+ */
 function autoTier(): ModelTier {
-  const nav = navigator as Navigator & { deviceMemory?: number };
+  const nav = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean; effectiveType?: string };
+  };
   const phone = /Android|iPhone|iPad|Mobile/i.test(nav.userAgent);
-  if (phone || (nav.deviceMemory ?? 8) <= 4) return "light";
-  return "smart";
+  const memory = nav.deviceMemory ?? 8;
+  let tier: ModelTier = phone && memory <= 4 ? "mini" : phone || memory <= 4 ? "light" : "smart";
+  const slow = nav.connection?.saveData || /(^|-)(2g|3g)$/.test(nav.connection?.effectiveType ?? "");
+  if (slow) tier = TIERS[Math.max(0, TIERS.indexOf(tier) - 1)];
+  return tier;
 }
 
 /** The model the current settings ask for. */
@@ -207,6 +221,23 @@ function visibleText(raw: string) {
 // One local model can only generate one reply at a time, so calls queue up.
 let queue: Promise<unknown> = Promise.resolve();
 
+/** Queue a call on the model, and free the graphics memory once nothing has needed it for a while. */
+function enqueue<T>(run: () => Promise<T>): Promise<T> {
+  clearTimeout(idleTimer);
+  busy++;
+  const result = queue.then(run, run);
+  queue = result.catch(() => {});
+  const settle = () => {
+    if (--busy > 0) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (busy === 0 && enginePromise) unloadAfterQueue();
+    }, IDLE_UNLOAD_MS);
+  };
+  result.then(settle, settle);
+  return result;
+}
+
 function unloadAfterQueue() {
   const unload = async () => {
     const pending = enginePromise;
@@ -257,9 +288,7 @@ ${notes}
 
 Now write the final answer, following your notes.`), opts);
   };
-  const result = queue.then(run, run);
-  queue = result.catch(() => {});
-  return result;
+  return enqueue(run);
 }
 
 async function generate(messages: Message[], opts: ChatOpts): Promise<string> {
@@ -358,7 +387,5 @@ export function describeImage(dataUrl: string, question: string, signal: AbortSi
       await engine.unload().catch(() => {});
     }
   };
-  const result = queue.then(run, run);
-  queue = result.catch(() => {});
-  return result;
+  return enqueue(run);
 }
