@@ -231,6 +231,8 @@ function work(
           `You are ${agent.name}, the ${agent.role} in an AI office. ${agent.instructions}\n` +
           (team.length > 1 ? `The team's plan for this task:\n${plan}\nDo only your part; teammates cover the rest.\n` : "") +
           "Be specific and practical: concrete facts, numbers, examples, steps or code where useful. " +
+          "Accuracy matters more than length: check every fact, number and calculation before you write it, and if you're " +
+          "not sure of something, say so plainly instead of guessing. " +
           "Structure the answer with Markdown headings and lists. Start directly with the content, no preamble." +
           LANG_RULE[lang],
       },
@@ -255,7 +257,7 @@ function merge(task: string, results: Result[], lang: Lang, signal: AbortSignal,
       },
       { role: "user", content: `Task: ${task}\n\nThe team's work:\n\n${parts}` },
     ],
-    { signal, maxTokens: 1400, onText },
+    { signal, maxTokens: 1400, onText, temperature: 0.4 },
   );
 }
 
@@ -265,14 +267,15 @@ function review(task: string, draft: string, lang: Lang, signal: AbortSignal, on
       {
         role: "system",
         content:
-          "You are a meticulous editor. Improve the draft answer to the user's task: fix factual or logical mistakes, " +
+          "You are a meticulous editor. Improve the draft answer to the user's task: re-check every fact and redo every " +
+          "calculation step by step, fix factual or logical mistakes, " +
           "fill obvious gaps, make it clearer and better organised, and keep everything that is already good. " +
           "Output only the improved final answer in Markdown, with no remarks about your changes." +
           LANG_RULE[lang],
       },
       { role: "user", content: `Task: ${task}\n\nDraft answer:\n${draft.slice(0, MERGE_BUDGET)}` },
     ],
-    { signal, maxTokens: 1400, onText },
+    { signal, maxTokens: 1400, onText, temperature: 0.3 },
   );
 }
 

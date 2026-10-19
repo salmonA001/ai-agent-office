@@ -228,6 +228,8 @@ type ChatOpts = {
   onText?: (chunk: string) => void;
   /** the reasoning notes as they stream, in think mode */
   onThink?: (chunk: string) => void;
+  /** lower = more careful and consistent (facts, checks); higher = more varied (ideas, prose) */
+  temperature?: number;
 };
 
 type Message = { role: "system" | "user"; content: string };
@@ -275,9 +277,11 @@ async function generate(messages: Message[], opts: ChatOpts): Promise<string> {
         stream: true,
         max_tokens: maxTokens,
         // Qwen's recommended settings for direct answers: precise for JSON, a little warmer for prose
-        temperature: opts.json ? 0.3 : 0.7,
+        // careful by default: small models invent less when they sample less freely
+        temperature: opts.temperature ?? (opts.json ? 0.2 : 0.6),
         top_p: 0.8,
-        presence_penalty: 0.5,
+        // a repetition penalty would also punish the repeated keys of JSON ("question", "options")
+        presence_penalty: opts.json ? 0 : 0.3,
         extra_body: { enable_thinking: false },
         ...(opts.json ? { response_format: { type: "json_object" as const, schema: opts.json } } : {}),
       });

@@ -49,7 +49,7 @@ export async function runStudy(task: Task, team: Agent[], signal: AbortSignal, u
   const log = taskLogger(update);
   const files = await prepareFiles(task, signal, update, log, opts.images);
   if (task.kind === "test") await quiz(task, team, files, signal, update, log, lang, opts.check);
-  else await lesson(task, team, files, signal, update, log, lang);
+  else await lesson(task, team, files, signal, update, log, lang, opts.check);
   update((t) => ({ ...t, status: "done" }));
   log("finish", "ev.finish", { s: Math.round((Date.now() - task.createdAt) / 1000) });
 }
@@ -67,8 +67,10 @@ async function lesson(
   update: Update,
   log: ReturnType<typeof taskLogger>,
   lang: Lang,
+  check: boolean,
 ) {
   const tutor = pick(team, ["tutor", "writer", "researcher"]);
+  const checker = check ? pick(team, ["qa", "researcher", "analyst"], tutor.id) : undefined;
   const level = task.level ?? "intermediate";
   const title = translate(lang, "study.lessonTitle");
   const reason = translate(lang, "study.lessonWhy", { name: tutor.name });
@@ -77,7 +79,22 @@ async function lesson(
   update((t) => ({
     ...t,
     status: "working",
-    subtasks: [{ id: `${t.id}-0`, agentId: tutor.id, title, brief: task.prompt, reason, status: "queued", output: "" }],
+    subtasks: [
+      { id: `${t.id}-0`, agentId: tutor.id, title, brief: task.prompt, reason, status: "queued", output: "" },
+      ...(checker && checker.id !== tutor.id
+        ? [
+            {
+              id: `${t.id}-1`,
+              agentId: checker.id,
+              title: translate(lang, "study.factTitle"),
+              brief: translate(lang, "study.factTitle"),
+              reason: translate(lang, "study.factWhy", { name: checker.name }),
+              status: "queued" as const,
+              output: "",
+            },
+          ]
+        : []),
+    ],
   }));
   let started = false;
   const begin = () => {
@@ -110,6 +127,7 @@ async function lesson(
       signal,
       maxTokens: MODELS[currentTier()].maxTokens + 200,
       think: task.mode === "think",
+      temperature: 0.4,
       onText: (chunk) => {
         begin();
         setSub(update, 0, (s) => ({ ...s, output: s.output + chunk }));
@@ -125,6 +143,39 @@ async function lesson(
   setSub(update, 0, (s) => ({ ...s, status: "done", finishedAt: Date.now() }));
   log("done", "ev.done", { name: tutor.name, title, words: countWords(output) }, tutor.id);
   update((t) => ({ ...t, final: output }));
+
+  // a second pair of eyes: re-check facts and redo calculations, fix only real mistakes
+  if (checker && checker.id !== tutor.id) {
+    const factTitle = translate(lang, "study.factTitle");
+    log("start", "ev.start", { name: checker.name, title: factTitle }, checker.id);
+    setSub(update, 1, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
+    let checked = "";
+    try {
+      checked = await chat(
+        [
+          {
+            role: "system",
+            content:
+              `You are ${checker.name}, a careful teacher checking a lesson before a student reads it. Re-check every fact, ` +
+              "redo every calculation step by step, and make sure every answer in 'Check yourself' is right. Fix only real " +
+              "mistakes; keep the same sections, wording, length and Markdown everywhere else. If nothing is wrong, return the " +
+              "lesson unchanged. Output only the full lesson." +
+              LANG_RULE[lang],
+          },
+          { role: "user", content: `Topic: ${task.prompt}\n\nLesson:\n${output.slice(0, 7000)}` },
+        ],
+        { signal, maxTokens: MODELS[currentTier()].maxTokens + 300, temperature: 0.2 },
+      );
+    } catch (err) {
+      if (signal.aborted) throw err;
+    }
+    // a much shorter reply probably lost part of the lesson: keep the original then
+    const good = checked.trim().length > output.trim().length * 0.8;
+    if (good && checked.trim() !== output.trim()) update((t) => ({ ...t, final: checked }));
+    const note = !good ? "study.factSkipped" : checked.trim() === output.trim() ? "study.factClean" : "study.factFixed";
+    setSub(update, 1, (s) => ({ ...s, status: "done", finishedAt: Date.now(), output: translate(lang, note) }));
+    log("done", "ev.factChecked", { name: checker.name }, checker.id);
+  }
 }
 
 // ---------- Quiz ----------
@@ -282,10 +333,11 @@ async function quiz(
             properties: {
               question: { type: "string" },
               options: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
-              answer: { type: "integer", minimum: 0, maximum: 3 },
+              // the working comes before the answer, so the model reasons first and then commits
               explanation: { type: "string" },
+              answer: { type: "integer", minimum: 0, maximum: 3 },
             },
-            required: ["question", "options", "answer", "explanation"],
+            required: ["question", "options", "explanation", "answer"],
           },
         },
       },
@@ -316,8 +368,10 @@ async function quiz(
               : "") +
             (batches > 1 ? `This is part ${batch + 1} of ${batches} of a longer quiz: cover parts of the topic the earlier questions didn't. ` : "") +
             "Rules: each question tests understanding, not tricky wording; 4 options, exactly one correct; wrong options are plausible " +
-            "(common misconceptions), never 'all/none of the above'; answer is the index (0-3) of the correct option, and it varies " +
-            "between questions; explanation is one short sentence on why the answer is right. Cover different parts of the topic. " +
+            "(common misconceptions), never 'all/none of the above'. explanation: work the question out first, in one or two " +
+            "short sentences (the key fact or the calculation), BEFORE choosing; answer: the index (0-3) of the option your " +
+            "explanation proves right; vary which index is correct between questions. Double-check any numbers. " +
+            "Cover different parts of the topic. " +
             "Reply in JSON only." +
             langRule,
         },
@@ -368,7 +422,7 @@ async function quiz(
     setSub(update, 1, (s) => ({ ...s, status: "working", startedAt: Date.now() }));
     let agreed = questions;
     try {
-      const CHUNK = 10;
+      const CHUNK = 5;
       const answers: unknown[] = [];
       for (let i = 0; i < questions.length; i += CHUNK) {
         const part = questions.slice(i, i + CHUNK);
@@ -377,8 +431,9 @@ async function quiz(
             {
               role: "system",
               content:
-                `You are ${checker.name}, the ${checker.role}. Solve each multiple-choice question yourself and give the index (0-based) ` +
-                "of the correct option for each, in order. Reply in JSON only.",
+                `You are ${checker.name}, the ${checker.role}, checking an answer key. Solve each multiple-choice question yourself, ` +
+                "in order: write the key step or calculation in one short line (work), then the index (0-based) of the correct " +
+                "option (answer). Reply in JSON only.",
             },
             {
               role: "user",
@@ -387,17 +442,28 @@ async function quiz(
           ],
           {
             signal,
-            maxTokens: 200,
+            maxTokens: 70 * part.length + 60,
             json: JSON.stringify({
               type: "object",
-              properties: { answers: { type: "array", minItems: part.length, maxItems: part.length, items: { type: "integer" } } },
+              properties: {
+                answers: {
+                  type: "array",
+                  minItems: part.length,
+                  maxItems: part.length,
+                  items: {
+                    type: "object",
+                    properties: { work: { type: "string" }, answer: { type: "integer" } },
+                    required: ["work", "answer"],
+                  },
+                },
+              },
               required: ["answers"],
             }),
           },
         );
         const got: unknown = JSON.parse(reply.slice(reply.indexOf("{"), reply.lastIndexOf("}") + 1)).answers;
         if (!Array.isArray(got)) throw new Error("no answers");
-        answers.push(...part.map((_, j) => got[j]));
+        answers.push(...part.map((_, j) => (got[j] as { answer?: unknown } | undefined)?.answer));
       }
       const ok = questions.filter((q, i) => answers[i] === q.answer);
       const disputed = questions.filter((q, i) => answers[i] !== q.answer);
